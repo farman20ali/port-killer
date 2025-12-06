@@ -288,7 +288,7 @@ def main():
                        help="Kill processes on port range (e.g., 3000-3010)")
     parser.add_argument("-l", "--list", action="store_true",
                        help="List all listening ports and their processes")
-    parser.add_argument("-v", "--version", action="version", version="kport 2.1.0")
+    parser.add_argument("-v", "--version", action="version", version="kport 2.1.1")
 
     args = parser.parse_args()
 
