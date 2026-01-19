@@ -18,6 +18,7 @@ A simple, powerful command-line tool to inspect and kill processes using specifi
 - 🔫 **Kill multiple ports** - Kill processes on multiple ports at once
 - 🎯 **Kill by process name** - Kill all processes matching a name (e.g., "node", "python")
 - 📋 **List all ports** - View all listening ports and their processes
+- 🐳 **Docker-aware** - Detect ports published by Docker containers (even when you don't see a host process)
 - 🎨 **Colorized output** - Easy-to-read colored terminal output
 - ✅ **Confirmation prompts** - Safety confirmation before killing processes
 - 🌍 **Cross-platform** - Works on Windows, Linux, and macOS
@@ -78,6 +79,63 @@ python kport.py -h
 > 🚀 For publishing instructions, see [PUBLISH.md](PUBLISH.md)
 
 ## 🚀 Usage
+
+### PRODUCT.md command style (recommended)
+
+These commands are Docker-aware by default:
+
+```bash
+# Inspect a port (local or docker)
+kport inspect 8080
+
+# Explain why a port is blocked
+kport explain 8080
+
+# Safely free a port (will offer docker stop/restart/remove if needed)
+kport kill 8080
+
+# List ports (local + docker)
+kport list
+
+# List docker published ports
+kport docker
+
+# Detect port conflicts (docker + local)
+kport conflicts
+```
+
+> Note: `--json`, `--dry-run`, `--yes`, and `--debug` work with subcommands.
+
+### Why a port may show without PID
+
+On Linux, some ports may appear as `LISTEN` but the owning PID/process name is not visible without elevated privileges (common with system services).
+
+If you see `local-unknown` in `inspect` / `explain`, try:
+
+```bash
+sudo kport inspect 6379
+sudo kport explain 6379
+```
+
+### Config file support (Phase 2)
+
+You can set default flags via JSON config:
+
+- `.kport.json` (current directory)
+- `~/.kport.json`
+- `~/.config/kport/config.json`
+
+Example:
+
+```json
+{
+  "yes": true,
+  "dry_run": false,
+  "force": false,
+  "graceful_timeout": 5,
+  "docker_action": "stop"
+}
+```
 
 ### Inspect a port
 
