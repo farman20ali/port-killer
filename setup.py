@@ -22,7 +22,7 @@ setup(
         "Intended Audience :: System Administrators",
         "Topic :: System :: Networking",
         "Topic :: System :: Systems Administration",
-        "License :: OSI Approved :: MIT License",
+        "License :: OSI Approved :: GNU Affero General Public License v3",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",

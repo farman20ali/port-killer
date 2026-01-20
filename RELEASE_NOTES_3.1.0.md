@@ -146,7 +146,9 @@ Thanks to all contributors and users who provided feedback and bug reports.
 
 ## 📝 License
 
-MIT License - see [LICENSE](https://github.com/farman20ali/port-killer/blob/main/LICENSE) for details.
+GNU Affero General Public License v3.0 (AGPL-3.0) - see [LICENSE](https://github.com/farman20ali/port-killer/blob/main/LICENSE) for details.
+
+**This license requires sharing source code modifications, even for network/SaaS use.**
 
 ---
 

@@ -2,7 +2,7 @@
 
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/farman20ali/port-killer)
 [![Python](https://img.shields.io/badge/python-3.6+-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/farman20ali/port-killer)
 
 A simple, powerful command-line tool to inspect and kill processes using specific ports on Windows, Linux, and macOS.
@@ -467,7 +467,15 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 📝 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+
+**What this means:**
+- ✅ Free to use, modify, and distribute
+- ✅ Must share source code of any modifications
+- ✅ **Network use = distribution**: If you run a modified version as a service, you must share the source code
+- ❌ Cannot use in proprietary SaaS without sharing modifications
+
+For commercial licensing or if AGPL doesn't fit your use case, contact: farman20ali@gmail.com
 
 ## ⚠️ Important Notes
 
