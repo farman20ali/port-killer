@@ -113,8 +113,20 @@ On Linux, some ports may appear as `LISTEN` but the owning PID/process name is n
 If you see `local-unknown` in `inspect` / `explain`, try:
 
 ```bash
-sudo kport inspect 6379
-sudo kport explain 6379
+sudo -E kport inspect 6379
+sudo -E kport explain 6379
+```
+
+If you installed with `pip install --user kport`, `sudo` may not find `kport` because root's `PATH` doesn't include your user scripts directory.
+
+Alternatives:
+
+```bash
+# Option 1: keep your PATH when using sudo
+sudo -E "$HOME/.local/bin/kport" inspect 6379
+
+# Option 2: run the module via the system python (when working from repo)
+sudo -E python3 kport.py inspect 6379
 ```
 
 ### Config file support (Phase 2)

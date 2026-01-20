@@ -1402,7 +1402,7 @@ Examples:
     parser.add_argument("--exact", action="store_true", help="Use exact match for process name lookups")
     parser.add_argument("--force", action="store_true", help="Force kill immediately if needed (after graceful timeout)")
     parser.add_argument("--graceful-timeout", type=float, default=3.0, help="Seconds to wait for graceful termination before forcing (default 3.0)")
-    parser.add_argument("-v", "--version", action="version", version="kport 3.0.0 (upgraded)")
+    parser.add_argument("-v", "--version", action="version", version="kport 3.1.0")
 
     # PRODUCT.md subcommands
     sub = parser.add_subparsers(dest="command")

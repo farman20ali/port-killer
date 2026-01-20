@@ -29,6 +29,11 @@ After installation, verify it works:
 ```bash
 kport --version
 kport -h
+
+# Docker-aware command style
+kport list
+kport docker
+kport inspect 8080
 ```
 
 ---
@@ -66,6 +71,9 @@ sudo pip install kport
 ```
 
 > 💡 **Tip:** If the `kport` command doesn't work after installation, see the "command not found" section below.
+
+> Note: if you install with `--user`, root may not find `kport` via `sudo`.
+> Use `sudo -E` or run the full path (usually `~/.local/bin/kport`).
 
 ### Method 2: From Source
 ```bash

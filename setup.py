@@ -8,7 +8,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="kport",
-    version="2.1.1",
+    version="3.1.0",
     author="Farman Ali",
     author_email="farman20ali@gmail.com",
     description="A cross-platform command-line tool to inspect and kill processes using specific ports",
@@ -36,6 +36,9 @@ setup(
         "Operating System :: MacOS",
     ],
     python_requires=">=3.6",
+    install_requires=[
+        "psutil>=5.9.0",
+    ],
     entry_points={
         "console_scripts": [
             "kport=kport:main",

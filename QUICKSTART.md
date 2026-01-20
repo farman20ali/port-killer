@@ -32,6 +32,21 @@ kport --version  # Should show: kport 1.0.0
 ## 🎯 Quick Commands
 
 ```bash
+# Recommended (PRODUCT.md) command style
+
+# List ports (local + docker)
+python kport.py list
+
+# Show docker published ports
+python kport.py docker
+
+# Inspect/explain/kill a port (docker-aware)
+python kport.py inspect 8080
+python kport.py explain 8080
+python kport.py kill 8080 --dry-run
+
+# Legacy flags (still supported)
+
 # List all ports
 python kport.py -l
 

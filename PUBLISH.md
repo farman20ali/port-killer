@@ -25,6 +25,8 @@ Update `setup.py` with your information:
 - Update `url` with your GitHub repository
 - Update `project_urls`
 
+This project depends on `psutil` for best cross-platform port/PID detection.
+
 ### Step 2: Build the Package
 
 ```bash
@@ -69,6 +71,33 @@ pip install kport
 > 💡 **Important:** Recommend users to install with `--user` flag to avoid permission issues!
 
 ---
+
+## 🐧 Method 4: Publish a Debian (.deb) Package
+
+This repo does not commit a `debian/` packaging directory.
+
+Instead, `deb_publish.py` generates a minimal Debian packaging skeleton at build time (in a temporary directory) and copies the resulting `.deb` into `dist/deb/`.
+
+Build on Debian/Ubuntu (recommended):
+
+```bash
+python3 deb_publish.py
+```
+
+If you prefer installing prerequisites manually:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y debhelper dh-python python3-all build-essential
+```
+
+Install:
+
+```bash
+sudo dpkg -i dist/deb/kport_*_all.deb
+```
+
+For GitHub Release steps (attach the `.deb`) and options to publish an APT repository, see [DEB_RELEASE.md](DEB_RELEASE.md).
 
 ## 🐙 Method 2: GitHub Installation
 
