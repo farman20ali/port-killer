@@ -248,18 +248,19 @@ def create_github_release(version: str, tag: str, notes: str, dry_run: bool = Fa
     
     print_header("Creating GitHub Release")
     
-    # Collect release assets
+    # Collect release assets (built artifacts only - GitHub auto-attaches source)
     assets = []
     dist_dir = REPO_ROOT / "dist"
     
-    # Add PyPI packages
-    for pattern in ["*.tar.gz", "*.whl"]:
-        assets.extend(str(f) for f in dist_dir.glob(pattern))
+    # Add Python wheel (built artifact)
+    assets.extend(str(f) for f in dist_dir.glob("*.whl"))
     
-    # Add Debian package
+    # Add Debian package (built artifact)
     deb_dir = dist_dir / "deb"
     if deb_dir.exists():
         assets.extend(str(f) for f in deb_dir.glob("*.deb"))
+    
+    # Note: We don't attach .tar.gz - GitHub automatically provides source archives
     
     if not assets:
         print_warning("No release assets found")

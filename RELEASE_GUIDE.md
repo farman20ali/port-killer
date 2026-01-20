@@ -88,22 +88,34 @@ Output: `dist/deb/kport_*_all.deb`
 2. Select tag: `v3.1.1`
 3. Release title: `kport v3.1.1`
 4. Add release notes (features, fixes, breaking changes)
-5. Attach assets:
-   - `dist/kport-*.tar.gz` (source)
-   - `dist/kport-*.whl` (Python wheel)
-   - `dist/deb/kport_*_all.deb` (Debian package)
+   - You can use the generated `RELEASE_NOTES_*.md` file as a template
+5. Attach **built artifacts only** (GitHub auto-attaches source):
+   - `dist/kport-*.whl` (Python wheel) ✅
+   - `dist/deb/kport_*_all.deb` (Debian package) ✅
+   - ~~`dist/kport-*.tar.gz`~~ ❌ **No need** - GitHub automatically attaches source code archives
 6. Click "Publish release"
+
+> **Note:** GitHub automatically generates and attaches source code archives (`Source code (zip)` and `Source code (tar.gz)`) for every release. You only need to upload **built artifacts** like `.whl` and `.deb` files.
 
 #### Option B: GitHub CLI (if installed)
 
 ```bash
+# Using release notes from file
+gh release create v3.1.1 \
+  --title "kport v3.1.1" \
+  --notes-file RELEASE_NOTES_3.1.1.md \
+  dist/*.whl \
+  dist/deb/*.deb
+
+# Or with inline notes
 gh release create v3.1.1 \
   --title "kport v3.1.1" \
   --notes "Release notes here" \
-  dist/*.tar.gz \
   dist/*.whl \
   dist/deb/*.deb
 ```
+
+> **Note:** Don't attach `dist/*.tar.gz` - GitHub automatically provides source archives for every release.
 
 ---
 
