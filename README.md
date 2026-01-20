@@ -428,6 +428,33 @@ kport -i 80
 kport -l
 ```
 
+## 📚 Documentation
+
+- **[Installation Guide](INSTALL.md)** - Detailed installation instructions
+- **[Quick Start](QUICKSTART.md)** - Get started quickly
+- **[Publishing Guide](PUBLISH.md)** - How to publish kport
+- **[Release Guide](RELEASE_GUIDE.md)** - Creating releases (manual & automated)
+- **[Debian Release](DEB_RELEASE.md)** - Debian packaging and APT distribution
+- **[Contributing](CONTRIBUTING.md)** - How to contribute
+
+## 🚀 For Maintainers
+
+### Creating a Release
+
+Automated release (recommended):
+
+```bash
+python3 release.py
+```
+
+This script handles:
+- Git tagging
+- PyPI package building
+- Debian package building  
+- GitHub release creation
+
+See [RELEASE_GUIDE.md](RELEASE_GUIDE.md) for manual release steps and troubleshooting.
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
