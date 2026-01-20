@@ -38,19 +38,19 @@ kport list
 
 ### A) Prepare the tag
 
-1. Bump the version in `setup.py` (example: `3.1.0` → `3.1.1`).
+1. Bump the version in `setup.py` (example: `3.1.0` → `3.1.0`).
 2. Build the `.deb` using `deb_publish.py`.
 3. Commit the version bump:
 
 ```bash
 git add setup.py
-git commit -m "Bump version to 3.1.1"
+git commit -m "Bump version to 3.1.0"
 ```
 
 4. Create and push a tag:
 
 ```bash
-git tag -a v3.1.1 -m "kport v3.1.1"
+git tag -a v3.1.0 -m "kport v3.1.0"
 git push origin main --tags
 ```
 
@@ -58,7 +58,7 @@ git push origin main --tags
 
 1. Go to GitHub Releases:
    - https://github.com/farman20ali/port-killer/releases/new
-2. Select tag `v3.1.1`.
+2. Select tag `v3.1.0`.
 3. Upload the `.deb` file from `dist/deb/` as a release asset.
 4. Publish.
 
