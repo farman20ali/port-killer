@@ -347,7 +347,237 @@ kport/
 
 ---
 
-## 10. Roadmap
+## 10. kport Pro (Paid Local Edition)
+
+kport Pro builds on the open-source core and targets **professional developers, DevOps engineers, consultants, and small teams** who want safety, automation, and deeper visibility.
+
+### 10.1 kport Pro Feature List
+
+#### 🔐 Advanced Safety & Control
+
+* Graceful shutdown policies (SIGTERM → wait → SIGKILL)
+* Configurable timeouts per process type
+* Protected ports (cannot kill without override)
+* Policy-based rules (e.g., never kill database ports)
+
+#### 🧠 Intelligent Conflict Detection
+
+* Detect local ↔ Docker ↔ systemd conflicts
+* Identify reverse proxies (nginx, traefik)
+* Explain *why* a conflict exists, not just that it exists
+
+#### 🕵️ Port History & Audit (Local)
+
+* Track which process/container used a port
+* Timestamped usage history
+* Useful for debugging intermittent issues
+
+#### 🔁 Watch Mode
+
+```bash
+kport watch 8080
+```
+
+* Live monitoring of port ownership
+* Alerts on port change or process restart
+
+#### 📄 Automation & CI Enhancements
+
+* SARIF output (for security tooling)
+* Stable JSON schemas
+* Deterministic exit codes
+* Machine-readable explanations
+
+#### 🧩 Deep Docker Awareness
+
+* Docker Compose service names
+* Multiple containers mapping same port
+* Container restart reason analysis
+
+---
+
+### 10.2 kport Pro Paywall Architecture
+
+**Open-Core Model**
+
+| Layer                | Access |
+| -------------------- | ------ |
+| Core inspect / kill  | Free   |
+| Explain mode (basic) | Free   |
+| Advanced safety      | Pro    |
+| Conflict engine      | Pro    |
+| Watch mode           | Pro    |
+| Port history         | Pro    |
+
+#### Enforcement Mechanism
+
+* License key (local, offline-first)
+* Feature flags checked at runtime
+* No cloud dependency for Pro
+
+#### Pricing (Indicative)
+
+* $5–10 / month (individual)
+* $49–79 / year
+
+---
+
+## 11. kport Cloud (Agent + Backend SaaS)
+
+kport Cloud turns kport from a **local tool** into an **organization-wide visibility platform**.
+
+---
+
+### 11.1 Problem kport Cloud Solves
+
+* Who opened this port in production?
+* Why did this service become unreachable?
+* Is any sensitive port exposed accidentally?
+* Are teams following port usage policies?
+
+These questions are **high-value** and companies pay for answers.
+
+---
+
+### 11.2 High-Level Architecture
+
+```
+[ Server / VM / Node ]
+        |
+     kport-agent
+        |
+  Secure HTTPS / mTLS
+        |
+[ kport Cloud API ]
+        |
+[ Event Store + Analytics ]
+        |
+[ Web Dashboard + Alerts ]
+```
+
+---
+
+### 11.3 kport Agent (Installed on Hosts)
+
+Responsibilities:
+
+* Periodic port scanning
+* Docker & systemd inspection
+* Detect changes (diff-based)
+* Enforce local policies (optional)
+
+Key Properties:
+
+* Lightweight (low CPU/memory)
+* Read-only by default
+* No shell access
+
+---
+
+### 11.4 Backend Components
+
+#### API Layer
+
+* Receives agent reports
+* Authenticates via API key / mTLS
+
+#### Event Store
+
+* Port open/close events
+* Ownership changes
+* Conflict events
+
+#### Analytics Engine
+
+* Exposure duration
+* High-risk ports
+* Trend analysis
+
+#### Alerting Engine
+
+* Slack / Email / Webhooks
+* Threshold-based alerts
+
+---
+
+### 11.5 Dashboard Capabilities
+
+* Real-time port map per host
+* Docker & Kubernetes views
+* Timeline ("who used port 6379 last week")
+* Compliance status
+
+---
+
+### 11.6 Example SaaS Use Case
+
+```
+⚠️ Alert: Port 6379 exposed
+
+Host: prod-node-3
+Reason: Docker container started without firewall rule
+Owner: team-backend
+Duration: 12 minutes
+```
+
+---
+
+### 11.7 Pricing Model (B2B SaaS)
+
+| Tier       | Price              |
+| ---------- | ------------------ |
+| Starter    | $29 / node / month |
+| Team       | $99 / node / month |
+| Enterprise | Custom             |
+
+---
+
+## 12. Security & Trust Model
+
+* Read-only agents by default
+* Encrypted communication
+* Least-privilege design
+* Full audit trails
+
+---
+
+## 13. Updated Roadmap
+
+### Phase 1 – Open Core
+
+* Local + Docker awareness
+* Explain mode
+
+### Phase 2 – Pro
+
+* Conflict engine
+* Watch mode
+* Safety policies
+
+### Phase 3 – Cloud
+
+* Agent + SaaS backend
+* Alerts & dashboards
+
+### Phase 4 – Enterprise
+
+* Kubernetes
+* Compliance exports
+* RBAC & SSO
+
+---
+
+## 14. Strategic Positioning
+
+kport evolves from:
+
+CLI Tool → Pro Developer Utility → Infrastructure Visibility Platform
+
+This positioning supports:
+
+* Open-source adoption
+* Sustainable revenue
+* Enterprise credibility
 
 ### Phase 1 (Core – This Document)
 
