@@ -381,6 +381,32 @@ class BaseInspector:
         """
         raise NotImplementedError()
 
+    def kill_port(self, port: int, graceful_timeout: float = 3.0, force: bool = False, dry_run: bool = False) -> Tuple[bool, str]:
+        """
+        Kill all processes using a specific port.
+        Default implementation finds PIDs and kills them one by one.
+        Can be overridden for more efficient port-based killing (e.g., fuser on Linux).
+        """
+        pids = self.find_pids_on_port(port)
+        if not pids:
+            return False, "No process found on port"
+        
+        killed_count = 0
+        errors = []
+        for pid in pids:
+            ok, msg = self.kill_pid(pid, graceful_timeout, force, dry_run)
+            if ok:
+                killed_count += 1
+            else:
+                errors.append(f"PID {pid}: {msg}")
+        
+        if killed_count == len(pids):
+            return True, f"Killed {killed_count} process(es)"
+        elif killed_count > 0:
+            return False, f"Killed {killed_count}/{len(pids)} process(es). Errors: {'; '.join(errors)}"
+        else:
+            return False, f"Failed to kill any process. Errors: {'; '.join(errors)}"
+
 # psutil-based inspector (best behavior cross-platform)
 class PsutilInspector(BaseInspector):
     def list_listening(self) -> List[PortBinding]:
@@ -550,6 +576,38 @@ class FallbackInspector(BaseInspector):
             return json.loads(out)
         except Exception:
             return None
+
+    def _kill_port_with_fuser(self, port: int, proto: str = "tcp", dry_run: bool = False) -> Tuple[bool, str]:
+        """Kill all processes using a port with fuser (Linux utility).
+        
+        This is often more reliable than kill -9 for stubborn processes.
+        """
+        if dry_run:
+            return True, f"Dry-run: would fuser -k {port}/{proto}"
+        
+        if not check_dependency("fuser"):
+            return False, "fuser not available"
+        
+        try:
+            # fuser -k sends SIGKILL by default to all processes using the port
+            proc = subprocess.run(
+                ["fuser", "-k", f"{port}/{proto}"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            # fuser returns 0 on success, 1 if no process found
+            if proc.returncode == 0:
+                return True, f"Killed process(es) using port {port} with fuser"
+            elif proc.returncode == 1:
+                return False, "No process found on port"
+            else:
+                stderr = (proc.stderr or "").strip()
+                return False, f"fuser failed: {stderr}"
+        except subprocess.TimeoutExpired:
+            return False, "fuser command timed out"
+        except Exception as e:
+            return False, f"Error running fuser: {e}"
 
     def list_listening(self) -> List[PortBinding]:
         if self.system == "Windows":
@@ -907,7 +965,7 @@ class FallbackInspector(BaseInspector):
                         return False, f"Error taskkill: {e}"
                 return False, "Still running; taskkill gentle failed"
             else:
-                # Unix: try SIGTERM then SIGKILL
+                # Unix: try SIGTERM then SIGKILL, with multiple attempts
                 try:
                     os.kill(pid, signal.SIGTERM)
                 except PermissionError:
@@ -932,18 +990,45 @@ class FallbackInspector(BaseInspector):
                         return False, "Permission denied"
                 if not force:
                     return False, "Still alive after graceful timeout"
-                # force kill
+                # force kill with SIGKILL
                 try:
                     os.kill(pid, signal.SIGKILL)
-                    return True, "Killed (SIGKILL)"
+                    # Wait briefly to confirm kill
+                    time.sleep(0.5)
+                    try:
+                        os.kill(pid, 0)
+                        # Process still exists, might need more aggressive approach
+                    except ProcessLookupError:
+                        return True, "Killed (SIGKILL)"
+                    except PermissionError:
+                        return False, "Permission denied"
                 except PermissionError:
                     return False, "Permission denied on SIGKILL"
                 except ProcessLookupError:
-                    return True, "Process disappeared after SIGKILL"
+                    return True, "Process disappeared"
                 except Exception as e:
                     return False, f"Error SIGKILL: {e}"
+                
+                # If still running, return status indicating process is stubborn
+                return False, "Process did not terminate after SIGKILL"
         except Exception as e:
             return False, f"Unexpected error: {e}"
+
+    def kill_port(self, port: int, graceful_timeout: float = 3.0, force: bool = False, dry_run: bool = False) -> Tuple[bool, str]:
+        """
+        Kill all processes using a specific port.
+        On Linux, tries fuser first as it's more reliable, then falls back to default implementation.
+        """
+        if self.system != "Windows":
+            # Try fuser first on Unix-like systems when force=True or as fallback
+            if force and check_dependency("fuser"):
+                ok, msg = self._kill_port_with_fuser(port, "tcp", dry_run)
+                if ok:
+                    return ok, msg
+                # If fuser fails, fall through to default implementation
+        
+        # Use default implementation: find PIDs and kill them
+        return super().kill_port(port, graceful_timeout, force, dry_run)
 
 # Factory
 def get_inspector() -> BaseInspector:
@@ -1291,6 +1376,23 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                 out_killed.append({"pid": pid, "msg": msg})
             else:
                 out_failed.append({"pid": pid, "msg": msg})
+        
+        # If any processes failed to kill and fuser is available on Linux, try as last resort
+        if out_failed and isinstance(inspector, FallbackInspector) and inspector.system != "Windows" and check_dependency("fuser"):
+            if not args.json:
+                print(colorize(f"\n⚠ Some processes couldn't be killed. Trying fuser as fallback...", Colors.YELLOW))
+            fuser_ok, fuser_msg = inspector._kill_port_with_fuser(args.port, "tcp", dry_run=args.dry_run)
+            if fuser_ok:
+                # Re-check if processes are gone
+                remaining_pids = inspector.find_pids_on_port(args.port)
+                if not remaining_pids:
+                    # Success! Mark all failed as killed
+                    for f in out_failed:
+                        out_killed.append({"pid": f["pid"], "msg": f"{f['msg']} → killed with fuser"})
+                    out_failed = []
+                    if not args.json:
+                        print(colorize(f"✓ {fuser_msg}", Colors.GREEN))
+        
         if args.json:
             print(json.dumps({"port": args.port, "killed": out_killed, "failed": out_failed}, indent=2))
         else:
@@ -1400,9 +1502,9 @@ Examples:
     parser.add_argument("-kr", "--kill-range", type=str, metavar="RANGE", help="Kill processes on port range (e.g., 3000-3010)")
     parser.add_argument("-l", "--list", action="store_true", help="List all listening ports and their processes")
     parser.add_argument("--exact", action="store_true", help="Use exact match for process name lookups")
-    parser.add_argument("--force", action="store_true", help="Force kill immediately if needed (after graceful timeout)")
+    parser.add_argument("--force", action="store_true", help="Force kill immediately if needed (uses SIGKILL/fuser on Linux for stubborn processes)")
     parser.add_argument("--graceful-timeout", type=float, default=3.0, help="Seconds to wait for graceful termination before forcing (default 3.0)")
-    parser.add_argument("-v", "--version", action="version", version="kport 3.1.0")
+    parser.add_argument("-v", "--version", action="version", version="kport 3.1.1")
 
     # PRODUCT.md subcommands
     sub = parser.add_subparsers(dest="command")

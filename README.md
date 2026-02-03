@@ -495,6 +495,38 @@ sudo kport -k 80
 
 On Windows, run your terminal as Administrator.
 
+### Stubborn processes that won't die
+
+Some processes (especially Java applications) may not respond to graceful termination. Use the `--force` flag which automatically uses a multi-tier kill strategy (SIGTERM → SIGKILL → fuser):
+
+```bash
+kport -k 8081 --force
+```
+
+On Linux, `kport` will automatically use `fuser -k` as a fallback when standard kill methods fail. This is extremely effective for stubborn Java/Node/Python processes:
+
+```bash
+# Install fuser for best results (Ubuntu/Debian)
+sudo apt-get install psmisc
+
+# Install fuser (RHEL/CentOS/Fedora)
+sudo yum install psmisc
+
+# Then kport will automatically use it when needed
+kport -k 8081 --force
+```
+
+**What happens:**
+1. First tries SIGTERM (graceful shutdown)
+2. Then tries SIGKILL after timeout
+3. Finally uses `fuser -k 8081/tcp` if process still lives (Linux only)
+
+**Manual alternative:** You can also kill a port directly with fuser:
+```bash
+# Kill all processes using port 8081 (requires sudo)
+sudo fuser -k 8081/tcp
+```
+
 ### Port not found
 
 Make sure the port number is correct and that a process is actually using it. Use `kport -l` to see all active ports.
