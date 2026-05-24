@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kport"
+version = "3.1.2"
+description = "A cross-platform command-line tool to inspect and kill processes using specific ports"
+readme = "README.md"
+authors = [
+    { name = "Farman Ali", email = "farman20ali@gmail.com" }
+]
+license = { text = "GNU Affero General Public License v3" }
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Topic :: System :: Networking",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+requires-python = ">=3.8"
+dependencies = []
+
+[project.optional-dependencies]
+psutil = ["psutil>=5.9.0"]
+mcp = ["mcp>=0.1.0"]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-mock>=3.6.0",
+    "ruff>=0.1.0"
+]
+
+[project.urls]
+"Bug Reports" = "https://github.com/farman20ali/port-killer/issues"
+"Source" = "https://github.com/farman20ali/port-killer"
+
+[project.scripts]
+kport = "kport.cli:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
