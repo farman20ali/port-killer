@@ -29,7 +29,7 @@ def check_requirements():
     
     for package in required:
         result = subprocess.run(
-            f"pip show {package}",
+            f"{sys.executable} -m pip show {package}",
             shell=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
@@ -42,7 +42,7 @@ def check_requirements():
         install = input("Install missing packages? (y/N): ")
         if install.lower() in ['y', 'yes']:
             run_command(
-                f"pip install {' '.join(missing)}",
+                f"{sys.executable} -m pip install {' '.join(missing)}",
                 f"Installing {', '.join(missing)}"
             )
         else:
@@ -67,7 +67,7 @@ def clean_build():
 
 def build_package():
     """Build the package"""
-    run_command("python -m build", "Building package")
+    run_command(f"{sys.executable} -m build", "Building package")
 
 
 def upload_to_test_pypi():
@@ -78,7 +78,7 @@ def upload_to_test_pypi():
     
     if proceed.lower() in ['y', 'yes']:
         run_command(
-            "python -m twine upload --repository testpypi dist/*",
+            f"{sys.executable} -m twine upload --repository testpypi dist/*",
             "Uploading to Test PyPI"
         )
         print("\n✅ Upload successful!")
@@ -95,7 +95,7 @@ def upload_to_pypi():
     
     if proceed.lower() in ['y', 'yes']:
         run_command(
-            "python -m twine upload dist/*",
+            f"{sys.executable} -m twine upload dist/*",
             "Uploading to PyPI"
         )
         print("\n🎉 Successfully published to PyPI!")
