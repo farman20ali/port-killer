@@ -46,3 +46,84 @@ def test_parse_port_range_invalid():
         parse_port_range("invalid-format")
     with pytest.raises(InvalidPortError):
         parse_port_range("80-99999")  # out of bounds port
+
+
+import argparse
+from kport.inspectors.base import BaseInspector, ProcessInfo
+from kport.cli import check_safety_policy
+
+class MockInspector(BaseInspector):
+    def __init__(self, pids_on_port=None, proc_info_map=None):
+        self.pids_on_port = pids_on_port or {}
+        self.proc_info_map = proc_info_map or {}
+        
+    def find_pids_on_port(self, port: int):
+        return self.pids_on_port.get(port, [])
+        
+    def get_process_info(self, pid: int):
+        return self.proc_info_map.get(pid)
+
+
+def test_safety_policy_defaults():
+    inspector = MockInspector(
+        pids_on_port={80: [1234]},
+        proc_info_map={1234: ProcessInfo(pid=1234, name="nginx")}
+    )
+    
+    # Port 80 is protected by default
+    args = argparse.Namespace(bypass_safety=False)
+    safe, msg = check_safety_policy(80, [1234], args, inspector)
+    assert not safe
+    assert "Security Shield Active: Port 80 is a protected port" in msg
+
+    # Unprotected port is safe
+    safe, msg = check_safety_policy(8080, [1234], args, inspector)
+    assert safe
+    assert msg == ""
+
+
+def test_safety_policy_bypass():
+    inspector = MockInspector(
+        pids_on_port={80: [1234]},
+        proc_info_map={1234: ProcessInfo(pid=1234, name="nginx")}
+    )
+    # Bypassed safety permits the operation
+    args = argparse.Namespace(bypass_safety=True)
+    safe, msg = check_safety_policy(80, [1234], args, inspector)
+    assert safe
+    assert msg == ""
+
+
+def test_safety_policy_custom_config():
+    inspector = MockInspector(
+        pids_on_port={8080: [1234]},
+        proc_info_map={1234: ProcessInfo(pid=1234, name="custom-app")}
+    )
+    
+    # Custom config protects 8080 and custom-app
+    args = argparse.Namespace(
+        bypass_safety=False,
+        protected_ports=[8080],
+        protected_processes=["custom-app"]
+    )
+    
+    safe, msg = check_safety_policy(8080, [1234], args, inspector)
+    assert not safe
+    assert "Port 8080 is a protected port" in msg
+
+    # Port 80 is no longer protected (completely overridden by custom list)
+    safe, msg = check_safety_policy(80, [], args, inspector)
+    assert safe
+
+
+def test_safety_policy_process_shield():
+    # Test that a protected process name blocks the kill even if the port is not protected
+    inspector = MockInspector(
+        pids_on_port={9000: [9999]},
+        proc_info_map={9999: ProcessInfo(pid=9999, name="docker")}
+    )
+    args = argparse.Namespace(bypass_safety=False)
+    
+    safe, msg = check_safety_policy(9000, [9999], args, inspector)
+    assert not safe
+    assert "critical process 'docker'" in msg

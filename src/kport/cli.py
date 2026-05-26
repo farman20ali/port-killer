@@ -40,6 +40,53 @@ EXIT_PORT_DOCKER = 4
 EXIT_PORT_FREE = 5
 
 
+# Default safety policies (Phase 2 Pro features)
+DEFAULT_PROTECTED_PORTS = {22, 53, 80, 443, 3306, 5432, 6379, 6443}
+DEFAULT_PROTECTED_PROCESS_NAMES = {
+    "systemd", "init", "docker", "dockerd", "sshd", "explorer.exe", "lsass.exe", "services.exe"
+}
+
+
+def check_safety_policy(port: Optional[int], pids: List[int], args: argparse.Namespace, inspector: BaseInspector) -> Tuple[bool, str]:
+    """
+    Check if a port or any associated PIDs are protected by safety policies.
+    Returns (True, "") if safety policy permits, or (False, error_msg) if blocked.
+    """
+    bypass = getattr(args, "bypass_safety", False)
+    
+    # 1. Resolve active protected lists (merging defaults and config overrides)
+    protected_ports = set(DEFAULT_PROTECTED_PORTS)
+    config_ports = getattr(args, "protected_ports", None)
+    if isinstance(config_ports, list):
+        protected_ports = set(config_ports)
+        
+    protected_procs = set(DEFAULT_PROTECTED_PROCESS_NAMES)
+    config_procs = getattr(args, "protected_processes", None)
+    if isinstance(config_procs, list):
+        protected_procs = {p.lower() for p in config_procs}
+
+    # 2. Check Port protection
+    if port is not None and port in protected_ports:
+        if bypass:
+            debug_log(getattr(args, "debug", False), f"Safety shield bypassed for protected port {port}")
+        else:
+            return False, f"Security Shield Active: Port {port} is a protected port. Action aborted. Use --bypass-safety to override."
+
+    # 3. Check Process protection
+    for pid in pids:
+        try:
+            info = inspector.get_process_info(pid)
+            if info and info.name.lower() in protected_procs:
+                if bypass:
+                    debug_log(getattr(args, "debug", False), f"Safety shield bypassed for protected process '{info.name}' (PID {pid})")
+                else:
+                    return False, f"Security Shield Active: PID {pid} runs critical process '{info.name}' which is protected. Action aborted. Use --bypass-safety to override."
+        except Exception:
+            pass
+
+    return True, ""
+
+
 def debug_log(enabled: bool, msg: str) -> None:
     if enabled:
         print(colorize(f"[debug] {msg}", Colors.BLUE), file=sys.stderr)
@@ -101,7 +148,12 @@ def apply_config_defaults(args: argparse.Namespace, cfg: Dict[str, Any]) -> None
     _set_bool("json", "json")
     _set_bool("debug", "debug")
     _set_bool("force", "force")
+    _set_bool("bypass_safety", "bypass_safety")
     _set_num("graceful_timeout", "graceful_timeout")
+
+    # Custom safety lists from config
+    setattr(args, "protected_ports", cfg.get("protected_ports"))
+    setattr(args, "protected_processes", cfg.get("protected_processes"))
 
     if hasattr(args, "docker_action") and getattr(args, "docker_action", None) is None:
         v = cfg.get("docker_action")
@@ -286,6 +338,17 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
 
     if args.command == "kill":
         validate_port(args.port)
+        pids = inspector.find_pids_on_port(args.port)
+        
+        # Check safety policy
+        safe, safety_msg = check_safety_policy(args.port, pids, args, inspector)
+        if not safe:
+            if args.json:
+                print(json.dumps({"port": args.port, "success": False, "message": safety_msg}, indent=2))
+            else:
+                print(colorize(safety_msg, Colors.RED), file=sys.stderr)
+            return EXIT_PERMISSION
+
         local_bindings = [b for b in inspector.list_listening() if b.port == args.port]
         docker_hits = docker_mappings_for_host_port(args.port, debug=debug)
         if docker_hits:
@@ -396,6 +459,15 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                 print(colorize(f"✗ No processes found matching '{pname}'", Colors.RED))
             return EXIT_OK
         
+        # Check safety policy
+        safe, safety_msg = check_safety_policy(None, pids, args, inspector)
+        if not safe:
+            if args.json:
+                print(json.dumps({"name": pname, "success": False, "message": safety_msg}, indent=2))
+            else:
+                print(colorize(safety_msg, Colors.RED), file=sys.stderr)
+            return EXIT_PERMISSION
+        
         if not args.json and not confirm_prompt(f"Proceed to terminate {len(pids)} process(es)?", assume_yes=args.yes):
             print(colorize("Operation cancelled.", Colors.YELLOW))
             return EXIT_GENERAL_ERROR
@@ -452,6 +524,104 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                         print(f"- Local process: {proc.get('name') or 'Unknown'}")
         return EXIT_OK
 
+    if args.command == "watch":
+        validate_port(args.port)
+        interval = getattr(args, "interval", 1.0)
+        
+        import time
+        from datetime import datetime
+        
+        def get_current_state() -> Dict[str, Any]:
+            local_bindings = [b for b in inspector.list_listening() if b.port == args.port]
+            docker_hits = docker_mappings_for_host_port(args.port, debug=debug)
+            pids = inspector.find_pids_on_port(args.port)
+            
+            if docker_hits:
+                m = docker_hits[0]
+                return {
+                    "type": "docker",
+                    "container": m.container_name,
+                    "image": m.image,
+                    "status": m.status,
+                    "host_port": m.host_port,
+                    "container_port": m.container_port,
+                }
+            elif pids:
+                procs = []
+                for pid in pids:
+                    info = inspector.get_process_info(pid)
+                    procs.append(info.name if info else "Unknown")
+                return {
+                    "type": "local",
+                    "pids": pids,
+                    "processes": procs,
+                }
+            elif local_bindings:
+                return {
+                    "type": "local-unknown",
+                    "message": "Owning PID not visible"
+                }
+            else:
+                return {"type": "free"}
+
+        def describe_state(state: Dict[str, Any]) -> str:
+            stype = state["type"]
+            if stype == "free":
+                return "FREE (no active connections)"
+            elif stype == "docker":
+                return f"DOCKER container '{state['container']}' ({state['image']}, status={state['status']})"
+            elif stype == "local":
+                procs_str = ", ".join(f"{name} (PID {pid})" for pid, name in zip(state["pids"], state["processes"]))
+                return f"LOCAL process(es): {procs_str}"
+            elif stype == "local-unknown":
+                return "LOCAL (PID not visible/hidden)"
+            return "UNKNOWN"
+
+        last_state = None
+        
+        if args.json:
+            initial = get_current_state()
+            initial["timestamp"] = datetime.now().isoformat()
+            print(json.dumps(initial))
+            sys.stdout.flush()
+            last_state = initial
+        else:
+            initial = get_current_state()
+            print(colorize(f"👀 Watching port {args.port} (interval={interval}s). Press Ctrl+C to stop.", Colors.CYAN + Colors.BOLD))
+            print(colorize(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Initial state: {describe_state(initial)}", Colors.WHITE))
+            last_state = initial
+            
+        try:
+            while True:
+                time.sleep(interval)
+                current = get_current_state()
+                
+                changed = False
+                if current["type"] != last_state["type"]:
+                    changed = True
+                elif current["type"] == "docker":
+                    if current["container"] != last_state.get("container") or current["status"] != last_state.get("status"):
+                        changed = True
+                elif current["type"] == "local":
+                    if set(current["pids"]) != set(last_state.get("pids", [])):
+                        changed = True
+                
+                if changed:
+                    ts = datetime.now()
+                    if args.json:
+                        current["timestamp"] = ts.isoformat()
+                        print(json.dumps(current))
+                        sys.stdout.flush()
+                    else:
+                        desc = describe_state(current)
+                        color = Colors.GREEN if current["type"] == "free" else Colors.YELLOW
+                        print(colorize(f"[{ts.strftime('%Y-%m-%d %H:%M:%S')}] 🔁 State changed: {desc}", color + Colors.BOLD))
+                    last_state = current
+        except KeyboardInterrupt:
+            if not args.json:
+                print(colorize("\nStopping watch mode.", Colors.CYAN))
+            return EXIT_OK
+
     if args.command == "mcp":
         from .mcp_server import run_mcp_server
         run_mcp_server()
@@ -482,6 +652,7 @@ Examples:
     parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompts")
     parser.add_argument("--debug", action="store_true", help="Verbose internal logs")
     parser.add_argument("--config", type=str, default=None, help="Path to JSON config file")
+    parser.add_argument("--bypass-safety", action="store_true", help="Bypass safety shields on protected ports/processes")
 
     # Legacy flags
     parser.add_argument("-i", "--inspect", type=int, metavar="PORT", help="Inspect specified port")
@@ -523,6 +694,7 @@ Examples:
     sp_kill.add_argument("--force", action="store_true")
     sp_kill.add_argument("--graceful-timeout", type=float, default=3.0)
     sp_kill.add_argument("--config", type=str, default=None)
+    sp_kill.add_argument("--bypass-safety", action="store_true", help="Bypass safety shields on protected ports/processes")
 
     sp_kp = sub.add_parser("kill-process", help="Kill processes by name")
     sp_kp.add_argument("name", type=str)
@@ -534,6 +706,7 @@ Examples:
     sp_kp.add_argument("--force", action="store_true")
     sp_kp.add_argument("--graceful-timeout", type=float, default=3.0)
     sp_kp.add_argument("--config", type=str, default=None)
+    sp_kp.add_argument("--bypass-safety", action="store_true", help="Bypass safety shields on protected ports/processes")
 
     sp_list = sub.add_parser("list", help="List active ports (local + docker)")
     sp_list.add_argument("--json", action="store_true")
@@ -549,6 +722,13 @@ Examples:
     sp_conflicts.add_argument("--json", action="store_true")
     sp_conflicts.add_argument("--debug", action="store_true")
     sp_conflicts.add_argument("--config", type=str, default=None)
+
+    sp_watch = sub.add_parser("watch", help="Live monitoring of port ownership")
+    sp_watch.add_argument("port", type=int)
+    sp_watch.add_argument("--interval", type=float, default=1.0, help="Polling interval in seconds")
+    sp_watch.add_argument("--json", action="store_true")
+    sp_watch.add_argument("--debug", action="store_true")
+    sp_watch.add_argument("--config", type=str, default=None)
 
     sp_mcp = sub.add_parser("mcp", help="Start the stdio Model Context Protocol (MCP) server")
 
@@ -723,6 +903,14 @@ Examples:
                 else:
                     print(colorize(f"❌ No processes found matching '{pname}'", Colors.RED))
             else:
+                # Check safety policy
+                safe, safety_msg = check_safety_policy(None, pids, args, inspector)
+                if not safe:
+                    if args.json:
+                        print(json.dumps({"name": pname, "success": False, "message": safety_msg}, indent=2))
+                    else:
+                        print(colorize(safety_msg, Colors.RED), file=sys.stderr)
+                    return EXIT_PERMISSION
                 if args.json:
                     out = []
                     for pid in pids:
@@ -772,9 +960,19 @@ Examples:
         # Kill single port (legacy) - escalated & verified (Fixes Bug 1 & Bug 2)
         if args.kill:
             validate_port(args.kill)
+            pids = inspector.find_pids_on_port(args.kill)
+            
+            # Check safety policy
+            safe, safety_msg = check_safety_policy(args.kill, pids, args, inspector)
+            if not safe:
+                if args.json:
+                    print(json.dumps({"port": args.kill, "success": False, "message": safety_msg}, indent=2))
+                else:
+                    print(colorize(safety_msg, Colors.RED), file=sys.stderr)
+                return EXIT_PERMISSION
+
             local_bindings = [b for b in inspector.list_listening() if b.port == args.kill]
             docker_hits = docker_mappings_for_host_port(args.kill, debug=args.debug)
-            pids = inspector.find_pids_on_port(args.kill)
             if not pids:
                 if docker_hits:
                     m = docker_hits[0]
@@ -847,6 +1045,13 @@ Examples:
         if args.kill_all:
             for port in args.kill_all:
                 validate_port(port)
+            # Safety shield check
+            for port in args.kill_all:
+                pids = inspector.find_pids_on_port(port)
+                safe, safety_msg = check_safety_policy(port, pids, args, inspector)
+                if not safe:
+                    print(colorize(f"Port {port} failed safety check: {safety_msg}", Colors.RED), file=sys.stderr)
+                    return EXIT_PERMISSION
             port_pid_map = {}
             for port in args.kill_all:
                 pids = inspector.find_pids_on_port(port)
@@ -882,6 +1087,13 @@ Examples:
         # Kill range (legacy)
         if args.kill_range:
             ports = parse_port_range(args.kill_range)
+            # Safety shield check
+            for port in ports:
+                pids = inspector.find_pids_on_port(port)
+                safe, safety_msg = check_safety_policy(port, pids, args, inspector)
+                if not safe:
+                    print(colorize(f"Port {port} failed safety check: {safety_msg}", Colors.RED), file=sys.stderr)
+                    return EXIT_PERMISSION
             port_pid_map = {}
             for port in ports:
                 pids = inspector.find_pids_on_port(port)

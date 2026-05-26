@@ -4,9 +4,11 @@ import types
 import importlib
 import inspect
 
-# Ensure src is on sys.path so `kport` package can be imported
+# Ensure src and ROOT are on sys.path so `kport` and `tests` packages can be imported
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(ROOT, 'src')
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
