@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   productbuild distribution file for kport macOS .pkg installer
-  Used by: productbuild --distribution packaging/macos/distribution.xml
+  Used by: productbuild distribution file packaging/macos/distribution.xml
 -->
 <installer-gui-script minSpecVersion="2">
 
