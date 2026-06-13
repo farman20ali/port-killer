@@ -36,10 +36,8 @@ setup(
         "Operating System :: POSIX :: Linux",
         "Operating System :: MacOS",
     ],
-    python_requires=">=3.6",
-    install_requires=[
-        "psutil>=5.9.0",
-    ],
+    python_requires=">=3.8",
+    install_requires=[],  # zero mandatory deps; psutil optional via [psutil] extra
     entry_points={
         "console_scripts": [
             "kport=kport.cli:main",

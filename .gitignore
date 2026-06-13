@@ -27,9 +27,10 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# PyInstaller
+# PyInstaller — ignore auto-generated root-level spec files only
 *.manifest
-*.spec
+# *.spec intentionally NOT ignored — packaging/windows/kport.spec is source-controlled
+# To ignore only root-level generated specs, add them explicitly if needed (e.g. kport.spec in root)
 
 # Unit test / coverage reports
 htmlcov/

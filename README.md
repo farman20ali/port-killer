@@ -1,14 +1,15 @@
 # 🔪 kport - Cross-Platform Port Inspector and Killer
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/farman20ali/port-killer)
-[![Python](https://img.shields.io/badge/python-3.6+-blue.svg)](https://www.python.org/downloads/)
+[![Version](https://img.shields.io/badge/version-3.2.0-blue.svg)](https://github.com/farman20ali/port-killer)
+[![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/farman20ali/port-killer)
 
-A simple, powerful command-line tool to inspect and kill processes using specific ports on Windows, Linux, and macOS.
+A powerful, cross-platform command-line tool to inspect, kill, and monitor processes using specific ports — with **AI safety shields**, **Watch Mode**, **Docker awareness**, and an **MCP server** for AI agent integration.
 
 ## ✨ Features
 
+### Core
 - 🔍 **Inspect ports** - Find which process is using a specific port
 - 🔎 **Inspect multiple ports** - Check multiple ports at once
 - 🔍 **Inspect port range** - Scan a range of ports (e.g., 3000-3010)
@@ -22,7 +23,14 @@ A simple, powerful command-line tool to inspect and kill processes using specifi
 - 🎨 **Colorized output** - Easy-to-read colored terminal output
 - ✅ **Confirmation prompts** - Safety confirmation before killing processes
 - 🌍 **Cross-platform** - Works on Windows, Linux, and macOS
-- 🚀 **Easy to use** - Simple command-line interface
+
+### Phase 2 Pro (v3.2.0)
+- 👁️ **Watch Mode** - Monitor a port in real-time and auto-kill on new connections
+- 🛡️ **Safety Shield** - Block kills on critical system ports (SSH, DNS, DB, K8s) and protected processes by default
+- ⚙️ **Config File** - Set persistent defaults via `.kport.json` (project, home, or global)
+- 🔓 **Bypass Safety** - Override safety shields with `--bypass-safety` when needed
+- 🤖 **MCP Server** - Model Context Protocol server for AI agent integration (Claude, Copilot, Cursor, etc.)
+- 📦 **Cross-platform packaging** - Native builds for Windows (`.exe`), macOS (`.pkg`), Debian (`.deb`), and RPM
 
 ## 📦 Installation
 
@@ -79,9 +87,7 @@ python kport.py -h
 
 ## 🚀 Usage
 
-### PRODUCT.md command style (recommended)
-
-These commands are Docker-aware by default:
+### Core commands (Docker-aware by default)
 
 ```bash
 # Inspect a port (local or docker)
@@ -103,7 +109,75 @@ kport docker
 kport conflicts
 ```
 
-> Note: `--json`, `--dry-run`, `--yes`, and `--debug` work with subcommands.
+> Note: `--json`, `--dry-run`, `--yes`, and `--debug` work with all subcommands.
+
+### 👁️ Watch Mode (v3.2.0)
+
+Continuously monitor a port and automatically kill any process that starts using it:
+
+```bash
+# Watch port 8080 and auto-kill any process that binds to it (check every 1s)
+kport watch 8080
+
+# Watch with custom interval (every 2.5 seconds)
+kport watch 8080 --interval 2.5
+
+# Watch in dry-run mode (just print alerts, don't kill)
+kport watch 8080 --dry-run
+
+# Watch with JSON output (for CI/automation)
+kport watch 8080 --json
+```
+
+### 🛡️ Safety Shield (v3.2.0)
+
+The Safety Shield prevents accidental termination of critical system services:
+
+```bash
+# This will be BLOCKED by the Safety Shield (port 22 = SSH):
+kport kill 22
+# Output: 🛡️ Security Shield Active: Port 22 is a protected port.
+
+# Override the shield when you REALLY need to (use with caution):
+kport kill 22 --bypass-safety
+
+# The shield also protects critical processes:
+kport kill 8080
+# Output if sshd or docker is found: 🛡️ Security Shield: critical process 'docker' ...
+```
+
+**Default protected ports:** `22` (SSH), `53` (DNS), `80` (HTTP), `443` (HTTPS), `3306` (MySQL), `5432` (PostgreSQL), `6379` (Redis), `6443` (Kubernetes API)
+
+**Default protected processes:** `systemd`, `init`, `docker`, `dockerd`, `sshd`, `explorer.exe`, `lsass.exe`, `services.exe`
+
+### 🤖 MCP Server (AI Agent Integration)
+
+Run kport as an MCP server so AI assistants can inspect and free ports on your behalf:
+
+```bash
+# Start the MCP server (stdio transport)
+kport --mcp
+# or
+python -m kport.mcp_server
+```
+
+**Available MCP tools:**
+- `list_ports` — List all active listening ports (local + Docker)
+- `inspect_port` — Detailed info about a specific port
+- `kill_port` — Free a port (always respects the Safety Shield)
+
+Configure in Claude Desktop / Cursor / VS Code Copilot:
+
+```json
+{
+  "mcpServers": {
+    "kport": {
+      "command": "kport",
+      "args": ["--mcp"]
+    }
+  }
+}
+```
 
 ### Why a port may show without PID
 
@@ -128,15 +202,15 @@ sudo -E "$HOME/.local/bin/kport" inspect 6379
 sudo -E python3 kport.py inspect 6379
 ```
 
-### Config file support (Phase 2)
+### ⚙️ Config file support
 
-You can set default flags via JSON config:
+Set persistent defaults via a JSON config file (searched in this priority order):
 
-- `.kport.json` (current directory)
-- `~/.kport.json`
-- `~/.config/kport/config.json`
+1. `.kport.json` (current directory — project-level)
+2. `~/.kport.json` (user-level)
+3. `~/.config/kport/config.json` (XDG-compliant)
 
-Example:
+**Full example config:**
 
 ```json
 {
@@ -144,9 +218,13 @@ Example:
   "dry_run": false,
   "force": false,
   "graceful_timeout": 5,
-  "docker_action": "stop"
+  "docker_action": "stop",
+  "protected_ports": [8080, 9090],
+  "protected_processes": ["my-critical-app", "postgres"]
 }
 ```
+
+> **Note:** Setting `protected_ports` or `protected_processes` in your config **replaces** (not extends) the default Safety Shield lists.
 
 ### Inspect a port
 
@@ -375,7 +453,36 @@ kport -h
 kport -v
 ```
 
-## 📚 Command-Line Options
+## 📚 Command-Line Reference
+
+### Subcommands (Recommended)
+
+| Subcommand | Description |
+|------------|-------------|
+| `kport list` | List all listening ports (local + Docker) |
+| `kport inspect PORT` | Inspect port (local or Docker) |
+| `kport explain PORT` | Explain why a port is occupied (with conflict analysis) |
+| `kport kill PORT` | Free a port (safety-shielded, Docker-aware) |
+| `kport watch PORT` | Monitor port in real-time and auto-kill on activity |
+| `kport docker` | List Docker-published ports |
+| `kport conflicts` | Detect port conflicts between Docker and local processes |
+
+### Subcommand Flags
+
+| Flag | Commands | Description |
+|------|----------|-------------|
+| `--json` | all | Output results as JSON |
+| `--dry-run` | kill, watch | Simulate actions without killing |
+| `--yes` | kill, watch | Skip confirmation prompts |
+| `--force` | kill, watch | Force kill (SIGKILL after SIGTERM) |
+| `--debug` | all | Enable verbose debug output |
+| `--bypass-safety` | kill, watch | Override Safety Shield for protected ports/processes |
+| `--interval SECS` | watch | Poll interval in seconds (default: 1.0) |
+| `--graceful-timeout SECS` | kill, watch | Seconds to wait for graceful shutdown (default: 3.0) |
+| `--docker-action` | kill | Docker action: `stop`, `restart`, or `rm` |
+| `--mcp` | (root flag) | Start the MCP JSON-RPC server on stdio |
+
+### Legacy Flags (still supported)
 
 | Option | Long Form | Description |
 |--------|-----------|-------------|
@@ -393,15 +500,20 @@ kport -v
 
 ## 🛠️ Requirements
 
-- Python 3.6 or higher
-- No external dependencies (uses only Python standard library)
+- Python 3.8 or higher
+- No mandatory external dependencies (uses only Python standard library by default)
 
-### Platform-specific tools
+### Optional Dependencies
 
-The tool uses platform-native commands:
+| Package | Purpose | Install |
+|---------|---------|------|
+| `psutil` | Faster, richer process info | `pip install psutil` |
+| `mcp` | MCP server SDK (alternative transport) | `pip install mcp` |
+
+### Platform-specific tools (fallback if psutil not available)
 
 - **Windows**: `netstat`, `tasklist`, `taskkill`
-- **Linux/macOS**: `lsof`, `ps`, `kill`
+- **Linux/macOS**: `lsof`, `ss`, `fuser`, `ps`, `kill`
 
 These tools are typically pre-installed on all platforms.
 
@@ -431,9 +543,10 @@ kport -l
 
 - **[Installation Guide](INSTALL.md)** - Detailed installation instructions
 - **[Quick Start](QUICKSTART.md)** - Get started quickly
-- **[Publishing Guide](PUBLISH.md)** - How to publish kport
-- **[Release Guide](RELEASE_GUIDE.md)** - Creating releases (manual & automated)
-- **[Debian Release](DEB_RELEASE.md)** - Debian packaging and APT distribution
+- **[Packaging Guide](PACKAGING.md)** - Cross-platform binary and package builds
+- **[Publishing Guide](PUBLISH.md)** - How to publish kport to PyPI
+- **[Release Guide](docs/RELEASE_GUIDE.md)** - Creating releases (manual & automated)
+- **[Release Notes v3.2.0](docs/RELEASE_NOTES_3.2.0.md)** - What's new in 3.2.0
 - **[Contributing](CONTRIBUTING.md)** - How to contribute
 
 ## 🚀 For Maintainers

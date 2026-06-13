@@ -10,7 +10,8 @@ readme = "README.md"
 authors = [
     { name = "Farman Ali", email = "alienhub.dev@gmail.com" }
 ]
-license = { text = "GNU Affero General Public License v3" }
+license = "AGPL-3.0-only"
+keywords = ["port", "kill", "process", "network", "cross-platform", "cli", "devops"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
