@@ -40,6 +40,11 @@ EXIT_PERMISSION = 3
 EXIT_PORT_DOCKER = 4
 EXIT_PORT_FREE = 5
 
+class _QuietParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        print(colorize(f"Error: {message}", Colors.RED), file=sys.stderr)
+        print(f"Run 'kport --help' for usage.", file=sys.stderr)
+        sys.exit(EXIT_INVALID_INPUT)
 
 def _configure_stdio() -> None:
     """Use UTF-8 on Windows so emoji/symbols in CLI output do not crash."""
@@ -207,6 +212,9 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
     debug = bool(getattr(args, "debug", False))
 
     if args.command == "docker":
+        extra = getattr(args, "extra", [])
+        if extra:
+            print(colorize(f"Note: 'kport docker' has no subcommands. Ignoring: {' '.join(extra)}", Colors.YELLOW), file=sys.stderr)
         maps = list_docker_mappings(debug=debug)
         if args.json:
             print(jsonify_docker(maps))
@@ -644,7 +652,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
 
 def main(argv: Optional[List[str]] = None) -> int:
     _configure_stdio()
-    parser = argparse.ArgumentParser(
+    parser = _QuietParser(
         description="kport - Cross-platform port inspector and killer",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
