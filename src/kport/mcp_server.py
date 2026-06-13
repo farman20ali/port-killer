@@ -151,7 +151,7 @@ def handle_inspect_port(port: int) -> Dict[str, Any]:
         raise ValueError(f"Port {port} is out of bounds (1-65535)")
 
     inspector = get_inspector()
-    local_bindings = [b for b in inspector.list_listening() if b.port == port]
+    local_bindings = inspector.find_bindings_on_port(port)
     docker_hits = docker_mappings_for_host_port(port)
     pids = inspector.find_pids_on_port(port)
 
@@ -238,7 +238,7 @@ def handle_kill_port(port: int, force: bool = True, docker_action: str = "stop")
 
     # 4. No PIDs path
     if not pids:
-        local_bindings = [b for b in inspector.list_listening() if b.port == port]
+        local_bindings = inspector.find_bindings_on_port(port)
         if local_bindings:
             return {
                 "success": False,

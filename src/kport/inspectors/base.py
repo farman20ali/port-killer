@@ -39,6 +39,10 @@ class BaseInspector:
         """Find PIDs currently bound to a port."""
         raise NotImplementedError()
 
+    def find_bindings_on_port(self, port: int) -> List[PortBinding]:
+        """Find listening bindings for a specific port."""
+        return [b for b in self.list_listening() if b.port == port]
+
     def get_process_info(self, pid: int) -> Optional[ProcessInfo]:
         """Get details about a specific process PID."""
         raise NotImplementedError()

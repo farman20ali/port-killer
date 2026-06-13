@@ -24,7 +24,9 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 requires-python = ">=3.8"
-dependencies = []
+dependencies = [
+    "psutil>=5.9.0",
+]
 
 [project.optional-dependencies]
 psutil = ["psutil>=5.9.0"]

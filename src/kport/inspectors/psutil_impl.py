@@ -54,6 +54,36 @@ class PsutilInspector(BaseInspector):
                 pids.add(conn.pid)
         return sorted(pids)
 
+    def find_bindings_on_port(self, port: int) -> List[PortBinding]:
+        bindings: List[PortBinding] = []
+        for conn in psutil.net_connections(kind='inet'):
+            if not conn.laddr:
+                continue
+            try:
+                conn_port = conn.laddr.port if hasattr(conn.laddr, 'port') else conn.laddr[1]
+            except Exception:
+                continue
+            if conn_port != port:
+                continue
+            laddr = f"{conn.laddr.ip}:{conn.laddr.port}" if hasattr(conn.laddr, 'ip') else f"{conn.laddr[0]}:{conn.laddr[1]}"
+            family = 'IPv6' if conn.family.name == 'AF_INET6' else 'IPv4'
+            pid = conn.pid
+            proc_name = None
+            if pid:
+                try:
+                    proc_name = psutil.Process(pid).name()
+                except Exception:
+                    proc_name = None
+            bindings.append(PortBinding(
+                port=conn_port,
+                family=family,
+                laddr=laddr,
+                pid=pid,
+                process_name=proc_name,
+                state=conn.status,
+            ))
+        return sorted(bindings, key=lambda b: b.port)
+
     def get_process_info(self, pid: int) -> Optional[ProcessInfo]:
         try:
             p = psutil.Process(pid)

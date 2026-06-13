@@ -22,13 +22,30 @@ class Colors:
     RESET = '\033[0m'
 
 
+_ansi_enabled = False
+
+
+def _enable_ansi() -> None:
+    """Enable ANSI escape processing on Windows consoles (once)."""
+    global _ansi_enabled
+    if _ansi_enabled or platform.system() != "Windows":
+        return
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        mode = ctypes.c_ulong()
+        if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            kernel32.SetConsoleMode(handle, mode.value | 0x0004)
+        _ansi_enabled = True
+    except Exception:
+        pass
+
+
 def colorize(text: str, color: str) -> str:
     """Colorize text for terminal output, handling Windows console compatibility."""
     if platform.system() == "Windows":
-        try:
-            os.system("")  # Enable ANSI escape processing in modern Windows terminals
-        except Exception:
-            pass
+        _enable_ansi()
     return f"{color}{text}{Colors.RESET}"
 
 
@@ -59,7 +76,7 @@ def confirm_prompt(prompt: str, assume_yes: bool = False) -> bool:
         resp = input(colorize(prompt + " (y/N): ", Colors.MAGENTA))
         return resp.strip().lower() in ("y", "yes")
     except KeyboardInterrupt:
-        print(colorize("\nOperation cancelled.", Colors.YELLOW))
+        print("\nOperation cancelled.")
         sys.exit(1)
 
 
@@ -71,7 +88,7 @@ def choose_docker_action(assume_yes: bool) -> Optional[str]:
     try:
         resp = input(colorize("Select (1-4): ", Colors.MAGENTA)).strip()
     except KeyboardInterrupt:
-        print(colorize("\nOperation cancelled.", Colors.YELLOW))
+        print("\nOperation cancelled.")
         return None
     mapping = {"1": "stop", "2": "restart", "3": "rm", "4": None}
     return mapping.get(resp)

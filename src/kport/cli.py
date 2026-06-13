@@ -41,6 +41,17 @@ EXIT_PORT_DOCKER = 4
 EXIT_PORT_FREE = 5
 
 
+def _configure_stdio() -> None:
+    """Use UTF-8 on Windows so emoji/symbols in CLI output do not crash."""
+    if sys.platform != "win32":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
+
 # Default safety policies (Phase 2 Pro features)
 DEFAULT_PROTECTED_PORTS = {22, 53, 80, 443, 3306, 5432, 6379, 6443}
 DEFAULT_PROTECTED_PROCESS_NAMES = {
@@ -214,7 +225,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
 
     if args.command == "inspect":
         validate_port(args.port)
-        local_bindings = [b for b in inspector.list_listening() if b.port == args.port]
+        local_bindings = inspector.find_bindings_on_port(args.port)
         docker_hits = docker_mappings_for_host_port(args.port, debug=debug)
         pids = inspector.find_pids_on_port(args.port)
 
@@ -282,7 +293,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
 
     if args.command == "explain":
         validate_port(args.port)
-        local_bindings = [b for b in inspector.list_listening() if b.port == args.port]
+        local_bindings = inspector.find_bindings_on_port(args.port)
         docker_hits = docker_mappings_for_host_port(args.port, debug=debug)
         if docker_hits:
             m = docker_hits[0]
@@ -350,7 +361,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                 print(colorize(safety_msg, Colors.RED), file=sys.stderr)
             return EXIT_PERMISSION
 
-        local_bindings = [b for b in inspector.list_listening() if b.port == args.port]
+        local_bindings = inspector.find_bindings_on_port(args.port)
         docker_hits = docker_mappings_for_host_port(args.port, debug=debug)
         if docker_hits:
             m = docker_hits[0]
@@ -533,7 +544,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
         from datetime import datetime
         
         def get_current_state() -> Dict[str, Any]:
-            local_bindings = [b for b in inspector.list_listening() if b.port == args.port]
+            local_bindings = inspector.find_bindings_on_port(args.port)
             docker_hits = docker_mappings_for_host_port(args.port, debug=debug)
             pids = inspector.find_pids_on_port(args.port)
             
@@ -632,6 +643,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    _configure_stdio()
     parser = argparse.ArgumentParser(
         description="kport - Cross-platform port inspector and killer",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -765,7 +777,7 @@ Examples:
         # Inspect port
         if args.inspect:
             validate_port(args.inspect)
-            local_bindings = [b for b in inspector.list_listening() if b.port == args.inspect]
+            local_bindings = inspector.find_bindings_on_port(args.inspect)
             docker_hits = docker_mappings_for_host_port(args.inspect, debug=args.debug)
             pids = inspector.find_pids_on_port(args.inspect)
             if not pids:
@@ -972,7 +984,7 @@ Examples:
                     print(colorize(safety_msg, Colors.RED), file=sys.stderr)
                 return EXIT_PERMISSION
 
-            local_bindings = [b for b in inspector.list_listening() if b.port == args.kill]
+            local_bindings = inspector.find_bindings_on_port(args.kill)
             docker_hits = docker_mappings_for_host_port(args.kill, debug=args.debug)
             if not pids:
                 if docker_hits:
@@ -1140,7 +1152,7 @@ Examples:
         print(colorize("Permission denied. Try running with elevated privileges (sudo/admin).", Colors.RED), file=sys.stderr)
         return EXIT_PERMISSION
     except KeyboardInterrupt:
-        print(colorize("\nOperation cancelled by user.", Colors.YELLOW))
+        print("\nOperation cancelled by user.")
         return EXIT_GENERAL_ERROR
     except Exception as e:
         print(colorize(f"Unexpected error: {e}", Colors.RED), file=sys.stderr)
