@@ -10,6 +10,7 @@ import traceback
 from typing import Dict, Any, List
 from .inspectors import get_inspector
 from .docker_engine import list_docker_mappings, docker_mappings_for_host_port, docker_action_on_container
+from . import __version__
 
 # Security blocklist: ports that AI agents are prevented from killing by default.
 PROTECTED_PORTS = {
@@ -292,7 +293,7 @@ def run_mcp_server() -> None:
                         },
                         "serverInfo": {
                             "name": "kport",
-                            "version": "3.2.0"
+                            "version": __version__
                         }
                     }
                 }

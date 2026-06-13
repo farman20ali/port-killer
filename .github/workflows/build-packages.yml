@@ -196,13 +196,14 @@ jobs:
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          elif [[ -n "${{ github.event.inputs.version }}" ]]; then
+            echo "tag=v${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
           else
             # workflow_dispatch: derive from pyproject.toml
             VERSION=$(python -c "
-          import re, pathlib
-          text = pathlib.Path('pyproject.toml').read_text()
-          m = re.search(r'version\s*=\s*[\"\']([\w.]+)[\"\']\', text)
-          print(m.group(1) if m else '0.0.0')
+          import pathlib, tomllib
+          data = tomllib.loads(pathlib.Path('pyproject.toml').read_text())
+          print(data.get('project', {}).get('version', '0.0.0'))
           ")
             echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
           fi
