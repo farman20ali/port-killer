@@ -9,7 +9,7 @@ import argparse
 import json
 import os
 import sys
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 from dataclasses import asdict
 
 from .exceptions import KPortError, InvalidPortError, PermissionDeniedError
@@ -40,11 +40,13 @@ EXIT_PERMISSION = 3
 EXIT_PORT_DOCKER = 4
 EXIT_PORT_FREE = 5
 
+
 class _QuietParser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
         print(colorize(f"Error: {message}", Colors.RED), file=sys.stderr)
         print(f"Run 'kport --help' for usage.", file=sys.stderr)
         sys.exit(EXIT_INVALID_INPUT)
+
 
 def _configure_stdio() -> None:
     """Use UTF-8 on Windows so emoji/symbols in CLI output do not crash."""
@@ -70,13 +72,13 @@ def check_safety_policy(port: Optional[int], pids: List[int], args: argparse.Nam
     Returns (True, "") if safety policy permits, or (False, error_msg) if blocked.
     """
     bypass = getattr(args, "bypass_safety", False)
-    
+
     # 1. Resolve active protected lists (merging defaults and config overrides)
     protected_ports = set(DEFAULT_PROTECTED_PORTS)
     config_ports = getattr(args, "protected_ports", None)
     if isinstance(config_ports, list):
         protected_ports = set(config_ports)
-        
+
     protected_procs = set(DEFAULT_PROTECTED_PROCESS_NAMES)
     config_procs = getattr(args, "protected_processes", None)
     if isinstance(config_procs, list):
@@ -147,15 +149,16 @@ def load_config(config_path: Optional[str], debug: bool = False) -> Dict[str, An
 def apply_config_defaults(args: argparse.Namespace, cfg: Dict[str, Any]) -> None:
     """Apply configuration options as fallback defaults to argparse Namespace."""
     def _set_bool(name: str, key: str) -> None:
+        # Only apply if the attribute exists AND is still at its default (False)
         if hasattr(args, name) and getattr(args, name) is False and isinstance(cfg.get(key), bool):
             setattr(args, name, cfg[key])
 
     def _set_num(name: str, key: str) -> None:
+        # FIX: graceful_timeout default is now None; apply config only when not explicitly set
         if hasattr(args, name) and cfg.get(key) is not None:
             try:
                 current = getattr(args, name)
-                # Only apply if still at default
-                if name == "graceful_timeout" and float(current) == 3.0:
+                if name == "graceful_timeout" and current is None:
                     setattr(args, name, float(cfg[key]))
             except Exception:
                 pass
@@ -176,6 +179,12 @@ def apply_config_defaults(args: argparse.Namespace, cfg: Dict[str, Any]) -> None
         v = cfg.get("docker_action")
         if v in ("stop", "restart", "rm"):
             setattr(args, "docker_action", v)
+
+
+def _resolve_timeout(args: argparse.Namespace) -> float:
+    """Return graceful_timeout, falling back to 3.0 if not set."""
+    t = getattr(args, "graceful_timeout", None)
+    return float(t) if t is not None else 3.0
 
 
 def validate_port(port: int) -> None:
@@ -359,7 +368,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
     if args.command == "kill":
         validate_port(args.port)
         pids = inspector.find_pids_on_port(args.port)
-        
+
         # Check safety policy
         safe, safety_msg = check_safety_policy(args.port, pids, args, inspector)
         if not safe:
@@ -445,11 +454,10 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                 print(colorize("Operation cancelled.", Colors.YELLOW))
                 return EXIT_GENERAL_ERROR
 
-        # Unified escalated kill execution (Fixes Bug 1 & Bug 2)
         ok, msg = inspector.kill_port(
-            args.port, 
-            graceful_timeout=args.graceful_timeout, 
-            force=args.force, 
+            args.port,
+            graceful_timeout=_resolve_timeout(args),  # FIX: use helper, never None
+            force=args.force,
             dry_run=args.dry_run,
             debug=debug
         )
@@ -466,7 +474,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                 print(colorize(f"✓ {msg}", Colors.GREEN))
             else:
                 print(colorize(f"✗ {msg}", Colors.RED))
-        
+
         return EXIT_OK if ok else EXIT_GENERAL_ERROR
 
     if args.command == "kill-process":
@@ -478,7 +486,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
             else:
                 print(colorize(f"✗ No processes found matching '{pname}'", Colors.RED))
             return EXIT_OK
-        
+
         # Check safety policy
         safe, safety_msg = check_safety_policy(None, pids, args, inspector)
         if not safe:
@@ -487,15 +495,15 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
             else:
                 print(colorize(safety_msg, Colors.RED), file=sys.stderr)
             return EXIT_PERMISSION
-        
+
         if not args.json and not confirm_prompt(f"Proceed to terminate {len(pids)} process(es)?", assume_yes=args.yes):
             print(colorize("Operation cancelled.", Colors.YELLOW))
             return EXIT_GENERAL_ERROR
-        
+
         killed = []
         failed = []
         for pid in pids:
-            ok, msg = inspector.kill_pid(pid, graceful_timeout=args.graceful_timeout, force=args.force, dry_run=args.dry_run)
+            ok, msg = inspector.kill_pid(pid, graceful_timeout=_resolve_timeout(args), force=args.force, dry_run=args.dry_run)
             if ok:
                 killed.append({"pid": pid, "msg": msg})
             else:
@@ -508,7 +516,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                 print(colorize(f"✓ Killed PID {k['pid']} ({k['msg']})", Colors.GREEN))
             for f in failed:
                 print(colorize(f"✗ Failed PID {f['pid']} ({f['msg']})", Colors.RED))
-        
+
         return EXIT_OK if not failed else EXIT_GENERAL_ERROR
 
     if args.command == "conflicts":
@@ -547,15 +555,15 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
     if args.command == "watch":
         validate_port(args.port)
         interval = getattr(args, "interval", 1.0)
-        
+
         import time
         from datetime import datetime
-        
+
         def get_current_state() -> Dict[str, Any]:
             local_bindings = inspector.find_bindings_on_port(args.port)
             docker_hits = docker_mappings_for_host_port(args.port, debug=debug)
             pids = inspector.find_pids_on_port(args.port)
-            
+
             if docker_hits:
                 m = docker_hits[0]
                 return {
@@ -598,7 +606,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
             return "UNKNOWN"
 
         last_state = None
-        
+
         if args.json:
             initial = get_current_state()
             initial["timestamp"] = datetime.now().isoformat()
@@ -610,12 +618,12 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
             print(colorize(f"👀 Watching port {args.port} (interval={interval}s). Press Ctrl+C to stop.", Colors.CYAN + Colors.BOLD))
             print(colorize(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Initial state: {describe_state(initial)}", Colors.WHITE))
             last_state = initial
-            
+
         try:
             while True:
                 time.sleep(interval)
                 current = get_current_state()
-                
+
                 changed = False
                 if current["type"] != last_state["type"]:
                     changed = True
@@ -625,7 +633,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                 elif current["type"] == "local":
                     if set(current["pids"]) != set(last_state.get("pids", [])):
                         changed = True
-                
+
                 if changed:
                     ts = datetime.now()
                     if args.json:
@@ -640,13 +648,25 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
         except KeyboardInterrupt:
             if not args.json:
                 print(colorize("\nStopping watch mode.", Colors.CYAN))
-            return EXIT_OK
-
-    if args.command == "mcp":
-        from .mcp_server import run_mcp_server
-        run_mcp_server()
+        # FIX: return here, outside the except block, so watch always exits cleanly
         return EXIT_OK
 
+    if args.command == "mcp":
+        # Already correctly handled in original — kept as-is
+        try:
+            from .mcp_server import run_mcp_server
+            run_mcp_server()
+            return EXIT_OK
+        except ImportError:
+            print(colorize("Error: MCP server module not available. Install mcp extra: pip install kport[mcp]", Colors.RED), file=sys.stderr)
+            return EXIT_GENERAL_ERROR
+        except Exception as e:
+            print(colorize(f"MCP server error: {e}", Colors.RED), file=sys.stderr)
+            return EXIT_GENERAL_ERROR
+
+    # Unrecognised subcommand — give a useful message instead of silent failure
+    print(colorize(f"Error: unknown subcommand '{args.command}'", Colors.RED), file=sys.stderr)
+    print("Run 'kport --help' for usage.", file=sys.stderr)
     return EXIT_INVALID_INPUT
 
 
@@ -687,12 +707,13 @@ Examples:
     parser.add_argument("-l", "--list", action="store_true", help="List all listening ports")
     parser.add_argument("--exact", action="store_true", help="Exact process name matching")
     parser.add_argument("--force", action="store_true", help="Force kill stubborn processes (SIGKILL / fuser)")
-    parser.add_argument("--graceful-timeout", type=float, default=3.0, help="Seconds to wait before force kill")
+    # FIX: default=None so config override only triggers when user didn't pass a value explicitly
+    parser.add_argument("--graceful-timeout", type=float, default=None, help="Seconds to wait before force kill (default: 3.0)")
     parser.add_argument("-v", "--version", action="version", version=f"kport {__version__}")
 
-    # Subcommands
-    sub = parser.add_subparsers(dest="command")
-    
+    # FIX: pass parser_class=_QuietParser so ALL subparsers inherit quiet error formatting
+    sub = parser.add_subparsers(dest="command", parser_class=_QuietParser)
+
     sp_inspect = sub.add_parser("inspect", help="Inspect a port (docker-aware)")
     sp_inspect.add_argument("port", type=int)
     sp_inspect.add_argument("--json", action="store_true")
@@ -713,7 +734,8 @@ Examples:
     sp_kill.add_argument("-y", "--yes", action="store_true")
     sp_kill.add_argument("--debug", action="store_true")
     sp_kill.add_argument("--force", action="store_true")
-    sp_kill.add_argument("--graceful-timeout", type=float, default=3.0)
+    # FIX: default=None (consistent with top-level parser)
+    sp_kill.add_argument("--graceful-timeout", type=float, default=None)
     sp_kill.add_argument("--config", type=str, default=None)
     sp_kill.add_argument("--bypass-safety", action="store_true", help="Bypass safety shields on protected ports/processes")
 
@@ -725,7 +747,8 @@ Examples:
     sp_kp.add_argument("-y", "--yes", action="store_true")
     sp_kp.add_argument("--debug", action="store_true")
     sp_kp.add_argument("--force", action="store_true")
-    sp_kp.add_argument("--graceful-timeout", type=float, default=3.0)
+    # FIX: default=None (consistent with top-level parser)
+    sp_kp.add_argument("--graceful-timeout", type=float, default=None)
     sp_kp.add_argument("--config", type=str, default=None)
     sp_kp.add_argument("--bypass-safety", action="store_true", help="Bypass safety shields on protected ports/processes")
 
@@ -738,6 +761,7 @@ Examples:
     sp_docker.add_argument("--json", action="store_true")
     sp_docker.add_argument("--debug", action="store_true")
     sp_docker.add_argument("--config", type=str, default=None)
+    sp_docker.add_argument("extra", nargs="*", help=argparse.SUPPRESS)  # absorb unknown args like 'list'
 
     sp_conflicts = sub.add_parser("conflicts", help="Detect docker/local port conflicts")
     sp_conflicts.add_argument("--json", action="store_true")
@@ -944,7 +968,7 @@ Examples:
                         killed = []
                         failed = []
                         for pid in pids:
-                            ok, msg = inspector.kill_pid(pid, graceful_timeout=args.graceful_timeout, force=args.force, dry_run=args.dry_run)
+                            ok, msg = inspector.kill_pid(pid, graceful_timeout=_resolve_timeout(args), force=args.force, dry_run=args.dry_run)
                             if ok:
                                 killed.append({"pid": pid, "msg": msg})
                             else:
@@ -964,25 +988,25 @@ Examples:
                         killed_count = 0
                         failed_count = 0
                         for pid in pids:
-                            ok, msg = inspector.kill_pid(pid, graceful_timeout=args.graceful_timeout, force=args.force, dry_run=args.dry_run)
+                            ok, msg = inspector.kill_pid(pid, graceful_timeout=_resolve_timeout(args), force=args.force, dry_run=args.dry_run)
                             if ok:
                                 killed_count += 1
                                 print(colorize(f"✓ Killed PID {pid} ({msg})", Colors.GREEN))
                             else:
                                 failed_count += 1
                                 print(colorize(f"✗ Failed to kill PID {pid} ({msg})", Colors.RED))
-                        
+
                         if failed_count > 0:
                             print(colorize(f"\n✗ Failed to kill {failed_count}/{len(pids)} process(es)", Colors.RED + Colors.BOLD))
                             return EXIT_GENERAL_ERROR
                         else:
                             print(colorize(f"\n✓ Successfully killed {killed_count}/{len(pids)} process(es)", Colors.GREEN + Colors.BOLD))
 
-        # Kill single port (legacy) - escalated & verified (Fixes Bug 1 & Bug 2)
+        # Kill single port (legacy)
         if args.kill:
             validate_port(args.kill)
             pids = inspector.find_pids_on_port(args.kill)
-            
+
             # Check safety policy
             safe, safety_msg = check_safety_policy(args.kill, pids, args, inspector)
             if not safe:
@@ -1032,7 +1056,7 @@ Examples:
                         print(colorize(f"❌ No process found using port {args.kill}", Colors.RED))
             else:
                 if args.json:
-                    ok, msg = inspector.kill_port(args.kill, graceful_timeout=args.graceful_timeout, force=args.force, dry_run=args.dry_run, debug=args.debug)
+                    ok, msg = inspector.kill_port(args.kill, graceful_timeout=_resolve_timeout(args), force=args.force, dry_run=args.dry_run, debug=args.debug)
                     out = {"port": args.kill, "success": ok, "message": msg, "pids_targeted": pids}
                     if docker_hits:
                         out["docker"] = [asdict(m) for m in docker_hits]
@@ -1053,8 +1077,7 @@ Examples:
                         print(colorize("Operation cancelled.", Colors.YELLOW))
                         return EXIT_GENERAL_ERROR
                     else:
-                        # Escalated verified kill call
-                        ok, msg = inspector.kill_port(args.kill, graceful_timeout=args.graceful_timeout, force=args.force, dry_run=args.dry_run, debug=args.debug)
+                        ok, msg = inspector.kill_port(args.kill, graceful_timeout=_resolve_timeout(args), force=args.force, dry_run=args.dry_run, debug=args.debug)
                         if ok:
                             print(colorize(f"\n✓ Port {args.kill} successfully freed ({msg})", Colors.GREEN + Colors.BOLD))
                             return EXIT_OK
@@ -1092,13 +1115,13 @@ Examples:
                     failed_ports = 0
                     total_ports = len(port_pid_map)
                     for port in port_pid_map.keys():
-                        ok, msg = inspector.kill_port(port, graceful_timeout=args.graceful_timeout, force=args.force, dry_run=args.dry_run, debug=args.debug)
+                        ok, msg = inspector.kill_port(port, graceful_timeout=_resolve_timeout(args), force=args.force, dry_run=args.dry_run, debug=args.debug)
                         if ok:
                             print(colorize(f"✓ Freed port {port} ({msg})", Colors.GREEN))
                         else:
                             print(colorize(f"✗ Failed to free port {port}: {msg}", Colors.RED))
                             failed_ports += 1
-                    
+
                     if failed_ports > 0:
                         print(colorize(f"\n✗ Failed to free {failed_ports}/{total_ports} port(s)", Colors.RED + Colors.BOLD))
                         return EXIT_GENERAL_ERROR
@@ -1133,7 +1156,7 @@ Examples:
                     failed_ports = 0
                     total_ports = len(port_pid_map)
                     for port in port_pid_map.keys():
-                        ok, msg = inspector.kill_port(port, graceful_timeout=args.graceful_timeout, force=args.force, dry_run=args.dry_run, debug=args.debug)
+                        ok, msg = inspector.kill_port(port, graceful_timeout=_resolve_timeout(args), force=args.force, dry_run=args.dry_run, debug=args.debug)
                         if ok:
                             print(colorize(f"✓ Freed port {port} ({msg})", Colors.GREEN))
                         else:
@@ -1146,7 +1169,7 @@ Examples:
                     else:
                         print(colorize(f"\n✓ Successfully freed all {total_ports} port(s) in range", Colors.GREEN + Colors.BOLD))
 
-    # Catch custom domain exceptions cleanly (fixes hard exits inside functions)
+    # Catch custom domain exceptions cleanly
     except InvalidPortError as e:
         print(colorize(f"Error: {e}", Colors.RED), file=sys.stderr)
         return EXIT_INVALID_INPUT
