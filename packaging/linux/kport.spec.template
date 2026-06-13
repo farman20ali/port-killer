@@ -1,0 +1,53 @@
+Name:           kport
+Version:        {VERSION}
+Release:        1%{?dist}
+Summary:        Cross-platform port inspector and killer CLI
+
+License:        AGPLv3
+URL:            https://github.com/farman20ali/port-killer
+BuildArch:      noarch
+
+Requires:       python3 >= 3.8
+Requires:       python3-psutil
+
+%description
+kport is a cross-platform command-line tool to inspect and kill
+processes using specific ports. It supports Docker-aware port
+management, port range scanning, process name killing, live port
+watching, and an MCP server for AI assistant integrations.
+
+%prep
+# Nothing to prepare — sources are installed directly
+
+%install
+# Create directory layout inside RPM buildroot
+install -d %{buildroot}/usr/bin
+install -d %{buildroot}/usr/lib/python3/dist-packages
+install -d %{buildroot}/usr/share/doc/kport
+
+# Install the launcher wrapper script
+cat > %{buildroot}/usr/bin/kport << 'LAUNCHER'
+#!/usr/bin/env python3
+import sys
+import os
+sys.path.insert(0, '/usr/lib/python3/dist-packages')
+from kport.cli import main
+sys.exit(main())
+LAUNCHER
+chmod 0755 %{buildroot}/usr/bin/kport
+
+# Install the kport Python package
+cp -r {SRC_KPORT} %{buildroot}/usr/lib/python3/dist-packages/kport
+
+# Install docs
+install -m 0644 {REPO_ROOT}/README.md  %{buildroot}/usr/share/doc/kport/README.md
+install -m 0644 {REPO_ROOT}/LICENSE    %{buildroot}/usr/share/doc/kport/LICENSE
+
+%files
+/usr/bin/kport
+/usr/lib/python3/dist-packages/kport/
+/usr/share/doc/kport/
+
+%changelog
+* {DATE} Farman Ali <alienhub.dev@gmail.com> - {VERSION}-1
+- Auto-generated RPM package

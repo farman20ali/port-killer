@@ -8,9 +8,9 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="kport",
-    version="3.1.1",
+    version="3.2.0",
     author="Farman Ali",
-    author_email="farman20ali@gmail.com",
+    author_email="alienhub.dev@gmail.com",
     description="A cross-platform command-line tool to inspect and kill processes using specific ports",
     long_description=long_description,
     long_description_content_type="text/markdown",

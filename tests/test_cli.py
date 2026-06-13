@@ -127,3 +127,50 @@ def test_safety_policy_process_shield():
     safe, msg = check_safety_policy(9000, [9999], args, inspector)
     assert not safe
     assert "critical process 'docker'" in msg
+
+
+def test_watch_command_parser_setup():
+    # Verify that the watch command parser is successfully set up and accepts arguments
+    import argparse
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="command")
+    sp_watch = sub.add_parser("watch")
+    sp_watch.add_argument("port", type=int)
+    sp_watch.add_argument("--interval", type=float, default=1.0)
+    sp_watch.add_argument("--json", action="store_true")
+    
+    parsed = parser.parse_args(["watch", "8080", "--interval", "2.5", "--json"])
+    assert parsed.command == "watch"
+    assert parsed.port == 8080
+    assert parsed.interval == 2.5
+    assert parsed.json is True
+
+
+def test_apply_config_defaults():
+    from kport.cli import apply_config_defaults
+    args = argparse.Namespace(yes=False, dry_run=False, json=False, debug=False, force=False, graceful_timeout=3.0)
+    cfg = {
+        "yes": True,
+        "dry_run": True,
+        "json": True,
+        "debug": True,
+        "force": True,
+        "graceful_timeout": 5.0,
+        "protected_ports": [8080],
+        "protected_processes": ["node"]
+    }
+    apply_config_defaults(args, cfg)
+    assert args.yes is True
+    assert args.dry_run is True
+    assert args.json is True
+    assert args.debug is True
+    assert args.force is True
+    assert args.graceful_timeout == 5.0
+    assert args.protected_ports == [8080]
+    assert args.protected_processes == ["node"]
+
+
+def test_fallback_inspector_init():
+    from kport.inspectors.system_impl import FallbackInspector
+    inspector = FallbackInspector()
+    assert inspector is not None

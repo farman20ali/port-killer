@@ -233,6 +233,99 @@ def build_debian_package(dry_run: bool = False) -> bool:
     return True
 
 
+def build_windows_package(dry_run: bool = False) -> bool:
+    """Build Windows .exe installer using win_build.py."""
+    if dry_run:
+        print_warning("DRY RUN: Would build Windows installer")
+        return True
+
+    print_header("Building Windows Installer")
+
+    win_script = REPO_ROOT / "win_build.py"
+    if not win_script.exists():
+        print_error("win_build.py not found")
+        return False
+
+    result = subprocess.run(
+        [sys.executable, str(win_script), "--build"],
+        cwd=str(REPO_ROOT),
+    )
+
+    if result.returncode != 0:
+        print_warning("Windows package build failed (requires PyInstaller + NSIS on Windows)")
+        return False
+
+    win_dir = REPO_ROOT / "dist" / "win"
+    if not win_dir.exists() or not list(win_dir.glob("*.exe")):
+        print_warning("No .exe files found in dist/win/")
+        return False
+
+    print_success("Windows installer built successfully")
+    return True
+
+
+def build_rpm_package(dry_run: bool = False) -> bool:
+    """Build Linux .rpm package using rpm_build.py."""
+    if dry_run:
+        print_warning("DRY RUN: Would build RPM package")
+        return True
+
+    print_header("Building RPM Package")
+
+    rpm_script = REPO_ROOT / "rpm_build.py"
+    if not rpm_script.exists():
+        print_error("rpm_build.py not found")
+        return False
+
+    result = subprocess.run(
+        [sys.executable, str(rpm_script), "--build"],
+        cwd=str(REPO_ROOT),
+    )
+
+    if result.returncode != 0:
+        print_warning("RPM package build failed (requires rpmbuild on Linux)")
+        return False
+
+    rpm_dir = REPO_ROOT / "dist" / "rpm"
+    if not rpm_dir.exists() or not list(rpm_dir.glob("*.rpm")):
+        print_warning("No .rpm files found in dist/rpm/")
+        return False
+
+    print_success("RPM package built successfully")
+    return True
+
+
+def build_mac_package(dry_run: bool = False) -> bool:
+    """Build macOS .pkg installer using mac_build.py."""
+    if dry_run:
+        print_warning("DRY RUN: Would build macOS installer")
+        return True
+
+    print_header("Building macOS Installer")
+
+    mac_script = REPO_ROOT / "mac_build.py"
+    if not mac_script.exists():
+        print_error("mac_build.py not found")
+        return False
+
+    result = subprocess.run(
+        [sys.executable, str(mac_script), "--build"],
+        cwd=str(REPO_ROOT),
+    )
+
+    if result.returncode != 0:
+        print_warning("macOS package build failed (requires PyInstaller + pkgbuild on macOS)")
+        return False
+
+    mac_dir = REPO_ROOT / "dist" / "mac"
+    if not mac_dir.exists() or not list(mac_dir.glob("*.pkg")):
+        print_warning("No .pkg files found in dist/mac/")
+        return False
+
+    print_success("macOS installer built successfully")
+    return True
+
+
 def create_github_release(version: str, tag: str, notes: str, dry_run: bool = False) -> bool:
     """Create GitHub release using gh CLI."""
     if not command_exists("gh"):
@@ -259,7 +352,19 @@ def create_github_release(version: str, tag: str, notes: str, dry_run: bool = Fa
     deb_dir = dist_dir / "deb"
     if deb_dir.exists():
         assets.extend(str(f) for f in deb_dir.glob("*.deb"))
-    
+
+    win_dir = dist_dir / "win"
+    if win_dir.exists():
+        assets.extend(str(f) for f in win_dir.glob("*.exe"))
+
+    rpm_dir = dist_dir / "rpm"
+    if rpm_dir.exists():
+        assets.extend(str(f) for f in rpm_dir.glob("*.rpm"))
+
+    mac_dir = dist_dir / "mac"
+    if mac_dir.exists():
+        assets.extend(str(f) for f in mac_dir.glob("*.pkg"))
+
     # Note: We don't attach .tar.gz - GitHub automatically provides source archives
     
     if not assets:
@@ -290,6 +395,9 @@ def main() -> None:
     parser.add_argument("--version", help="Version to release (e.g., 3.1.2)")
     parser.add_argument("--no-pypi", action="store_true", help="Skip PyPI package build")
     parser.add_argument("--no-deb", action="store_true", help="Skip Debian package build")
+    parser.add_argument("--no-win", action="store_true", help="Skip Windows .exe installer build")
+    parser.add_argument("--no-mac", action="store_true", help="Skip macOS .pkg installer build")
+    parser.add_argument("--no-rpm", action="store_true", help="Skip Linux .rpm package build")
     parser.add_argument("--no-github", action="store_true", help="Skip GitHub release creation")
     parser.add_argument("--dry-run", action="store_true", help="Preview without making changes")
     args = parser.parse_args()
@@ -349,32 +457,50 @@ def main() -> None:
     # Step 5: Build packages
     pypi_success = True
     deb_success = True
-    
+    win_success = True
+    mac_success = True
+    rpm_success = True
+
     if not args.no_pypi:
         pypi_success = build_pypi_packages(args.dry_run)
-    
+
     if not args.no_deb:
         deb_success = build_debian_package(args.dry_run)
-    
+
+    if not args.no_win:
+        win_success = build_windows_package(args.dry_run)
+
+    if not args.no_mac:
+        mac_success = build_mac_package(args.dry_run)
+
+    if not args.no_rpm:
+        rpm_success = build_rpm_package(args.dry_run)
+
     # Step 6: Get release notes
     if not args.no_github and not args.dry_run:
         notes = get_release_notes(version)
     else:
         notes = f"Release {version}"
-    
+
     # Step 7: Create GitHub release
     if not args.no_github:
         create_github_release(version, tag, notes, args.dry_run)
-    
+
     # Summary
     print_header("✅ Release Complete")
     print(f"\n{Colors.BOLD}Version:{Colors.END} {version}")
     print(f"{Colors.BOLD}Tag:{Colors.END} {tag}")
-    
+
     if pypi_success:
         print(f"{Colors.GREEN}✅ PyPI packages built{Colors.END}")
     if deb_success:
         print(f"{Colors.GREEN}✅ Debian package built{Colors.END}")
+    if win_success and not args.no_win:
+        print(f"{Colors.GREEN}✅ Windows installer built{Colors.END}")
+    if mac_success and not args.no_mac:
+        print(f"{Colors.GREEN}✅ macOS installer built{Colors.END}")
+    if rpm_success and not args.no_rpm:
+        print(f"{Colors.GREEN}✅ RPM package built{Colors.END}")
     
     print(f"\n{Colors.BOLD}Next steps:{Colors.END}")
     

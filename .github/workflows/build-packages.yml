@@ -1,0 +1,223 @@
+name: Build Packages
+
+# ── Triggers ──────────────────────────────────────────────────────────────────
+# 1. Automatically on version tags (v1.2.3, v3.2.0, etc.)
+# 2. Manually from the Actions tab (workflow_dispatch) with optional version override
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (leave empty to read from pyproject.toml)"
+        required: false
+        default: ""
+      upload_release:
+        description: "Attach artifacts to GitHub Release?"
+        required: false
+        default: "true"
+        type: choice
+        options: ["true", "false"]
+
+# ── Permissions ───────────────────────────────────────────────────────────────
+permissions:
+  contents: write   # needed to upload release assets
+
+# ── Jobs ─────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ── 1. PyPI packages (wheel + sdist) ──────────────────────────────────────
+  build-pypi:
+    name: "PyPI (.whl + .tar.gz)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install build
+        run: pip install build
+
+      - name: Build wheel + sdist
+        run: python -m build
+
+      - name: Upload PyPI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pypi-packages
+          path: dist/*.{whl,tar.gz}
+          if-no-files-found: error
+
+  # ── 2. Debian .deb package ────────────────────────────────────────────────
+  build-deb:
+    name: "Debian (.deb)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Debian build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential dpkg-dev devscripts debhelper \
+            dh-python python3-all fakeroot
+
+      - name: Build .deb (automated — choice 3)
+        run: echo "3" | python deb_publish.py
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-package
+          path: dist/deb/*.deb
+          if-no-files-found: warn
+
+  # ── 3. RPM package ────────────────────────────────────────────────────────
+  build-rpm:
+    name: "Linux RPM (.rpm)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install rpmbuild
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends rpm
+
+      - name: Build .rpm
+        run: python rpm_build.py --build
+
+      - name: Upload .rpm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-package
+          path: dist/rpm/*.rpm
+          if-no-files-found: warn
+
+  # ── 4. Windows .exe installer ─────────────────────────────────────────────
+  build-win:
+    name: "Windows (.exe installer)"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller psutil
+
+      - name: Install NSIS
+        run: choco install nsis --yes --no-progress
+        shell: powershell
+
+      - name: Build kport.exe + installer
+        run: python win_build.py --build
+
+      - name: Smoke-test standalone exe
+        run: dist\win\kport.exe --version
+        shell: cmd
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/win/kport-*-setup.exe
+          if-no-files-found: error
+
+  # ── 5. macOS .pkg installer ───────────────────────────────────────────────
+  build-mac:
+    name: "macOS (.pkg installer)"
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller psutil
+
+      - name: Build kport binary + .pkg
+        run: python mac_build.py --build
+
+      - name: Smoke-test binary
+        run: dist/mac/kport --version
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-installer
+          path: dist/mac/kport-*.pkg
+          if-no-files-found: error
+
+  # ── 6. Attach all artifacts to GitHub Release ─────────────────────────────
+  release:
+    name: "GitHub Release — attach artifacts"
+    needs: [build-pypi, build-deb, build-rpm, build-win, build-mac]
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.upload_release == 'true')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: List artifacts
+        run: find release-assets -type f | sort
+
+      - name: Determine tag name
+        id: tag
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            # workflow_dispatch: derive from pyproject.toml
+            VERSION=$(python -c "
+          import re, pathlib
+          text = pathlib.Path('pyproject.toml').read_text()
+          m = re.search(r'version\s*=\s*[\"\']([\w.]+)[\"\']\', text)
+          print(m.group(1) if m else '0.0.0')
+          ")
+            echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload artifacts to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: |
+            release-assets/**/*.exe
+            release-assets/**/*.pkg
+            release-assets/**/*.deb
+            release-assets/**/*.rpm
+            release-assets/**/*.whl
+            release-assets/**/*.tar.gz
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

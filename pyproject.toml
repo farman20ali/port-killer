@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kport"
-version = "3.1.2"
+version = "3.2.0"
 description = "A cross-platform command-line tool to inspect and kill processes using specific ports"
 readme = "README.md"
 authors = [
-    { name = "Farman Ali", email = "farman20ali@gmail.com" }
+    { name = "Farman Ali", email = "alienhub.dev@gmail.com" }
 ]
 license = { text = "GNU Affero General Public License v3" }
 classifiers = [
@@ -28,6 +28,10 @@ dependencies = []
 [project.optional-dependencies]
 psutil = ["psutil>=5.9.0"]
 mcp = ["mcp>=0.1.0"]
+packaging = [
+    "pyinstaller>=6.0.0",
+    "build>=1.0.0"
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-mock>=3.6.0",

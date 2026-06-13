@@ -29,6 +29,28 @@ PROTECTED_PROCESS_NAMES = {
 }
 
 
+import os
+
+def load_mcp_config() -> dict:
+    """Load configuration dictionary from default kport config locations."""
+    home = os.path.expanduser("~")
+    paths = [
+        os.path.join(os.getcwd(), ".kport.json"),
+        os.path.join(home, ".kport.json"),
+        os.path.join(home, ".config", "kport", "config.json"),
+    ]
+    for p in paths:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+            except Exception:
+                pass
+    return {}
+
+
 def log(msg: str) -> None:
     """Print debug output directly to stderr to avoid corrupting JSON-RPC on stdout."""
     print(f"[kport-mcp] {msg}", file=sys.stderr, flush=True)
@@ -73,7 +95,7 @@ TOOLS = [
                 },
                 "force": {
                     "type": "boolean",
-                    "default": true,
+                    "default": True,
                     "description": "Whether to force-kill (SIGKILL/fuser fallback) the process if graceful SIGTERM fails."
                 },
                 "docker_action": {
@@ -176,8 +198,22 @@ def handle_kill_port(port: int, force: bool = True, docker_action: str = "stop")
     if not (1 <= port <= 65535):
         raise ValueError(f"Port {port} is out of bounds (1-65535)")
 
-    # 1. Protected ports shield
-    if port in PROTECTED_PORTS:
+    # Load safety configurations dynamically
+    cfg = load_mcp_config()
+    
+    # 1. Resolve active protected lists (merging defaults and config overrides)
+    protected_ports = set(PROTECTED_PORTS)
+    config_ports = cfg.get("protected_ports")
+    if isinstance(config_ports, list):
+        protected_ports = set(config_ports)
+        
+    protected_procs = set(PROTECTED_PROCESS_NAMES)
+    config_procs = cfg.get("protected_processes")
+    if isinstance(config_procs, list):
+        protected_procs = {p.lower() for p in config_procs}
+
+    # 2. Protected ports shield check
+    if port in protected_ports:
         return {
             "success": False,
             "message": f"Security Shield Active: Port {port} is a critical system/database socket. AI is prevented from terminating it."
@@ -187,7 +223,7 @@ def handle_kill_port(port: int, force: bool = True, docker_action: str = "stop")
     docker_hits = docker_mappings_for_host_port(port)
     pids = inspector.find_pids_on_port(port)
 
-    # 2. Docker container path
+    # 3. Docker container path
     if docker_hits:
         m = docker_hits[0]
         ok, msg = docker_action_on_container(m.container_id, docker_action, dry_run=False)
@@ -199,7 +235,7 @@ def handle_kill_port(port: int, force: bool = True, docker_action: str = "stop")
             "message": msg
         }
 
-    # 3. No PIDs path
+    # 4. No PIDs path
     if not pids:
         local_bindings = [b for b in inspector.list_listening() if b.port == port]
         if local_bindings:
@@ -213,10 +249,10 @@ def handle_kill_port(port: int, force: bool = True, docker_action: str = "stop")
             "message": f"Port {port} is already free."
         }
 
-    # 4. Critical process name shield
+    # 5. Critical process name shield check
     for pid in pids:
         info = inspector.get_process_info(pid)
-        if info and info.name.lower() in PROTECTED_PROCESS_NAMES:
+        if info and info.name.lower() in protected_procs:
             return {
                 "success": False,
                 "message": f"Security Shield Active: PID {pid} runs critical system process '{info.name}'. Termination aborted."

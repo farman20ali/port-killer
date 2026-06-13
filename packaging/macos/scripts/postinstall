@@ -1,0 +1,19 @@
+#!/bin/sh
+# postinstall — runs after kport.pkg installs files
+# Installs a symlink in /usr/local/bin so `kport` is on PATH immediately.
+set -e
+
+INSTALL_DIR="/usr/local/kport"
+SYMLINK_DIR="/usr/local/bin"
+BINARY="$INSTALL_DIR/kport"
+SYMLINK="$SYMLINK_DIR/kport"
+
+# Ensure /usr/local/bin exists (should always be present on macOS)
+mkdir -p "$SYMLINK_DIR"
+
+# Create or update symlink
+ln -sf "$BINARY" "$SYMLINK"
+
+echo "kport installed successfully."
+echo "Run: kport --version"
+exit 0

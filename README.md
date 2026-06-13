@@ -26,7 +26,19 @@ A simple, powerful command-line tool to inspect and kill processes using specifi
 
 ## 📦 Installation
 
-### Quick Install (Once Published to PyPI)
+Pre-compiled platform-native packages are available on the [GitHub Releases](https://github.com/farman20ali/port-killer/releases) page.
+
+| Platform | Format | Quick Install |
+|---|---|---|
+| 🪟 **Windows** | `.exe` Setup Wizard | Download and run `kport-setup.exe` (adds to PATH) |
+| 🍎 **macOS** | `.pkg` Installer | Download and run `kport.pkg` |
+| 🐧 **Debian / Ubuntu** | `.deb` Package | `sudo dpkg -i kport_*.deb` |
+| 🐧 **RHEL / Fedora** | `.rpm` Package | `sudo rpm -i kport-*.rpm` |
+| 🌍 **Python (Any OS)** | PyPI Package | `pip install --user kport` |
+
+---
+
+### Installing via pip (PyPI)
 
 ```bash
 # Recommended: Install to user directory
@@ -51,32 +63,19 @@ cd port-killer
 
 # Install to user directory (recommended)
 pip install --user .
-
-# Or install system-wide (requires admin/sudo)
-pip install .
 ```
-
-### Install for Development
-
-```bash
-# Install in editable mode
-pip install --user -e .
-```
-
-After installation, `kport` will be available globally in your terminal.
 
 ### Run Without Installing
 
 ```bash
-# Run directly with Python
 python kport.py -h
 ```
 
-> 💡 **Tip:** If `kport` command doesn't work after installation, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+> 💡 **Tip:** If the `kport` command doesn't work after installation, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 >
-> 📖 For detailed installation instructions, see [INSTALL.md](INSTALL.md)
-> 
-> 🚀 For publishing instructions, see [PUBLISH.md](PUBLISH.md)
+> 📖 For detailed platform installation options, see [INSTALL.md](INSTALL.md)
+>
+> 🛠️ For packaging development and local compilation instructions, see [PACKAGING.md](PACKAGING.md)
 
 ## 🚀 Usage
 
@@ -475,7 +474,7 @@ This project is licensed under the GNU Affero General Public License v3.0 - see 
 - ✅ **Network use = distribution**: If you run a modified version as a service, you must share the source code
 - ❌ Cannot use in proprietary SaaS without sharing modifications
 
-For commercial licensing or if AGPL doesn't fit your use case, contact: farman20ali@gmail.com
+For commercial licensing or if AGPL doesn't fit your use case, contact: alienhub.dev@gmail.com
 
 ## ⚠️ Important Notes
 
@@ -537,7 +536,7 @@ Colors should work on Windows 10 and later. If you're on an older version, color
 
 ## 📧 Contact
 
-Your Name - farman20ali@example.com
+Farman Ali Ujjan - [alienhub.dev@gmail.com]
 
 Project Link: [https://github.com/farman20ali/port-killer](https://github.com/farman20ali/port-killer)
 

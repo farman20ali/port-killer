@@ -173,6 +173,8 @@ def generate_debian_skeleton(work_dir: Path) -> str:
         "\n"
         "override_dh_auto_install:\n"
         "\tinstall -D -m 0755 kport.py debian/kport/usr/bin/kport\n"
+        "\tmkdir -p debian/kport/usr/lib/python3/dist-packages\n"
+        "\tcp -r src/kport debian/kport/usr/lib/python3/dist-packages/\n"
     )
 
     changelog = textwrap.dedent(

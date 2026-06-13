@@ -667,7 +667,7 @@ Examples:
     parser.add_argument("--exact", action="store_true", help="Exact process name matching")
     parser.add_argument("--force", action="store_true", help="Force kill stubborn processes (SIGKILL / fuser)")
     parser.add_argument("--graceful-timeout", type=float, default=3.0, help="Seconds to wait before force kill")
-    parser.add_argument("-v", "--version", action="version", version="kport 3.1.2")
+    parser.add_argument("-v", "--version", action="version", version="kport 3.2.0")
 
     # Subcommands
     sub = parser.add_subparsers(dest="command")
