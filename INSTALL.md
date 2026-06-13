@@ -157,7 +157,7 @@ pip install .
 
 ### Method 4: Run Without Installing
 ```powershell
-python kport.py -h
+python -m kport -h
 ```
 
 ---

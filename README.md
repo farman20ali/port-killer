@@ -76,7 +76,7 @@ pip install --user .
 ### Run Without Installing
 
 ```bash
-python kport.py -h
+python -m kport -h
 ```
 
 > 💡 **Tip:** If the `kport` command doesn't work after installation, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
@@ -199,7 +199,7 @@ Alternatives:
 sudo -E "$HOME/.local/bin/kport" inspect 6379
 
 # Option 2: run the module via the system python (when working from repo)
-sudo -E python3 kport.py inspect 6379
+sudo -E python3 -m kport inspect 6379
 ```
 
 ### ⚙️ Config file support

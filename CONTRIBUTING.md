@@ -49,8 +49,8 @@ Feature suggestions are welcome! Please:
 4. **Test your changes**
    ```bash
    # Test on your platform
-   python kport.py -l
-   python kport.py -i 8080
+   python -m kport -l
+   python -m kport -i 8080
    # etc.
    ```
 
@@ -86,8 +86,8 @@ cd port-killer
 pip install --user -e .
 
 # Run tests
-python kport.py --version
-python kport.py -h
+python -m kport --version
+python -m kport -h
 ```
 
 ## Code Style Guidelines
@@ -144,7 +144,7 @@ When adding features, update:
 
 (For maintainers)
 
-1. Update version in `setup.py` and `kport.py`
+1. Update version in `setup.py`, `pyproject.toml` and `src/kport/__init__.py`
 2. Update `CHANGELOG.md`
 3. Create git tag
 4. Build and upload to PyPI

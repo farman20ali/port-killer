@@ -156,7 +156,7 @@ def build_pyinstaller(dry_run: bool = False) -> bool:
         "--hidden-import", "kport.docker_engine",
         "--hidden-import", "kport.inspectors",
         "--hidden-import", "psutil",
-        str(REPO_ROOT / "kport.py"),
+        str(REPO_ROOT / "__main__.py"),
     ]
     if not run(cmd, "PyInstaller — bundle kport binary", dry_run):
         return False

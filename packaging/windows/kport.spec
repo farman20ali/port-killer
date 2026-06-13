@@ -32,7 +32,7 @@ VERSION = _read_version()
 # Analysis
 # ---------------------------------------------------------------------------
 a = Analysis(
-    [str(REPO_ROOT / "kport.py")],
+    [str(REPO_ROOT / "__main__.py")],
     pathex=[str(REPO_ROOT / "src")],
     binaries=[],
     datas=[],

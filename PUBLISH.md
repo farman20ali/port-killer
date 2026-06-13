@@ -150,7 +150,7 @@ For users without Python, create standalone executables:
 pip install pyinstaller
 
 # Create standalone executable
-pyinstaller --onefile --name kport kport.py
+pyinstaller --onefile --name kport __main__.py
 
 # Executable will be in dist/kport.exe
 ```
@@ -162,7 +162,7 @@ pyinstaller --onefile --name kport kport.py
 pip install pyinstaller
 
 # Create standalone executable
-pyinstaller --onefile --name kport kport.py
+pyinstaller --onefile --name kport __main__.py
 
 # Executable will be in dist/kport
 ```
@@ -225,13 +225,12 @@ Before publishing, ensure:
 - [ ] Documentation is up to date
 
 ---
-
 ## 🔄 Updating Your Package
 
 When you want to release a new version:
 
-1. Update version in `setup.py`
-2. Update version in `kport.py`
+1. Update version in `setup.py` and `pyproject.toml`
+2. Update version in `src/kport/__init__.py`
 3. Update CHANGELOG or release notes
 4. Rebuild and republish:
 

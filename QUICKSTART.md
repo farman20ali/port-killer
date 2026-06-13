@@ -4,8 +4,8 @@
 
 ### ✅ Run directly from source
 ```bash
-python kport.py --help
-python kport.py list
+python -m kport --help
+python -m kport list
 ```
 
 ### 📦 Install globally (Recommended — no admin needed)
@@ -142,19 +142,19 @@ Add to your Claude Desktop / Cursor config:
 
 ---
 
-## 🔧 Legacy Flags (still supported)
+  ## 🔧 Legacy Flags (still supported)
 
-```bash
-python kport.py -l                  # list all ports
-python kport.py -i 8080             # inspect port
-python kport.py -im 3000 3001 8080  # inspect multiple
-python kport.py -ir 3000-3010       # inspect range
-python kport.py -ip node            # inspect by process name
-python kport.py -k 8080             # kill port
-python kport.py -kp node            # kill by process name
-python kport.py -ka 3000 3001 3002  # kill multiple ports
-python kport.py -kr 3000-3010       # kill port range
-```
+  ```bash
+  python -m kport -l                  # list all ports
+  python -m kport -i 8080             # inspect port
+  python -m kport -im 3000 3001 8080  # inspect multiple
+  python -m kport -ir 3000-3010       # inspect range
+  python -m kport -ip node            # inspect by process name
+  python -m kport -k 8080             # kill port
+  python -m kport -kp node            # kill by process name
+  python -m kport -ka 3000 3001 3002  # kill multiple ports
+  python -m kport -kr 3000-3010       # kill port range
+  ```
 
 ---
 

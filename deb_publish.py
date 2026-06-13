@@ -71,7 +71,7 @@ def read_project_version() -> str | None:
 
 
 def check_layout() -> None:
-    required = ["setup.py", "kport.py"]
+    required = ["setup.py", "__main__.py"]
     missing = [p for p in required if not (REPO_ROOT / p).exists()]
     if missing:
         print("❌ Missing required project files: " + ", ".join(missing))
@@ -172,7 +172,7 @@ def generate_debian_skeleton(work_dir: Path) -> str:
         "\ttrue\n"
         "\n"
         "override_dh_auto_install:\n"
-        "\tinstall -D -m 0755 kport.py debian/kport/usr/bin/kport\n"
+        "\tinstall -D -m 0755 __main__.py debian/kport/usr/bin/kport\n"
         "\tmkdir -p debian/kport/usr/lib/python3/dist-packages\n"
         "\tcp -r src/kport debian/kport/usr/lib/python3/dist-packages/\n"
     )
