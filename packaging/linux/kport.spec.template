@@ -43,10 +43,29 @@ cp -r {SRC_KPORT} %{buildroot}/usr/lib/python3/dist-packages/kport
 install -m 0644 {REPO_ROOT}/README.md  %{buildroot}/usr/share/doc/kport/README.md
 install -m 0644 {REPO_ROOT}/LICENSE    %{buildroot}/usr/share/doc/kport/LICENSE
 
+# Install icon and desktop file
+install -d %{buildroot}/usr/share/icons/hicolor/512x512/apps
+install -m 0644 {REPO_ROOT}/assets/icons/icon_512_512.png %{buildroot}/usr/share/icons/hicolor/512x512/apps/kport.png
+
+install -d %{buildroot}/usr/share/applications
+cat > %{buildroot}/usr/share/applications/kport.desktop << 'DESKTOP'
+[Desktop Entry]
+Name=KPort
+Comment=Port Inspector and Killer
+Exec=kport
+Icon=kport
+Terminal=true
+Type=Application
+Categories=Utility;System;
+DESKTOP
+chmod 0644 %{buildroot}/usr/share/applications/kport.desktop
+
 %files
 /usr/bin/kport
 /usr/lib/python3/dist-packages/kport/
 /usr/share/doc/kport/
+/usr/share/icons/hicolor/512x512/apps/kport.png
+/usr/share/applications/kport.desktop
 
 %changelog
 * {DATE} Farman Ali <alienhub.dev@gmail.com> - {VERSION}-1
