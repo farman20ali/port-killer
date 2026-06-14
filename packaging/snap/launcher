@@ -1,0 +1,3 @@
+#!/bin/sh
+export PYTHONPATH="$SNAP/usr/lib/python3/dist-packages${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m kport "$@"

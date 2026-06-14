@@ -1,0 +1,97 @@
+{
+  "name": "kport-vscode",
+  "displayName": "KPort - Port Killer & MCP",
+  "description": "Inspect and free ports from VS Code. Registers the kport MCP server for AI assistants.",
+  "version": "3.2.3",
+  "publisher": "farmanali",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/farman20ali/port-killer.git",
+    "directory": "vscode-extension"
+  },
+  "homepage": "https://github.com/farman20ali/port-killer#readme",
+  "bugs": {
+    "url": "https://github.com/farman20ali/port-killer/issues"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Debuggers"
+  ],
+  "keywords": [
+    "port",
+    "kill",
+    "docker",
+    "mcp",
+    "devops",
+    "network"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "kport.inspectPort",
+        "title": "KPort: Inspect Port...",
+        "category": "KPort"
+      },
+      {
+        "command": "kport.freePort",
+        "title": "KPort: Free Port...",
+        "category": "KPort"
+      },
+      {
+        "command": "kport.listPorts",
+        "title": "KPort: List Ports",
+        "category": "KPort"
+      },
+      {
+        "command": "kport.setupMcp",
+        "title": "KPort: Configure MCP Server for AI",
+        "category": "KPort"
+      },
+      {
+        "command": "kport.checkInstallation",
+        "title": "KPort: Check Installation",
+        "category": "KPort"
+      }
+    ],
+    "configuration": {
+      "title": "KPort",
+      "properties": {
+        "kport.executablePath": {
+          "type": "string",
+          "default": "kport",
+          "description": "Path to the kport executable (must be on PATH or an absolute path)."
+        },
+        "kport.mcp.autoConfigure": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically register the kport MCP server in the workspace on startup."
+        },
+        "kport.mcp.useLegacyArgs": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use legacy --mcp args instead of the mcp subcommand."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "npm run compile && vsce package --no-dependencies",
+    "lint": "tsc -p ./ --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
+    "typescript": "^5.3.3"
+  }
+}

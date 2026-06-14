@@ -1,0 +1,35 @@
+name: kport
+title: kport
+base: core22
+version: "{VERSION}"
+summary: Cross-platform port inspector and killer
+description: |
+  kport inspects, explains, and safely frees ports used by local processes
+  or Docker containers. Includes watch mode, safety shields, and an MCP
+  server for AI assistant integration.
+
+  Run `kport mcp` to expose port tools to MCP-compatible clients.
+
+grade: stable
+confinement: classic
+license: AGPL-3.0-only
+
+apps:
+  kport:
+    command: bin/kport
+    environment:
+      PYTHONPATH: $SNAP/usr/lib/python3/dist-packages
+
+parts:
+  kport:
+    plugin: nil
+    source: .
+    stage-packages:
+      - python3
+      - python3-psutil
+    override-build: |
+      set -eux
+      mkdir -p "$SNAPCRAFT_PART_INSTALL/bin"
+      mkdir -p "$SNAPCRAFT_PART_INSTALL/usr/lib/python3/dist-packages"
+      install -m 755 launcher "$SNAPCRAFT_PART_INSTALL/bin/kport"
+      cp -a src/kport "$SNAPCRAFT_PART_INSTALL/usr/lib/python3/dist-packages/"

@@ -61,7 +61,32 @@ kport -i 8080
 
 ## 🐧 Linux Installation
 
-### Method 1: Using pip (Recommended)
+### Method 1: Native Packages (.deb & .rpm)
+
+Pre-compiled packages are available on the [GitHub Releases](https://github.com/farman20ali/port-killer/releases) page.
+
+**Debian/Ubuntu (.deb):**
+```bash
+sudo dpkg -i kport_*.deb
+# Fix any missing dependencies:
+sudo apt-get install -f
+```
+
+**RHEL/Fedora/CentOS (.rpm):**
+```bash
+sudo rpm -i kport-*.rpm
+# or via dnf:
+sudo dnf install kport-*.rpm
+```
+
+**Snap (Ubuntu and other snap-enabled distros):**
+```bash
+sudo snap install kport_*.snap --classic --dangerous
+# After publishing to the Snap Store:
+# sudo snap install kport --classic
+```
+
+### Method 2: Using pip
 ```bash
 # Install for current user (RECOMMENDED - avoids permission issues)
 pip install --user kport
@@ -75,7 +100,7 @@ sudo pip install kport
 > Note: if you install with `--user`, root may not find `kport` via `sudo`.
 > Use `sudo -E` or run the full path (usually `~/.local/bin/kport`).
 
-### Method 2: From Source
+### Method 3: From Source
 ```bash
 git clone https://github.com/farman20ali/port-killer.git
 cd port-killer
@@ -100,7 +125,27 @@ source ~/.zshrc
 
 ## 🪟 Windows Installation
 
-### Method 1: Using pip (Recommended)
+### Method 1: Setup Installer .exe (Recommended)
+
+1. Download the latest `kport-<version>-setup.exe` from [GitHub Releases](https://github.com/farman20ali/port-killer/releases).
+2. Run the installer wizard. It will:
+   - Install `kport.exe` to `C:\Program Files\kport\`.
+   - Register it on the System `PATH` automatically.
+   - Create Start Menu shortcuts and register an uninstaller.
+3. Open a **new** terminal window and run `kport --version` to verify.
+
+**Silent/Automated Install:**
+```powershell
+kport-setup.exe /S
+```
+
+### Method 2: Chocolatey
+```powershell
+choco install kport
+```
+*(Requires the package to be published to community.chocolatey.org, or install from a local `.nupkg` built by `choco_build.py`.)*
+
+### Method 3: Using pip
 ```powershell
 # Install to user directory (RECOMMENDED - no admin needed)
 pip install --user kport
@@ -116,23 +161,29 @@ pip install kport
 
 > 💡 **Troubleshooting:** If `kport` command doesn't work, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 
-### Method 2: From Source
+### Method 4: From Source
 ```powershell
 git clone https://github.com/farman20ali/port-killer.git
 cd port-killer
 pip install .
 ```
 
-### Method 3: Run Without Installing
+### Method 5: Run Without Installing
 ```powershell
-python kport.py -h
+python -m kport -h
 ```
 
 ---
 
 ## 🍎 macOS Installation
 
-### Method 1: Using pip (Recommended)
+### Method 1: Setup Installer .pkg (Recommended)
+
+1. Download the latest `kport-<version>.pkg` from [GitHub Releases](https://github.com/farman20ali/port-killer/releases).
+2. Open the `.pkg` file and follow the installer wizard screens.
+3. Open a Terminal and run `kport --version` to verify.
+
+### Method 2: Using pip
 ```bash
 # Install for current user
 pip3 install --user kport
@@ -141,11 +192,24 @@ pip3 install --user kport
 sudo pip3 install kport
 ```
 
-### Method 2: Using Homebrew (If you create a formula)
+### Method 3: Using Homebrew (If you create a formula)
 ```bash
 brew tap yourusername/kport
 brew install kport
 ```
+
+---
+
+## 🧩 VS Code Extension
+
+Install the **KPort - Port Killer & MCP** extension for port commands and one-click MCP server setup:
+
+1. Download `kport-vscode-*.vsix` from [GitHub Releases](https://github.com/farman20ali/port-killer/releases), or build locally:
+   ```bash
+   cd vscode-extension && npm install && npm run package
+   ```
+2. In VS Code: **Extensions → … → Install from VSIX…**
+3. Run **KPort: Configure MCP Server for AI** to register `kport mcp` in `.vscode/mcp.json`.
 
 ---
 

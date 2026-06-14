@@ -1,156 +1,191 @@
-# 🚀 Quick Start Guide
+# 🚀 Quick Start Guide — kport v3.2.0
 
 ## Installation (Choose One Method)
 
-### ✅ Already on your machine!
-```powershell
-# Run directly from this directory
-python kport.py -h
+### ✅ Run directly from source
+```bash
+python -m kport --help
+python -m kport list
 ```
 
-### 📦 Install globally (RECOMMENDED - no admin needed)
-```powershell
+### 📦 Install globally (Recommended — no admin needed)
+```bash
 # Install to user directory
 pip install --user .
-
-# Add to PATH if needed
-$userScriptsPath = "$env:APPDATA\Python\Python311\Scripts"
-[Environment]::SetEnvironmentVariable("Path", "$env:Path;$userScriptsPath", "User")
-$env:Path += ";$userScriptsPath"
 ```
 
 After installation:
 ```bash
-kport -h
-kport --version  # Should show: kport 1.0.0
+kport --version   # kport 3.2.0
+kport list        # show all listening ports
 ```
 
-> 💡 **Note:** Replace `Python311` with your Python version (e.g., `Python310`, `Python312`)
-
----
-
-## 🎯 Quick Commands
-
-```bash
-# Recommended (PRODUCT.md) command style
-
-# List ports (local + docker)
-python kport.py list
-
-# Show docker published ports
-python kport.py docker
-
-# Inspect/explain/kill a port (docker-aware)
-python kport.py inspect 8080
-python kport.py explain 8080
-python kport.py kill 8080 --dry-run
-
-# Legacy flags (still supported)
-
-# List all ports
-python kport.py -l
-
-# Inspect a specific port
-python kport.py -i 8080
-
-# Inspect multiple ports
-python kport.py -im 3000 3001 8080
-
-# Inspect port range
-python kport.py -ir 3000-3010
-
-# Inspect processes by name
-python kport.py -ip node
-
-# Kill process on a port
-python kport.py -k 8080
-
-# Kill all processes matching name
-python kport.py -kp node
-
-# Kill multiple ports
-python kport.py -ka 3000 3001 3002
-
-# Kill port range
-python kport.py -kr 3000-3010
-```
-
----
-
-## 📤 To Share With Others
-
-### Option 1: PyPI (Python Package Index)
-**Best for**: Python users worldwide
-
-1. Create PyPI account: https://pypi.org/account/register/
-2. Run the publish script:
-```powershell
-python publish.py
-```
-3. Users install with:
+### 🌍 Install from PyPI
 ```bash
 pip install kport
 ```
 
-### Option 2: GitHub
-**Best for**: Developers and open source
+---
 
-1. Push to GitHub:
+## 🎯 Core Commands
+
 ```bash
-git init
-git add .
-git commit -m "Initial release"
-git remote add origin https://github.com/farman20ali/port-killer.git
-git push -u origin main
-```
+# List all listening ports (local + Docker)
+kport list
 
-2. Users install with:
-```bash
-pip install git+https://github.com/farman20ali/port-killer.git
-```
+# Show Docker-published ports only
+kport docker
 
-### Option 3: Standalone Executable
-**Best for**: Users without Python
+# Inspect a specific port
+kport inspect 8080
 
-```powershell
-# Install PyInstaller
-pip install pyinstaller
+# Explain why a port is occupied (conflict analysis)
+kport explain 8080
 
-# Create standalone .exe
-pyinstaller --onefile --name kport kport.py
+# Kill a process on a port (safety-shielded, Docker-aware)
+kport kill 8080
 
-# Share the dist\kport.exe file
+# Dry-run: show what would happen without killing
+kport kill 8080 --dry-run
+
+# Skip confirmation prompt
+kport kill 8080 --yes
+
+# Output in JSON format (CI/automation)
+kport kill 8080 --json
+
+# Detect conflicts between Docker and local processes
+kport conflicts
 ```
 
 ---
 
-## 🔧 Your Next Steps
+## 👁️ Watch Mode (v3.2.0)
 
-1. **Test it**: Run `python kport.py -l` to see it work ✅
-2. **Push to GitHub**: Share your code
-3. **Publish to PyPI**: Make it `pip install`-able
-4. **Promote**: Share on social media, Reddit, etc.
+Monitor a port and automatically kill processes that start using it:
+
+```bash
+# Watch port 8080 — kill anything that binds to it
+kport watch 8080
+
+# Custom poll interval (seconds)
+kport watch 8080 --interval 2.5
+
+# Dry-run (print alerts, don't kill)
+kport watch 8080 --dry-run
+
+# JSON output for CI pipelines
+kport watch 8080 --json
+```
+
+---
+
+## 🛡️ Safety Shield (v3.2.0)
+
+Critical ports and processes are protected by default:
+
+```bash
+# This will be BLOCKED (port 22 = SSH):
+kport kill 22
+# → 🛡️ Security Shield Active: Port 22 is a protected port.
+
+# Override when you really need to:
+kport kill 22 --bypass-safety
+```
+
+**Protected ports by default:** 22, 53, 80, 443, 3306, 5432, 6379, 6443
+
+**Protected processes by default:** systemd, init, docker, sshd, lsass.exe, services.exe
+
+---
+
+## ⚙️ Config File
+
+Create `.kport.json` in your project root (or `~/.kport.json` for global defaults):
+
+```json
+{
+  "yes": true,
+  "dry_run": false,
+  "force": false,
+  "graceful_timeout": 5,
+  "docker_action": "stop",
+  "protected_ports": [8080, 9090],
+  "protected_processes": ["my-critical-app"]
+}
+```
+
+---
+
+## 🤖 MCP Server (AI Agent Integration)
+
+Run kport as an MCP server for Claude, Copilot, Cursor, and other AI assistants:
+
+```bash
+kport --mcp
+```
+
+Add to your Claude Desktop / Cursor config:
+
+```json
+{
+  "mcpServers": {
+    "kport": {
+      "command": "kport",
+      "args": ["--mcp"]
+    }
+  }
+}
+```
+
+**MCP tools available:** `list_ports`, `inspect_port`, `kill_port` (all safety-shielded)
+
+---
+
+  ## 🔧 Legacy Flags (still supported)
+
+  ```bash
+  python -m kport -l                  # list all ports
+  python -m kport -i 8080             # inspect port
+  python -m kport -im 3000 3001 8080  # inspect multiple
+  python -m kport -ir 3000-3010       # inspect range
+  python -m kport -ip node            # inspect by process name
+  python -m kport -k 8080             # kill port
+  python -m kport -kp node            # kill by process name
+  python -m kport -ka 3000 3001 3002  # kill multiple ports
+  python -m kport -kr 3000-3010       # kill port range
+  ```
+
+---
+
+## 📤 Packaging and Distribution
+
+```bash
+# Build PIP wheel + sdist
+python -m build
+
+# Build Windows .exe installer
+python win_build.py
+
+# Build macOS .pkg installer
+python mac_build.py
+
+# Build Debian .deb package
+python deb_publish.py
+
+# Build RPM package
+python rpm_build.py
+```
 
 ---
 
 ## 📚 Documentation Files
 
-- `README.md` - Main documentation
-- `INSTALL.md` - Detailed installation instructions
-- `PUBLISH.md` - How to publish to PyPI
-- `publish.py` - Automated publishing helper script
-
----
-
-## 💡 Tips
-
-- Always test in Test PyPI before production
-- Update version number for each release
-- Keep README.md up to date
-- Add badges to show downloads/version
-- Respond to GitHub issues
-
----
-
-**Your tool is ready to use RIGHT NOW!**
-Just run: `python kport.py -l`
+| File | Purpose |
+|------|---------|
+| `README.md` | Main documentation |
+| `INSTALL.md` | Detailed installation |
+| `PACKAGING.md` | Cross-platform packaging |
+| `PUBLISH.md` | PyPI publishing guide |
+| `docs/RELEASE_NOTES_3.2.0.md` | What's new in 3.2.0 |
+| `CONTRIBUTING.md` | How to contribute |

@@ -1,0 +1,345 @@
+name: Build Packages
+
+# ── Triggers ──────────────────────────────────────────────────────────────────
+# 1. Automatically on version tags  (v1.2.3, v3.2.0, …)
+# 2. Manually from the Actions tab  (workflow_dispatch)
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version override (leave empty to read from pyproject.toml)"
+        required: false
+        default: ""
+      upload_release:
+        description: "Attach artifacts to GitHub Release?"
+        required: false
+        default: "true"
+        type: choice
+        options: ["true", "false"]
+
+# ── Global permissions ─────────────────────────────────────────────────────────
+permissions:
+  contents: write   # needed to upload release assets
+
+# ── Jobs ──────────────────────────────────────────────────────────────────────
+jobs:
+
+  # ── 1. PyPI wheel + sdist ────────────────────────────────────────────────────
+  build-pypi:
+    name: "PyPI (.whl + .tar.gz)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install build frontend
+        run: pip install build
+
+      - name: Build wheel + sdist
+        # build.py was renamed to kport_orchestrate.py specifically to avoid
+        # shadowing the 'build' pip package when running `python -m build`.
+        run: python -m build
+
+      - name: Upload PyPI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pypi-packages
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  # ── 2. Debian .deb ───────────────────────────────────────────────────────────
+  build-deb:
+    name: "Debian (.deb)"
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Debian build tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            build-essential dpkg-dev devscripts debhelper \
+            dh-python python3-all fakeroot
+
+      - name: Build .deb
+        run: echo "3" | python deb_publish.py
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-package
+          path: dist/deb/*.deb
+          if-no-files-found: warn
+
+  # ── 3. RPM ───────────────────────────────────────────────────────────────────
+  build-rpm:
+    name: "Linux RPM (.rpm)"
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install rpmbuild
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends rpm
+
+      - name: Build .rpm
+        run: python rpm_build.py --build
+
+      - name: Upload .rpm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-package
+          path: dist/rpm/*.rpm
+          if-no-files-found: warn
+
+  # ── 4. Snap (.snap) ──────────────────────────────────────────────────────────
+  #
+  # Strategy: use snapcore/action-build which sets up LXD properly on
+  # ubuntu-latest, avoiding "Error installing snap core22" that occurs when
+  # trying to run `sudo snap install snapcraft --classic` directly in the runner.
+  #
+  # We stage source files into snap-build/ because snapcraft needs all files
+  # (snapcraft.yaml + source code) under one directory root.
+  build-snap:
+    name: "Snap (.snap)"
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Prepare snap staging directory
+        run: |
+          python - <<'EOF'
+          import re, shutil, pathlib
+
+          REPO     = pathlib.Path(".")
+          SNAP_SRC = REPO / "packaging" / "snap"
+          STAGE    = pathlib.Path("snap-build")
+          STAGE.mkdir(exist_ok=True)
+
+          # Read version from pyproject.toml
+          text    = (REPO / "pyproject.toml").read_text(encoding="utf-8")
+          version = re.search(
+              r'^version\s*=\s*["\']([^"\']+)',
+              text, re.MULTILINE
+          ).group(1).strip()
+
+          # Render snapcraft.yaml from template
+          yaml = (SNAP_SRC / "snapcraft.yaml.template").read_text(encoding="utf-8")
+          (STAGE / "snapcraft.yaml").write_text(
+              yaml.replace("{VERSION}", version), encoding="utf-8"
+          )
+
+          # Copy launcher script
+          launcher = SNAP_SRC / "launcher"
+          shutil.copy2(launcher, STAGE / "launcher")
+          (STAGE / "launcher").chmod(0o755)
+
+          # Copy Python source
+          (STAGE / "src").mkdir(exist_ok=True)
+          shutil.copytree(REPO / "src" / "kport", STAGE / "src" / "kport",
+                          dirs_exist_ok=True)
+          shutil.copy2(REPO / "__main__.py", STAGE / "__main__.py")
+
+          print(f"snap-build staged for kport {version}")
+          EOF
+
+      - name: Build snap
+        id: snapcraft
+        uses: snapcore/action-build@v1
+        with:
+          path: snap-build
+
+      - name: Copy snap to dist/snap
+        run: |
+          mkdir -p dist/snap
+          cp "${{ steps.snapcraft.outputs.snap }}" dist/snap/
+
+      - name: Upload .snap artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: snap-package
+          path: dist/snap/*.snap
+          if-no-files-found: warn
+
+  # ── 5. Windows .exe installer ────────────────────────────────────────────────
+  build-win:
+    name: "Windows (.exe installer)"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller psutil
+
+      - name: Install NSIS
+        shell: powershell
+        run: choco install nsis --yes --no-progress
+
+      - name: Add NSIS to PATH
+        shell: powershell
+        run: |
+          echo "C:\Program Files (x86)\NSIS" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
+
+      - name: Build kport.exe + installer
+        run: python win_build.py --build
+
+      - name: Smoke-test standalone exe
+        shell: cmd
+        run: dist\win\kport.exe --version
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/win/kport-*-setup.exe
+          if-no-files-found: error
+
+  # ── 6. Chocolatey (.nupkg) ───────────────────────────────────────────────────
+  build-choco:
+    name: "Chocolatey (.nupkg)"
+    runs-on: windows-latest
+    needs: [build-win]
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download Windows installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/win
+
+      - name: Build Chocolatey package
+        shell: powershell
+        run: python choco_build.py --build
+
+      - name: Upload Chocolatey artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: choco-package
+          path: dist/choco/*.nupkg
+          if-no-files-found: warn
+
+  # ── 7. macOS .pkg installer ──────────────────────────────────────────────────
+  build-mac:
+    name: "macOS (.pkg installer)"
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller psutil
+
+      - name: Build kport binary + .pkg
+        run: python mac_build.py --build
+
+      - name: Smoke-test binary
+        run: dist/mac/kport --version
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-installer
+          path: dist/mac/kport-*.pkg
+          if-no-files-found: error
+
+  # ── 8. GitHub Release — attach all artifacts ─────────────────────────────────
+  release:
+    name: "GitHub Release — attach artifacts"
+    needs: [build-pypi, build-deb, build-rpm, build-snap, build-win, build-choco, build-mac]
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.upload_release == 'true')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: List artifacts
+        run: find release-assets -type f | sort
+
+      - name: Determine tag name
+        id: tag
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          elif [[ -n "${{ github.event.inputs.version }}" ]]; then
+            TAG="v${{ github.event.inputs.version }}"
+          else
+            VERSION=$(python -c "
+          import pathlib, tomllib
+          data = tomllib.loads(pathlib.Path('pyproject.toml').read_text())
+          print(data.get('project', {}).get('version', '0.0.0'))
+          ")
+            TAG="v${VERSION}"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
+
+      - name: Upload artifacts to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          body_path: docs/RELEASE_NOTES_${{ steps.tag.outputs.version }}.md
+          files: |
+            release-assets/**/*.exe
+            release-assets/**/*.pkg
+            release-assets/**/*.deb
+            release-assets/**/*.rpm
+            release-assets/**/*.snap
+            release-assets/**/*.nupkg
+            release-assets/**/*.whl
+            release-assets/**/*.tar.gz
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

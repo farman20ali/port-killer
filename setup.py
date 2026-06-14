@@ -8,14 +8,15 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="kport",
-    version="3.1.1",
+    version="3.2.3",
     author="Farman Ali",
-    author_email="farman20ali@gmail.com",
+    author_email="alienhub.dev@gmail.com",
     description="A cross-platform command-line tool to inspect and kill processes using specific ports",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/farman20ali/port-killer",
-    py_modules=["kport"],
+    packages=find_packages(where="src"),
+    package_dir={"": "src"},
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
@@ -35,13 +36,11 @@ setup(
         "Operating System :: POSIX :: Linux",
         "Operating System :: MacOS",
     ],
-    python_requires=">=3.6",
-    install_requires=[
-        "psutil>=5.9.0",
-    ],
+    python_requires=">=3.8",
+    install_requires=["psutil>=5.9.0"],
     entry_points={
         "console_scripts": [
-            "kport=kport:main",
+            "kport=kport.cli:main",
         ],
     },
     keywords="port, kill, process, network, cross-platform, cli",

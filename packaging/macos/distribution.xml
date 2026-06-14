@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  productbuild distribution file for kport macOS .pkg installer
+  Used by: productbuild distribution file packaging/macos/distribution.xml
+-->
+<installer-gui-script minSpecVersion="2">
+
+    <title>kport</title>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <license file="../../LICENSE" mime-type="text/plain"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+
+    <background file="background.png"
+                mime-type="image/png"
+                alignment="bottomleft"
+                scaling="none"/>
+
+    <options customize="never"
+             require-scripts="false"
+             hostArchitectures="x86_64,arm64"/>
+
+    <domains enable_localSystem="true"/>
+
+    <pkg-ref id="com.farmanali.kport">
+        <bundle-version/>
+    </pkg-ref>
+
+    <choices-outline>
+        <line choice="com.farmanali.kport"/>
+    </choices-outline>
+
+    <choice id="com.farmanali.kport"
+            visible="false"
+            title="kport"
+            description="kport CLI — cross-platform port inspector and killer">
+        <pkg-ref id="com.farmanali.kport"/>
+    </choice>
+
+    <pkg-ref id="com.farmanali.kport"
+             version="3.2.0"
+             onConclusion="none">kport.pkg</pkg-ref>
+
+</installer-gui-script>

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>kport</id>
+    <version>{VERSION}</version>
+    <title>kport - Port Inspector and Killer</title>
+    <authors>Farman Ali</authors>
+    <owners>Farman Ali</owners>
+    <projectUrl>https://github.com/farman20ali/port-killer</projectUrl>
+    <licenseUrl>https://github.com/farman20ali/port-killer/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <projectSourceUrl>https://github.com/farman20ali/port-killer</projectSourceUrl>
+    <docsUrl>https://github.com/farman20ali/port-killer/blob/main/README.md</docsUrl>
+    <bugTrackerUrl>https://github.com/farman20ali/port-killer/issues</bugTrackerUrl>
+    <summary>Cross-platform CLI to inspect and free ports used by local processes or Docker.</summary>
+    <description>
+kport inspects, explains, and safely frees ports. It supports Docker-aware operations,
+watch mode, safety shields, JSON output, and an MCP server for AI assistants.
+
+Run `kport mcp` to expose port tools to MCP-compatible clients (VS Code Copilot, Cursor, Claude Desktop).
+    </description>
+    <releaseNotes>https://github.com/farman20ali/port-killer/releases/tag/v{VERSION}</releaseNotes>
+    <tags>port kill process network docker devops cli mcp admin</tags>
+  </metadata>
+</package>
