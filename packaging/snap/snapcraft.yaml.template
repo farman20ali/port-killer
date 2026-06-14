@@ -13,9 +13,6 @@ description: |
 grade: stable
 confinement: classic
 license: AGPL-3.0-only
-architectures:
-  - amd64
-  - arm64
 
 apps:
   kport:

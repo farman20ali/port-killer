@@ -5,24 +5,24 @@ Orchestrates building and packaging across all platforms and formats.
 Provides a unified interface for creating and publishing builds.
 
 Usage (automated / CI):
-    python build.py --check              # Check all prerequisites
-    python build.py --build-all          # Build all packages
-    python build.py --build-pypi         # Build Python packages only
-    python build.py --build-vscode       # Build VS Code extension only
-    python build.py --build-snap         # Build snap package only
-    python build.py --publish-all        # Publish all packages
-    python build.py --publish-pypi       # Publish to PyPI
-    python build.py --publish-vscode     # Publish VS Code extension
-    python build.py --publish-snap       # Publish to Snap Store
-    python build.py --dry-run            # Show what would happen
+    python kport_orchestrate.py --check              # Check all prerequisites
+    python kport_orchestrate.py --build-all          # Build all packages
+    python kport_orchestrate.py --build-pypi         # Build Python packages only
+    python kport_orchestrate.py --build-vscode       # Build VS Code extension only
+    python kport_orchestrate.py --build-snap         # Build snap package only
+    python kport_orchestrate.py --publish-all        # Publish all packages
+    python kport_orchestrate.py --publish-pypi       # Publish to PyPI
+    python kport_orchestrate.py --publish-vscode     # Publish VS Code extension
+    python kport_orchestrate.py --publish-snap       # Publish to Snap Store
+    python kport_orchestrate.py --dry-run            # Show what would happen
 
 Interactive (recommended):
-    python build.py                      # Interactive menu
+    python kport_orchestrate.py                      # Interactive menu
 
 Full workflow examples:
-    python build.py --build-all && python build.py --publish-all
-    python build.py --build-vscode --install
-    python build.py --build-snap --publish-snap --channel edge
+    python kport_orchestrate.py --build-all && python kport_orchestrate.py --publish-all
+    python kport_orchestrate.py --build-vscode --install
+    python kport_orchestrate.py --build-snap --publish-snap --channel edge
 """
 
 from __future__ import annotations
