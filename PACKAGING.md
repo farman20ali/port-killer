@@ -1,6 +1,6 @@
 # Developer Packaging Guide
 
-This guide explains how to package `kport` into platform-native installation packages (Windows `.exe` setup, macOS `.pkg`, Linux `.rpm`, Debian `.deb`, and PyPI wheels).
+This guide explains how to package `kport` into platform-native installation packages (Windows `.exe`, Chocolatey `.nupkg`, macOS `.pkg`, Linux `.rpm`, Debian `.deb`, Snap `.snap`, PyPI wheels, and VS Code `.vsix`).
 
 ---
 
@@ -20,13 +20,22 @@ port-killer/
 │   │   ├── distribution.xml    # productbuild installer distribution
 │   │   └── scripts/
 │   │       └── postinstall     # post-installation launcher symlinker
-│   └── linux/
-│       └── kport.spec.template # RPM packaging spec template
+│   ├── linux/
+│   │   └── kport.spec.template # RPM packaging spec template
+│   ├── snap/
+│   │   ├── snapcraft.yaml.template
+│   │   └── launcher            # Snap app entrypoint wrapper
+│   └── chocolatey/
+│       ├── kport.nuspec.template
+│       └── tools/chocolateyinstall.ps1.template
 ├── win_build.py                # Standalone Windows builder
 ├── mac_build.py                # Standalone macOS builder
+├── snap_build.py               # Standalone Snap builder
+├── choco_build.py              # Standalone Chocolatey builder
 ├── rpm_build.py                # Standalone RPM builder
 ├── deb_publish.py              # Standalone Debian builder
 ├── publish.py                  # Standalone PyPI publisher
+├── vscode-extension/           # VS Code extension (MCP + port commands)
 ├── build_packages.py           # Unified orchestrator (with --all)
 └── release.py                  # Release orchestrator (prepares tag & pushes to GitHub)
 ```
@@ -66,6 +75,20 @@ pip install -e .[packaging]
     *   Fedora/RHEL: `sudo dnf install rpm-build python3-devel`
     *   openSUSE: `sudo zypper install rpm-build`
 
+### 6. Snap (`.snap` Package)
+*   **snapcraft**:
+    ```bash
+    sudo snap install snapcraft --classic
+    ```
+
+### 7. Chocolatey (`.nupkg` Package)
+*   **Chocolatey CLI** (Windows): [chocolatey.org/install](https://chocolatey.org/install)
+*   Requires a built Windows installer (`dist/win/kport-*-setup.exe`)
+
+### 8. VS Code Extension (`.vsix`)
+*   **Node.js 20+** and npm
+*   Build from `vscode-extension/` with `npm run package`
+
 ---
 
 ## Standalone Build Helpers
@@ -97,6 +120,20 @@ python rpm_build.py --build          # Build .rpm from spec template
 python rpm_build.py --dry-run        # Preview generated spec file and compile command
 ```
 
+### Snap Package: `snap_build.py`
+```bash
+python snap_build.py --check         # Check for snapcraft
+python snap_build.py --build         # Build .snap (classic confinement)
+python snap_build.py --dry-run       # Preview generated snapcraft.yaml
+```
+
+### Chocolatey Package: `choco_build.py`
+```powershell
+python choco_build.py --check        # Check for choco CLI
+python win_build.py --build          # Build installer first
+python choco_build.py --build        # Wrap installer in .nupkg
+```
+
 ---
 
 ## Unified Orchestrator: `build_packages.py`
@@ -105,9 +142,9 @@ Use `build_packages.py` to trigger multiple targets or automatically build every
 
 ```bash
 # Build all packages appropriate for the current platform:
-#   Windows  -> .exe installer + PyPI packages
+#   Windows  -> .exe installer + Chocolatey + PyPI packages
 #   macOS    -> .pkg installer + PyPI packages
-#   Linux    -> .deb package   + .rpm package + PyPI packages
+#   Linux    -> .deb + .rpm + .snap + PyPI packages
 python build_packages.py --all
 
 # Preview what will be built (highly recommended for debugging pipelines):
@@ -130,7 +167,8 @@ python build_packages.py --list-outputs
 All native packages are fully automated in the release pipeline:
 1.  **Workflow Trigger**: When a new tag (e.g. `v3.2.0`) is pushed to GitHub, the `.github/workflows/build-packages.yml` pipeline triggers.
 2.  **Parallel Building**: The workflow spins up separate runners in parallel:
-    *   `windows-latest` -> Builds `.exe` installer setup.
+    *   `windows-latest` -> Builds `.exe` installer + Chocolatey `.nupkg`.
     *   `macos-latest` -> Builds `.pkg` installer.
-    *   `ubuntu-latest` -> Builds `.deb`, `.rpm`, and PyPI packages.
+    *   `ubuntu-latest` -> Builds `.deb`, `.rpm`, `.snap`, and PyPI packages.
+    *   `vscode-extension.yml` -> Builds `.vsix` on tag pushes.
 3.  **Automatic Release Attachment**: The pipeline gathers all generated packages and uploads them to the GitHub release page.

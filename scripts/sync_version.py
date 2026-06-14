@@ -42,6 +42,14 @@ def sync_version(version: str) -> None:
         rf'\1"{version}"',
     )
 
+    vscode_pkg = ROOT / "vscode-extension" / "package.json"
+    if vscode_pkg.exists():
+        replace_once(
+            vscode_pkg,
+            r'^(\s*"version"\s*:\s*)["\'][^"\']+["\']',
+            rf'\1"{version}"',
+        )
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Sync kport version metadata")

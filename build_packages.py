@@ -13,6 +13,8 @@ Usage:
     python build_packages.py --rpm          # Linux .rpm package
     python build_packages.py --mac          # macOS .pkg installer
     python build_packages.py --pypi         # PyPI wheel + sdist
+    python build_packages.py --snap         # Snap package (.snap)
+    python build_packages.py --choco        # Chocolatey package (.nupkg)
 
     python build_packages.py --all --check  # Check all prerequisites
     python build_packages.py --all --dry-run
@@ -30,6 +32,8 @@ Outputs (relative to repo root):
     dist/mac/kport-<v>.pkg         macOS installer
     dist/deb/kport_<v>-1_all.deb   Debian package
     dist/rpm/kport-<v>-1.*.rpm     RPM package
+    dist/snap/kport_<v>_*.snap     Snap package
+    dist/choco/kport.<v>.nupkg     Chocolatey package
     dist/*.whl, dist/*.tar.gz       PyPI packages
 
 Return codes:
@@ -198,6 +202,36 @@ def build_rpm(version: str, check: bool, dry_run: bool) -> bool:
     return ok_result
 
 
+def build_snap(version: str, check: bool, dry_run: bool) -> bool:
+    target("Snap      →  dist/snap/kport_<v>_*.snap")
+    if sys.platform == "win32" and not check:
+        warn("Snap build requires Linux — skipping on Windows host.")
+        return True
+
+    args = ["--check"] if check else ["--build"]
+    ok_result = _run_script("snap_build.py", args, dry_run)
+    if ok_result and not check and not dry_run:
+        matches = list((REPO_ROOT / "dist" / "snap").glob("*.snap"))
+        if matches:
+            ok(f"Snap package      → {matches[-1].name}")
+    return ok_result
+
+
+def build_choco(version: str, check: bool, dry_run: bool) -> bool:
+    target("Chocolatey →  dist/choco/kport.<v>.nupkg")
+    if sys.platform != "win32" and not check and not dry_run:
+        warn("Chocolatey packaging requires Windows — skipping on non-Windows host.")
+        return True
+
+    args = ["--check"] if check else ["--build"]
+    ok_result = _run_script("choco_build.py", args, dry_run)
+    if ok_result and not check and not dry_run:
+        matches = list((REPO_ROOT / "dist" / "choco").glob("*.nupkg"))
+        if matches:
+            ok(f"Chocolatey pkg    → {matches[-1].name}")
+    return ok_result
+
+
 def build_pypi(version: str, check: bool, dry_run: bool) -> bool:
     target("PyPI      →  dist/*.whl  dist/*.tar.gz")
 
@@ -248,9 +282,10 @@ def resolve_all_targets(args: argparse.Namespace) -> argparse.Namespace:
     info(f"Platform: {plat} — auto-selecting targets")
 
     if plat == "Windows":
-        args.win  = True
-        args.pypi = True
-        info("Auto-selected: --win --pypi")
+        args.win   = True
+        args.choco = True
+        args.pypi  = True
+        info("Auto-selected: --win --choco --pypi")
     elif plat == "Darwin":
         args.mac  = True
         args.pypi = True
@@ -258,8 +293,9 @@ def resolve_all_targets(args: argparse.Namespace) -> argparse.Namespace:
     elif plat == "Linux":
         args.deb  = True
         args.rpm  = True
+        args.snap = True
         args.pypi = True
-        info("Auto-selected: --deb --rpm --pypi")
+        info("Auto-selected: --deb --rpm --snap --pypi")
     else:
         args.pypi = True
         info("Auto-selected: --pypi (unknown platform)")
@@ -305,6 +341,10 @@ def main() -> None:
                         help="Linux .rpm package (via rpmbuild)")
     tgroup.add_argument("--pypi",  action="store_true",
                         help="PyPI wheel + sdist (via python -m build)")
+    tgroup.add_argument("--snap",  action="store_true",
+                        help="Snap package (via snapcraft)")
+    tgroup.add_argument("--choco", action="store_true",
+                        help="Chocolatey .nupkg (wraps Windows .exe installer)")
 
     # ── Mode flags ──
     mgroup = parser.add_argument_group("modes")
@@ -330,6 +370,8 @@ def main() -> None:
             ("mac/kport-*.pkg",       "macOS installer"),
             ("deb/*.deb",             "Debian package"),
             ("rpm/*.rpm",             "RPM package"),
+            ("snap/*.snap",           "Snap package"),
+            ("choco/*.nupkg",         "Chocolatey package"),
             ("*.whl",                 "Python wheel"),
             ("*.tar.gz",              "Source dist"),
         ]:
@@ -342,11 +384,13 @@ def main() -> None:
         return
 
     # ── Validate: at least one target ──
-    any_target = any([args.all, args.win, args.mac, args.deb, args.rpm, args.pypi])
+    any_target = any([
+        args.all, args.win, args.mac, args.deb, args.rpm, args.pypi, args.snap, args.choco,
+    ])
     if not any_target:
         parser.print_help()
         print()
-        warn("No target selected. Use --all or specify one of: --win --mac --deb --rpm --pypi")
+        warn("No target selected. Use --all or specify one of: --win --mac --deb --rpm --snap --choco --pypi")
         sys.exit(0)
 
     # ── Resolve --all → individual flags ──
@@ -372,6 +416,12 @@ def main() -> None:
 
     if args.rpm:
         results["Linux (.rpm)"]   = build_rpm(version, args.check, args.dry_run)
+
+    if args.snap:
+        results["Snap (.snap)"]   = build_snap(version, args.check, args.dry_run)
+
+    if args.choco:
+        results["Chocolatey"]     = build_choco(version, args.check, args.dry_run)
 
     if args.pypi:
         results["PyPI (.whl)"]    = build_pypi(version, args.check, args.dry_run)

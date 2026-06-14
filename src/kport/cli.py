@@ -710,6 +710,8 @@ Examples:
     # FIX: default=None so config override only triggers when user didn't pass a value explicitly
     parser.add_argument("--graceful-timeout", type=float, default=None, help="Seconds to wait before force kill (default: 3.0)")
     parser.add_argument("-v", "--version", action="version", version=f"kport {__version__}")
+    parser.add_argument("--mcp", action="store_true",
+                        help="Start the MCP JSON-RPC server on stdio (alias for 'kport mcp')")
 
     # FIX: pass parser_class=_QuietParser so ALL subparsers inherit quiet error formatting
     sub = parser.add_subparsers(dest="command", parser_class=_QuietParser)
@@ -778,6 +780,18 @@ Examples:
     sp_mcp = sub.add_parser("mcp", help="Start the stdio Model Context Protocol (MCP) server")
 
     args = parser.parse_args(argv)
+
+    if getattr(args, "mcp", False):
+        try:
+            from .mcp_server import run_mcp_server
+            run_mcp_server()
+            return EXIT_OK
+        except ImportError:
+            print(colorize("Error: MCP server module not available.", Colors.RED), file=sys.stderr)
+            return EXIT_GENERAL_ERROR
+        except Exception as e:
+            print(colorize(f"MCP server error: {e}", Colors.RED), file=sys.stderr)
+            return EXIT_GENERAL_ERROR
 
     # Load configuration
     cfg = load_config(getattr(args, "config", None), debug=getattr(args, "debug", False))

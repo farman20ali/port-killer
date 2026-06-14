@@ -60,6 +60,11 @@ venv.bak/
 *.swo
 *~
 
+# VS Code extension
+vscode-extension/node_modules/
+vscode-extension/out/
+vscode-extension/*.vsix
+
 # OS
 .DS_Store
 Thumbs.db

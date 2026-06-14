@@ -79,6 +79,13 @@ sudo rpm -i kport-*.rpm
 sudo dnf install kport-*.rpm
 ```
 
+**Snap (Ubuntu and other snap-enabled distros):**
+```bash
+sudo snap install kport_*.snap --classic --dangerous
+# After publishing to the Snap Store:
+# sudo snap install kport --classic
+```
+
 ### Method 2: Using pip
 ```bash
 # Install for current user (RECOMMENDED - avoids permission issues)
@@ -132,7 +139,13 @@ source ~/.zshrc
 kport-setup.exe /S
 ```
 
-### Method 2: Using pip
+### Method 2: Chocolatey
+```powershell
+choco install kport
+```
+*(Requires the package to be published to community.chocolatey.org, or install from a local `.nupkg` built by `choco_build.py`.)*
+
+### Method 3: Using pip
 ```powershell
 # Install to user directory (RECOMMENDED - no admin needed)
 pip install --user kport
@@ -148,14 +161,14 @@ pip install kport
 
 > 💡 **Troubleshooting:** If `kport` command doesn't work, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 
-### Method 3: From Source
+### Method 4: From Source
 ```powershell
 git clone https://github.com/farman20ali/port-killer.git
 cd port-killer
 pip install .
 ```
 
-### Method 4: Run Without Installing
+### Method 5: Run Without Installing
 ```powershell
 python -m kport -h
 ```
@@ -184,6 +197,19 @@ sudo pip3 install kport
 brew tap yourusername/kport
 brew install kport
 ```
+
+---
+
+## 🧩 VS Code Extension
+
+Install the **KPort - Port Killer & MCP** extension for port commands and one-click MCP server setup:
+
+1. Download `kport-vscode-*.vsix` from [GitHub Releases](https://github.com/farman20ali/port-killer/releases), or build locally:
+   ```bash
+   cd vscode-extension && npm install && npm run package
+   ```
+2. In VS Code: **Extensions → … → Install from VSIX…**
+3. Run **KPort: Configure MCP Server for AI** to register `kport mcp` in `.vscode/mcp.json`.
 
 ---
 
