@@ -55,6 +55,48 @@ async function showOutput(title: string, body: string): Promise<void> {
   await vscode.window.showTextDocument(doc, { preview: false });
 }
 
+async function promptMcpSetupOnFirstActivation(context: vscode.ExtensionContext): Promise<void> {
+  const hasShownPrompt = context.globalState.get<boolean>("kport.mcpPromptShown");
+  if (hasShownPrompt) {
+    return;
+  }
+
+  // Only show prompt if workspace folder is open
+  if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
+    return;
+  }
+
+  const choice = await vscode.window.showInformationMessage(
+    "KPort MCP Extension: Configure the MCP server for AI-powered development?",
+    { modal: true },
+    "Yes, Configure",
+    "No, Skip"
+  );
+
+  // Mark that we've shown the prompt
+  await context.globalState.update("kport.mcpPromptShown", true);
+
+  if (choice === "Yes, Configure") {
+    const executable = getExecutable();
+    const useLegacyArgs = vscode.workspace
+      .getConfiguration("kport")
+      .get<boolean>("mcp.useLegacyArgs", false);
+
+    try {
+      await runKport(["--version"]);
+      const mcpPath = await configureWorkspaceMcp(executable, useLegacyArgs);
+      if (mcpPath) {
+        void vscode.window.showInformationMessage(
+          `✅ KPort MCP server registered in ${mcpPath}. Reload the window if using Copilot.`,
+          "Reload Window"
+        );
+      }
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Failed to configure MCP: ${String(error)}`);
+    }
+  }
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand("kport.checkInstallation", async () => {
@@ -148,6 +190,10 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
+  // Show first-time MCP setup prompt
+  void promptMcpSetupOnFirstActivation(context);
+
+  // Also run auto-configure if setting is enabled
   void maybeAutoConfigureMcp();
 }
 
