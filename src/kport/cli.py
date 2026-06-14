@@ -920,10 +920,48 @@ Examples:
             bindings = inspector.find_ports_by_process_name(pname, exact=args.exact)
             if args.json:
                 print(jsonify_bindings(bindings))
+                if not bindings:
+                    pids = inspector.find_pids_by_name(pname, exact=args.exact)
+                    if pids:
+                        pids_str = ", ".join(map(str, pids))
+                        import platform
+                        is_windows = platform.system() == "Windows"
+                        is_root = False
+                        if not is_windows:
+                            is_root = (os.geteuid() == 0) if hasattr(os, 'geteuid') else False
+                        else:
+                            import ctypes
+                            try:
+                                is_root = ctypes.windll.shell32.IsUserAnAdmin() != 0
+                            except Exception:
+                                pass
+                        if not is_root:
+                            print(colorize(f"Warning: No port bindings found matching '{pname}', but matching processes exist (PID(s): {pids_str}). Try running with sudo/admin privileges.", Colors.YELLOW), file=sys.stderr)
             else:
                 print(colorize(f"\n🔍 Inspecting processes matching '{pname}'\n", Colors.CYAN + Colors.BOLD))
                 if not bindings:
-                    print(colorize(f"❌ No processes found matching '{pname}'", Colors.RED))
+                    pids = inspector.find_pids_by_name(pname, exact=args.exact)
+                    if pids:
+                        pids_str = ", ".join(map(str, pids))
+                        import platform
+                        is_windows = platform.system() == "Windows"
+                        is_root = False
+                        if not is_windows:
+                            is_root = (os.geteuid() == 0) if hasattr(os, 'geteuid') else False
+                        else:
+                            import ctypes
+                            try:
+                                is_root = ctypes.windll.shell32.IsUserAnAdmin() != 0
+                            except Exception:
+                                pass
+                        
+                        if not is_root:
+                            msg = f"No port bindings found matching '{pname}', but matching processes exist (PID(s): {pids_str}). Try running with sudo/admin privileges."
+                            print(colorize(f"⚠ {msg}", Colors.YELLOW))
+                        else:
+                            print(colorize(f"❌ Process(es) matching '{pname}' (PID(s): {pids_str}) found, but they are not listening on any ports.", Colors.RED))
+                    else:
+                        print(colorize(f"❌ No processes found matching '{pname}'", Colors.RED))
                 else:
                     pid_groups = {}
                     for b in bindings:

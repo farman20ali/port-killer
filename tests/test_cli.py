@@ -148,7 +148,7 @@ def test_watch_command_parser_setup():
 
 def test_apply_config_defaults():
     from kport.cli import apply_config_defaults
-    args = argparse.Namespace(yes=False, dry_run=False, json=False, debug=False, force=False, graceful_timeout=3.0)
+    args = argparse.Namespace(yes=False, dry_run=False, json=False, debug=False, force=False, graceful_timeout=None)
     cfg = {
         "yes": True,
         "dry_run": True,
