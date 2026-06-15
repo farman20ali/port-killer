@@ -2,7 +2,7 @@ name: kport
 title: kport
 base: core22
 version: "{VERSION}"
-icon: assets/icons/icon_512_512.png
+icon: assets/icons/icon_512_512_100kb.png
 summary: Inspect, monitor, and free ports — with AI safety shields and Docker support
 description: |
   kport is a powerful cross-platform port inspector and process killer for
@@ -51,6 +51,10 @@ description: |
 grade: stable
 confinement: strict
 license: AGPL-3.0-only
+contact: alienhub.dev@gmail.com
+website: https://github.com/farman20ali/port-killer
+issues: https://github.com/farman20ali/port-killer/issues
+source-code: https://github.com/farman20ali/port-killer
 
 apps:
   kport:
@@ -74,5 +78,7 @@ parts:
       set -eux
       mkdir -p "$SNAPCRAFT_PART_INSTALL/bin"
       mkdir -p "$SNAPCRAFT_PART_INSTALL/usr/lib/python3/dist-packages"
+      mkdir -p "$SNAPCRAFT_PART_INSTALL/meta/gui"
       install -m 755 launcher "$SNAPCRAFT_PART_INSTALL/bin/kport"
       cp -a src/kport "$SNAPCRAFT_PART_INSTALL/usr/lib/python3/dist-packages/"
+      cp assets/icons/icon_512_512_100kb.png "$SNAPCRAFT_PART_INSTALL/meta/gui/icon.png"
