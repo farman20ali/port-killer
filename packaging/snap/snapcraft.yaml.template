@@ -3,13 +3,50 @@ title: kport
 base: core22
 version: "{VERSION}"
 icon: assets/icons/icon_512_512.png
-summary: Cross-platform port inspector and killer
+summary: Inspect, monitor, and free ports — with AI safety shields and Docker support
 description: |
-  kport inspects, explains, and safely frees ports used by local processes
-  or Docker containers. Includes watch mode, safety shields, and an MCP
-  server for AI assistant integration.
+  kport is a powerful cross-platform port inspector and process killer for
+  developers. Instantly find what is blocking a port, safely free it, and
+  monitor it in real-time — all from the terminal.
 
-  Run `kport mcp` to expose port tools to MCP-compatible clients.
+  CORE FEATURES
+  • Inspect a port:       kport inspect 8080
+  • Free a port:          kport kill 8080
+  • List all ports:       kport list
+  • Scan a port range:    kport inspect 3000-3010
+  • Kill multiple ports:  kport kill 3000 3001 8080
+  • Kill by name:         kport kill --process node
+
+  WATCH MODE (real-time monitoring)
+  Continuously monitor a port and auto-kill any process that binds to it:
+    kport watch 8080
+    kport watch 8080 --interval 2.5 --dry-run
+
+  SAFETY SHIELD (protect critical services)
+  Blocks accidental kills on SSH, DNS, databases, and Kubernetes by default:
+    kport kill 22        # blocked — SSH is protected
+    kport kill 22 --bypass-safety   # override when you really mean it
+
+  DOCKER AWARENESS
+  Detects ports published by Docker containers even when no host process
+  is visible:
+    kport docker
+    kport conflicts
+
+  MCP SERVER (AI agent integration)
+  Run kport as an MCP server so Claude, Cursor, Copilot, and other AI
+  assistants can inspect and free ports on your behalf:
+    kport --mcp
+
+  CONFIG FILE
+  Set persistent defaults via .kport.json (project, home, or global):
+    { "yes": true, "protected_ports": [8080, 9090] }
+
+  PLATFORM SUPPORT
+  Works on Linux, macOS, and Windows. Uses psutil when available for
+  richer process info, falls back to native OS tools (ss, lsof, netstat).
+
+  Source & docs: https://github.com/farman20ali/port-killer
 
 grade: stable
 confinement: strict
