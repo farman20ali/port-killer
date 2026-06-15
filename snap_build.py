@@ -164,7 +164,7 @@ def build_snap(version: str, dry_run: bool = False) -> Path | None:
         shutil.copy2(snaps[0], dest)
         ok(f"Snap built: {dest}")
         print(f"\nInstall with:")
-        print(f"  sudo snap install {dest} --classic --dangerous")
+        print(f"  sudo snap install {dest} --dangerous")
         return dest
 
 

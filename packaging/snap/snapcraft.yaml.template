@@ -12,12 +12,17 @@ description: |
   Run `kport mcp` to expose port tools to MCP-compatible clients.
 
 grade: stable
-confinement: classic
+confinement: strict
 license: AGPL-3.0-only
 
 apps:
   kport:
     command: bin/kport
+    plugs:
+      - network-observe
+      - network-bind
+      - system-observe
+      - process-control
     environment:
       PYTHONPATH: $SNAP/usr/lib/python3/dist-packages
 
