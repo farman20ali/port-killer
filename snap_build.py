@@ -123,7 +123,7 @@ def _prepare_build_dir(version: str, build_root: Path) -> Path:
                 shutil.copy2(src, dest)
                 dest.chmod(0o755)
 
-    for rel in ("src/kport", "__main__.py"):
+    for rel in ("src/kport", "__main__.py", "assets"):
         src = REPO_ROOT / rel
         dest = build_root / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
