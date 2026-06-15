@@ -169,6 +169,9 @@ jobs:
                           dirs_exist_ok=True)
           shutil.copy2(REPO / "__main__.py", STAGE / "__main__.py")
 
+          # Copy assets (icons)
+          shutil.copytree(REPO / "assets", STAGE / "assets", dirs_exist_ok=True)
+
           print(f"snap-build staged for kport {version}")
           EOF
 

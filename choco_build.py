@@ -15,6 +15,7 @@ Output:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
@@ -29,6 +30,22 @@ if sys.platform == "win32":
                 stream.reconfigure(encoding="utf-8")
             except Exception:
                 pass
+
+    # Dynamic path enhancement for Windows build tools
+    extra_paths = [
+        r"C:\Program Files (x86)\NSIS",
+        r"C:\Program Files\NSIS",
+        r"C:\ProgramData\chocolatey\bin",
+    ]
+    path_env = os.environ.get("PATH", "")
+    paths = [p.strip() for p in path_env.split(os.pathsep) if p.strip()]
+    added = False
+    for p in extra_paths:
+        if os.path.exists(p) and p not in paths:
+            paths.append(p)
+            added = True
+    if added:
+        os.environ["PATH"] = os.pathsep.join(paths)
 
 REPO_ROOT = Path(__file__).resolve().parent
 DIST_CHOCO = REPO_ROOT / "dist" / "choco"

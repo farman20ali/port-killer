@@ -2,6 +2,7 @@ name: kport
 title: kport
 base: core22
 version: "{VERSION}"
+icon: assets/icons/icon_512_512.png
 summary: Cross-platform port inspector and killer
 description: |
   kport inspects, explains, and safely frees ports used by local processes

@@ -90,5 +90,5 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     version=str(REPO_ROOT / "packaging" / "windows" / "version.txt"),
-    icon=None,           # No icon — add .ico path here if desired
+    icon=str(REPO_ROOT / "assets" / "icons" / "windows" / "icon_256_256_ico.ico"),
 )

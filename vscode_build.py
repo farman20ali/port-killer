@@ -178,6 +178,16 @@ def build_extension(dry_run: bool = False) -> int:
     version = get_extension_version()
     info(f"Building KPort VS Code extension v{version}")
     
+    # Copy icon into the extension directory
+    icon_src = REPO_ROOT / "assets" / "icons" / "icon_128_128.png"
+    if icon_src.exists():
+        shutil.copy2(icon_src, VSCODE_EXT / "icon_128_128.png")
+        
+    # Copy LICENSE into the extension directory
+    license_src = REPO_ROOT / "LICENSE"
+    if license_src.exists():
+        shutil.copy2(license_src, VSCODE_EXT / "LICENSE")
+    
     cmd = f"cd {VSCODE_EXT} && npm install && npm run package"
     
     if dry_run:

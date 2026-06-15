@@ -146,6 +146,7 @@ def build_pyinstaller(dry_run: bool = False) -> bool:
         "--onefile",
         "--console",
         "--name", "kport",
+        "--icon", str(REPO_ROOT / "assets" / "icons" / "icon_512_512.png"),
         "--distpath", str(DIST_MAC),
         "--workpath", str(REPO_ROOT / "build" / "pyinstaller_mac"),
         "--paths", str(REPO_ROOT / "src"),
@@ -196,7 +197,7 @@ def build_pkg(version: str, dry_run: bool = False) -> Path | None:
         pkgbuild_cmd = [
             "pkgbuild",
             "--root",       str(payload_root),
-            "--identifier", "com.farmanali.kport",
+            "--identifier", "com.alienhub.kport",
             "--version",    version,
             "--scripts",    str(SCRIPTS_DIR),
             "--install-location", "/",
