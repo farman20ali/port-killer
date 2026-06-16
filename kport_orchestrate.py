@@ -10,10 +10,12 @@ Usage (automated / CI):
     python kport_orchestrate.py --build-pypi         # Build Python packages only
     python kport_orchestrate.py --build-vscode       # Build VS Code extension only
     python kport_orchestrate.py --build-snap         # Build snap package only
+    python kport_orchestrate.py --build-choco        # Build Chocolatey package only
     python kport_orchestrate.py --publish-all        # Publish all packages
     python kport_orchestrate.py --publish-pypi       # Publish to PyPI
     python kport_orchestrate.py --publish-vscode     # Publish VS Code extension
     python kport_orchestrate.py --publish-snap       # Publish to Snap Store
+    python kport_orchestrate.py --publish-choco      # Publish to Chocolatey
     python kport_orchestrate.py --dry-run            # Show what would happen
 
 Interactive (recommended):
@@ -23,6 +25,7 @@ Full workflow examples:
     python kport_orchestrate.py --build-all && python kport_orchestrate.py --publish-all
     python kport_orchestrate.py --build-vscode --install
     python kport_orchestrate.py --build-snap --publish-snap --channel edge
+    python kport_orchestrate.py --build-choco --publish-choco
 """
 
 from __future__ import annotations
@@ -116,6 +119,8 @@ def check_all_requirements(dry_run: bool = False) -> bool:
         ("build_packages.py", "--check", "Python packages"),
         ("vscode_build.py", "--check", "VS Code extension"),
         ("snap_publish.py", "--check", "Snap package"),
+        ("choco_build.py", "--check", "Chocolatey package"),
+        ("choco_publish.py", "--check", "Chocolatey publish"),
     ]
     
     all_ok = True
@@ -171,6 +176,15 @@ def build_snap(dry_run: bool = False) -> int:
     return run_script("snap_build.py", "--build", dry_run=dry_run)
 
 
+def build_choco(dry_run: bool = False) -> int:
+    """Build Chocolatey package (Windows installer + .nupkg)"""
+    section("Building Chocolatey Package")
+    ret = run_script("win_build.py", "--build", dry_run=dry_run)
+    if ret != 0:
+        return ret
+    return run_script("choco_build.py", "--build", dry_run=dry_run)
+
+
 def publish_all(dry_run: bool = False) -> int:
     """Publish all packages"""
     section("Publishing All Packages")
@@ -179,6 +193,7 @@ def publish_all(dry_run: bool = False) -> int:
         ("publish.py", "", "PyPI"),
         ("vscode_build.py", "--publish", "VS Code extension"),
         ("snap_publish.py", "--publish", "Snap package"),
+        ("choco_publish.py", "--publish", "Chocolatey package"),
     ]
     
     failed = []
@@ -214,6 +229,12 @@ def publish_snap(channel: str = "stable", dry_run: bool = False) -> int:
     return run_script("snap_publish.py", f"--publish --channel {channel}", dry_run=dry_run)
 
 
+def publish_choco(dry_run: bool = False) -> int:
+    """Publish Chocolatey package"""
+    section("Publishing Chocolatey Package")
+    return run_script("choco_publish.py", "--publish", dry_run=dry_run)
+
+
 def interactive_menu() -> int:
     """Show interactive menu"""
     section("KPort Unified Build Orchestrator")
@@ -224,22 +245,24 @@ def interactive_menu() -> int:
     print("  3. Build Python packages (PyPI)")
     print("  4. Build VS Code extension")
     print("  5. Build snap package")
+    print("  6. Build Chocolatey package")
     
     print("\n📤 Publish Options:")
-    print("  6. Publish all packages")
-    print("  7. Publish to PyPI")
-    print("  8. Publish VS Code extension")
-    print("  9. Publish snap (stable)")
-    print("  10. Publish snap (edge)")
-    print("  11. Publish snap (candidate)")
+    print("  7. Publish all packages")
+    print("  8. Publish to PyPI")
+    print("  9. Publish VS Code extension")
+    print("  10. Publish snap (stable)")
+    print("  11. Publish snap (edge)")
+    print("  12. Publish snap (candidate)")
+    print("  13. Publish Chocolatey package")
     
     print("\n🔗 Workflows:")
-    print("  12. Build all + Install VS Code extension locally")
-    print("  13. Build all + Publish all")
+    print("  14. Build all + Install VS Code extension locally")
+    print("  15. Build all + Publish all")
     
     print("\n0. Exit")
     
-    choice = input("\nEnter choice (0-13): ").strip()
+    choice = input("\nEnter choice (0-15): ").strip()
     
     if choice == "0":
         return 0
@@ -254,23 +277,27 @@ def interactive_menu() -> int:
     elif choice == "5":
         return build_snap()
     elif choice == "6":
-        return publish_all()
+        return build_choco()
     elif choice == "7":
-        return publish_pypi()
+        return publish_all()
     elif choice == "8":
-        return publish_vscode()
+        return publish_pypi()
     elif choice == "9":
-        return publish_snap(channel="stable")
+        return publish_vscode()
     elif choice == "10":
-        return publish_snap(channel="edge")
+        return publish_snap(channel="stable")
     elif choice == "11":
-        return publish_snap(channel="candidate")
+        return publish_snap(channel="edge")
     elif choice == "12":
+        return publish_snap(channel="candidate")
+    elif choice == "13":
+        return publish_choco()
+    elif choice == "14":
         ret = build_all()
         if ret == 0:
             return run_script("vscode_build.py", "--install")
         return ret
-    elif choice == "13":
+    elif choice == "15":
         ret = build_all()
         if ret == 0:
             return publish_all()
@@ -317,6 +344,11 @@ def main() -> int:
         help="Build snap package"
     )
     group.add_argument(
+        "--build-choco",
+        action="store_true",
+        help="Build Chocolatey package (Windows .exe + .nupkg)"
+    )
+    group.add_argument(
         "--install-vscode",
         action="store_true",
         help="Install VS Code extension locally (requires --build-vscode)"
@@ -344,6 +376,11 @@ def main() -> int:
         help="Publish snap package"
     )
     group.add_argument(
+        "--publish-choco",
+        action="store_true",
+        help="Publish Chocolatey package"
+    )
+    group.add_argument(
         "--snap-channel",
         choices=["stable", "candidate", "edge"],
         default="stable",
@@ -362,8 +399,8 @@ def main() -> int:
     # Interactive mode if no args
     if not any([
         args.check, args.build_all, args.build_pypi, args.build_vscode,
-        args.build_snap, args.publish_all, args.publish_pypi,
-        args.publish_vscode, args.publish_snap
+        args.build_snap, args.build_choco, args.publish_all, args.publish_pypi,
+        args.publish_vscode, args.publish_snap, args.publish_choco
     ]):
         return interactive_menu()
     
@@ -384,6 +421,9 @@ def main() -> int:
     
     if args.build_snap:
         ret = build_snap(dry_run=args.dry_run)
+
+    if args.build_choco:
+        ret = build_choco(dry_run=args.dry_run)
     
     if args.install_vscode:
         ret = run_script("vscode_build.py", "--install", dry_run=args.dry_run)
@@ -399,6 +439,9 @@ def main() -> int:
     
     if args.publish_snap and ret == 0:
         ret = publish_snap(channel=args.snap_channel, dry_run=args.dry_run)
+
+    if args.publish_choco and ret == 0:
+        ret = publish_choco(dry_run=args.dry_run)
     
     return ret
 

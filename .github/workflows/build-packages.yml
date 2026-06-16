@@ -273,6 +273,42 @@ jobs:
           path: dist/choco/*.nupkg
           if-no-files-found: warn
 
+  # ── 6b. Publish to Chocolatey Community ──────────────────────────────────────
+  #
+  # Requires repository secret: CHOCO_API_KEY
+  # Get one at: https://community.chocolatey.org/account
+  # If the secret is not configured, the job skips publish without failing.
+  publish-choco:
+    name: "Publish to Chocolatey"
+    runs-on: windows-latest
+    needs: [build-choco]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download Chocolatey package
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: choco-package
+          path: dist/choco
+
+      - name: Publish to Chocolatey Community
+        shell: powershell
+        env:
+          CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
+        run: |
+          if (-not (Test-Path 'dist/choco/*.nupkg')) {
+            Write-Host 'No Chocolatey package artifact found — skipping publish'
+            exit 0
+          }
+          python choco_publish.py --publish --skip-if-no-credentials
+
   # ── 7. macOS .pkg installer ──────────────────────────────────────────────────
   build-mac:
     name: "macOS (.pkg installer)"
