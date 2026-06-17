@@ -54,6 +54,7 @@ DIST_CHOCO = REPO_ROOT / "dist" / "choco"
 CHOCO_DIR = REPO_ROOT / "packaging" / "chocolatey"
 NUSPEC_TEMPLATE = CHOCO_DIR / "kport.nuspec.template"
 INSTALL_TEMPLATE = CHOCO_DIR / "tools" / "chocolateyinstall.ps1.template"
+UNINSTALL_SCRIPT = CHOCO_DIR / "tools" / "chocolateyuninstall.ps1"
 GITHUB_REPO = "farman20ali/port-killer"
 
 
@@ -215,6 +216,14 @@ def build_choco(
             render_template(INSTALL_TEMPLATE, version, checksum),
             encoding="utf-8",
         )
+
+        # Include uninstall script if present
+        if UNINSTALL_SCRIPT.exists():
+            import shutil as _shutil
+            _shutil.copy2(UNINSTALL_SCRIPT, tools_dir / "chocolateyuninstall.ps1")
+            ok("Included chocolateyuninstall.ps1")
+        else:
+            warn("chocolateyuninstall.ps1 not found — uninstall support will be missing")
 
         cmd = ["choco", "pack", str(pkg_root / "kport.nuspec"), "--output-directory", str(DIST_CHOCO)]
         print("$", " ".join(cmd))

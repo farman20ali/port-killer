@@ -41,9 +41,8 @@ BrandingText      "kport — Cross-platform port inspector and killer"
 !define MUI_UNICON "..\..\assets\icons\windows\icon_256_256_ico.ico"
 !define MUI_WELCOMEPAGE_TITLE "Install kport ${VERSION}"
 !define MUI_WELCOMEPAGE_TEXT  "kport is a cross-platform CLI tool to inspect and kill processes by port.$\r$\n$\r$\nClick Next to install kport ${VERSION}."
-!define MUI_FINISHPAGE_RUN      "$INSTDIR\kport.exe"
-!define MUI_FINISHPAGE_RUN_TEXT "Run kport --version to verify"
-!define MUI_FINISHPAGE_SHOWREADME ""
+; NOTE: MUI_FINISHPAGE_RUN intentionally omitted — launching the exe after
+; install causes issues in Chocolatey automated testing (silent /S mode).
 !define MUI_FINISHPAGE_LINK     "GitHub: github.com/farman20ali/port-killer"
 !define MUI_FINISHPAGE_LINK_LOCATION "https://github.com/farman20ali/port-killer"
 
