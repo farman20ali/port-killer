@@ -141,8 +141,8 @@ def check_requirements() -> bool:
         ok(f"Built package found: {nupkg_file.name} (v{version})")
     else:
         err(f"No built .nupkg found in {DIST_CHOCO}")
-        print("  Run: python win_build.py --build")
-        print("  Then: python choco_build.py --build")
+        print("  Run: python choco_build.py --build")
+        print("  Ensure GitHub release asset exists before users install via choco")
         all_ok = False
 
     return all_ok
@@ -156,6 +156,7 @@ def publish_choco(
     if not nupkg_file:
         err(f"No .nupkg found in {DIST_CHOCO}")
         warn("Run: python choco_build.py --build")
+        print(f"  Release asset must exist at GitHub before install works")
         return 1
 
     version = get_nupkg_version(nupkg_file)

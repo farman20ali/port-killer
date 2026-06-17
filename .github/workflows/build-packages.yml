@@ -281,7 +281,7 @@ jobs:
   publish-choco:
     name: "Publish to Chocolatey"
     runs-on: windows-latest
-    needs: [build-choco]
+    needs: [release, build-choco]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4

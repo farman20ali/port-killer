@@ -1,18 +1,18 @@
 $ErrorActionPreference = 'Stop'
 
-$toolsDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$installerPath = Join-Path $toolsDir 'kport-{VERSION}-setup.exe'
-
-if (-not (Test-Path $installerPath)) {
-  throw "Installer not found: $installerPath"
-}
+$url = 'https://github.com/farman20ali/port-killer/releases/download/v{VERSION}/kport-{VERSION}-setup.exe'
+$checksum = '{CHECKSUM}'
+$checksumType = 'sha256'
 
 $packageArgs = @{
-  packageName   = $env:ChocolateyPackageName
-  fileType      = 'exe'
-  file          = $installerPath
-  silentArgs    = '/S'
+  packageName    = $env:ChocolateyPackageName
+  fileType       = 'exe'
+  url            = $url
+  softwareName   = 'kport*'
+  checksum       = $checksum
+  checksumType   = $checksumType
+  silentArgs     = '/S'
   validExitCodes = @(0)
 }
 
-Install-ChocolateyInstallPackage @packageArgs
+Install-ChocolateyPackage @packageArgs
