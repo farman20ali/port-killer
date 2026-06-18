@@ -175,6 +175,9 @@ def generate_debian_skeleton(work_dir: Path) -> str:
         "\tinstall -D -m 0755 __main__.py debian/kport/usr/bin/kport\n"
         "\tmkdir -p debian/kport/usr/lib/python3/dist-packages\n"
         "\tcp -r src/kport debian/kport/usr/lib/python3/dist-packages/\n"
+        "\tinstall -D -m 0644 assets/icons/icon_512_512.png debian/kport/usr/share/icons/hicolor/512x512/apps/kport.png\n"
+        "\tmkdir -p debian/kport/usr/share/applications\n"
+        "\techo '[Desktop Entry]\\nName=KPort\\nComment=Port Inspector and Killer\\nExec=kport\\nIcon=kport\\nTerminal=true\\nType=Application\\nCategories=Utility;System;' > debian/kport/usr/share/applications/kport.desktop\n"
     )
 
     changelog = textwrap.dedent(

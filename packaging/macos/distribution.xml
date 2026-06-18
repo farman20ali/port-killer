@@ -21,22 +21,22 @@
 
     <domains enable_localSystem="true"/>
 
-    <pkg-ref id="com.farmanali.kport">
+    <pkg-ref id="com.alienhub.kport">
         <bundle-version/>
     </pkg-ref>
 
     <choices-outline>
-        <line choice="com.farmanali.kport"/>
+        <line choice="com.alienhub.kport"/>
     </choices-outline>
 
-    <choice id="com.farmanali.kport"
+    <choice id="com.alienhub.kport"
             visible="false"
             title="kport"
             description="kport CLI — cross-platform port inspector and killer">
-        <pkg-ref id="com.farmanali.kport"/>
+        <pkg-ref id="com.alienhub.kport"/>
     </choice>
 
-    <pkg-ref id="com.farmanali.kport"
+    <pkg-ref id="com.alienhub.kport"
              version="3.2.0"
              onConclusion="none">kport.pkg</pkg-ref>
 

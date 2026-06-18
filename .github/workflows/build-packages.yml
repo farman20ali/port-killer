@@ -169,6 +169,9 @@ jobs:
                           dirs_exist_ok=True)
           shutil.copy2(REPO / "__main__.py", STAGE / "__main__.py")
 
+          # Copy assets (icons)
+          shutil.copytree(REPO / "assets", STAGE / "assets", dirs_exist_ok=True)
+
           print(f"snap-build staged for kport {version}")
           EOF
 
@@ -182,6 +185,16 @@ jobs:
         run: |
           mkdir -p dist/snap
           cp "${{ steps.snapcraft.outputs.snap }}" dist/snap/
+
+      - name: Publish snap to Snap Store (tags only)
+        if: startsWith(github.ref, 'refs/tags/v') && env.SNAPCRAFT_STORE_CREDENTIALS != ''
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        run: |
+          sudo snap install snapcraft --classic
+          SNAP_FILE=$(ls dist/snap/*.snap | head -1)
+          snapcraft upload "$SNAP_FILE" --release stable
+          snapcraft upload-metadata "$SNAP_FILE" --force
 
       - name: Upload .snap artifact
         uses: actions/upload-artifact@v4
@@ -260,6 +273,42 @@ jobs:
           path: dist/choco/*.nupkg
           if-no-files-found: warn
 
+  # ── 6b. Publish to Chocolatey Community ──────────────────────────────────────
+  #
+  # Requires repository secret: CHOCO_API_KEY
+  # Get one at: https://community.chocolatey.org/account
+  # If the secret is not configured, the job skips publish without failing.
+  publish-choco:
+    name: "Publish to Chocolatey"
+    runs-on: windows-latest
+    needs: [release, build-choco]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download Chocolatey package
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: choco-package
+          path: dist/choco
+
+      - name: Publish to Chocolatey Community
+        shell: powershell
+        env:
+          CHOCO_API_KEY: ${{ secrets.CHOCO_API_KEY }}
+        run: |
+          if (-not (Test-Path 'dist/choco/*.nupkg')) {
+            Write-Host 'No Chocolatey package artifact found — skipping publish'
+            exit 0
+          }
+          python choco_publish.py --publish --skip-if-no-credentials
+
   # ── 7. macOS .pkg installer ──────────────────────────────────────────────────
   build-mac:
     name: "macOS (.pkg installer)"
@@ -326,11 +375,22 @@ jobs:
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
           echo "version=${TAG#v}" >> $GITHUB_OUTPUT
 
+      - name: Resolve release notes path
+        id: notes
+        run: |
+          NOTES="docs/RELEASE_NOTES_${{ steps.tag.outputs.version }}.md"
+          if [ ! -f "$NOTES" ]; then
+            # Fall back to the most recent release notes file
+            NOTES=$(ls docs/RELEASE_NOTES_*.md 2>/dev/null | sort -V | tail -1)
+          fi
+          echo "path=${NOTES}" >> $GITHUB_OUTPUT
+          echo "Using release notes: $NOTES"
+
       - name: Upload artifacts to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          body_path: docs/RELEASE_NOTES_${{ steps.tag.outputs.version }}.md
+          body_path: ${{ steps.notes.outputs.path }}
           files: |
             release-assets/**/*.exe
             release-assets/**/*.pkg

@@ -37,7 +37,7 @@ Extensions (Ctrl+Shift+X) → search "KPort" → Install
 ```
 Or via CLI:
 ```bash
-code --install-extension farmanali.kport-vscode
+code --install-extension alienhub.kport-vscode
 ```
 
 **New files:** `vscode-extension/` directory (TypeScript source, `package.json`, `tsconfig.json`, `mcpConfig.ts`, `extension.ts`)
@@ -247,7 +247,7 @@ See [`BUILD_GUIDE.md`](../BUILD_GUIDE.md) for full documentation.
 - [GitHub Repository](https://github.com/farman20ali/port-killer)
 - [PyPI Package](https://pypi.org/project/kport/)
 - [Snap Package](https://snapcraft.io/kport)
-- [VS Code Extension](https://marketplace.visualstudio.com/items?itemName=farmanali.kport-vscode)
+- [VS Code Extension](https://marketplace.visualstudio.com/items?itemName=alienhub.kport-vscode)
 - [Issue Tracker](https://github.com/farman20ali/port-killer/issues)
 - [Build Guide](../BUILD_GUIDE.md)
 - [Model Context Protocol](https://modelcontextprotocol.io/)

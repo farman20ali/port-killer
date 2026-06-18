@@ -192,7 +192,14 @@ def publish_snap(channel: str = "stable", dry_run: bool = False) -> int:
         print(f"\n[DRY-RUN] Would execute:\n$ {cmd}")
         return 0
     
-    return run_cmd(cmd, f"Publishing snap v{version} to {channel} channel", check=True)
+    rc = run_cmd(cmd, f"Publishing snap v{version} to {channel} channel", check=True)
+
+    if rc == 0:
+        # Push listing metadata (summary, description, icon) to the store
+        meta_cmd = f"snapcraft upload-metadata {snap_file} --force"
+        run_cmd(meta_cmd, "Syncing store listing (summary, description, icon)", check=False)
+
+    return rc
 
 
 def login_snapcraft(dry_run: bool = False) -> int:
