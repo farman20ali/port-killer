@@ -1,3 +1,24 @@
 #!/bin/sh
 export PYTHONPATH="$SNAP/usr/lib/python3/dist-packages${PYTHONPATH:+:$PYTHONPATH}"
+
+# Inside a strictly-confined snap, network-observe and system-observe are NOT
+# auto-connected by default.  Detect this early and print an actionable message
+# instead of a cryptic "Permission denied" error.
+if [ -n "$SNAP_NAME" ]; then
+    for plug in network-observe system-observe process-control; do
+        slot=$(snapctl is-connected "$plug" 2>/dev/null; echo $?)
+        if [ "$slot" != "0" ]; then
+            echo "kport snap: required plug '$plug' is not connected." >&2
+            echo "Run the following commands to connect all required plugs:" >&2
+            echo "  sudo snap connect ${SNAP_NAME}:network-observe" >&2
+            echo "  sudo snap connect ${SNAP_NAME}:system-observe" >&2
+            echo "  sudo snap connect ${SNAP_NAME}:process-control" >&2
+            echo "  sudo snap connect ${SNAP_NAME}:hardware-observe" >&2
+            echo "" >&2
+            echo "Then re-run your command." >&2
+            exit 1
+        fi
+    done
+fi
+
 exec python3 -m kport "$@"
