@@ -13,7 +13,6 @@ Unicode True
 
 ; ---- Includes -----------------------------------------------
 !include "MUI2.nsh"
-!include "EnvVarUpdate.nsh"   ; Helper for PATH editing (bundled below)
 !include "LogicLib.nsh"
 
 ; ---- Version (overridden by win_build.py via /DVERSION=x.y.z) ----
@@ -98,8 +97,10 @@ Section "kport Core" SecCore
 SectionEnd
 
 Section "Add to System PATH" SecPath
-  ; Append $INSTDIR to the System PATH so 'kport' works in any terminal
-  ${EnvVarUpdate} $0 "PATH" "A" "HKLM" "$INSTDIR"
+  ; We use PowerShell to safely update the PATH without hitting the 1024-character NSIS limit,
+  ; which would truncate the user's PATH if it is long.
+  DetailPrint "Adding $INSTDIR to system PATH..."
+  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$$instDir = $\'$INSTDIR$\'; $$path = [System.Environment]::GetEnvironmentVariable($\'PATH$\', $\'Machine$\'); $$paths = $$path -split $\';$\' | ForEach-Object { $$_.Trim() } | Where-Object { $$_ }; if ($$paths -notcontains $$instDir) { $$paths += $$instDir; [System.Environment]::SetEnvironmentVariable($\'PATH$\', ($$paths -join $\';$\'), $\'Machine$\') }"'
 SectionEnd
 
 Section "Start Menu Shortcut" SecStartMenu
@@ -118,7 +119,8 @@ SectionEnd
 
 Section "Uninstall"
   ; Remove from PATH
-  ${un.EnvVarUpdate} $0 "PATH" "R" "HKLM" "$INSTDIR"
+  DetailPrint "Removing $INSTDIR from system PATH..."
+  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$$instDir = $\'$INSTDIR$\'; $$path = [System.Environment]::GetEnvironmentVariable($\'PATH$\', $\'Machine$\'); $$paths = $$path -split $\';$\' | ForEach-Object { $$_.Trim() } | Where-Object { $$_ -and $$_ -ne $$instDir }; [System.Environment]::SetEnvironmentVariable($\'PATH$\', ($$paths -join $\';$\'), $\'Machine$\')"'
 
   ; Remove files
   Delete "$INSTDIR\kport.exe"

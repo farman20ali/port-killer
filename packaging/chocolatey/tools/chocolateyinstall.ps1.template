@@ -16,3 +16,15 @@ $packageArgs = @{
 }
 
 Install-ChocolateyPackage @packageArgs
+
+# Create a shim for kport.exe so it is immediately accessible from the Chocolatey bin directory
+$programFiles = $env:ProgramW6432
+if (-not $programFiles) {
+  $programFiles = $env:ProgramFiles
+}
+$exePath = Join-Path $programFiles "kport\kport.exe"
+if (Test-Path $exePath) {
+  Install-BinFile -Name "kport" -Path $exePath
+} else {
+  Write-Warning "Could not find kport.exe at $exePath to create a shim."
+}
