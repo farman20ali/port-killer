@@ -81,7 +81,7 @@ python manage.py build --deb --rpm --snap
 # Publish to PyPI:
 python manage.py publish --pypi
 
-# Publish snap (requires Store approval for classic confinement):
+# Publish snap (uses strict confinement with system plugs):
 python manage.py publish --snap
 
 # Publish to Chocolatey Community Repository:

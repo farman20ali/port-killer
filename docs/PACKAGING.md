@@ -82,23 +82,28 @@ python manage.py setup   # installs all dev/packaging dependencies
 
 ### 6. Snap (`.snap` Package)
 
-> **Important — Classic Confinement and Snap Store Approval**
+> **Important — Snap Confinement and Interface Plugs**
 >
-> `kport` requires **`confinement: classic`** because it must send OS signals
-> (SIGTERM, SIGKILL) to arbitrary host processes. Strict sandboxing prevents
-> this even with the `process-control` plug connected.
+> `kport` uses **`confinement: strict`** combined with interface plugs:
+> - `process-control`: Required to send signals (SIGTERM, SIGKILL) to host PIDs.
+> - `system-observe`, `network-observe`: Required to inspect connections and processes.
 >
-> Classic confinement requires **manual review and approval** from the Snap
-> Store team before you can release to the stable channel:
+> By using strict confinement, `kport` complies with standard Snap guidelines.
+> However, because these interfaces grant access to host processes and networking,
+> they might not be connected automatically upon installation.
+>
+> To test locally:
 > 1. Build locally: `python manage.py build --snap`
-> 2. Test install: `sudo snap install dist/snap/kport_*.snap --classic --dangerous`
-> 3. Submit a store request at: https://forum.snapcraft.io/c/store-requests/
->    — explain that `kport` is a CLI process manager that must signal host PIDs.
+> 2. Install: `sudo snap install dist/snap/kport_*.snap --dangerous`
+> 3. Connect the plugs manually:
+>    ```bash
+>    sudo snap connect kport:process-control
+>    sudo snap connect kport:system-observe
+>    sudo snap connect kport:network-observe
+>    ```
 >
-> `devmode` is **not** a suitable alternative for distribution — it cannot
-> be released to the stable channel and does not appear in search results.
-> Prefer the `.deb`, `.rpm`, or PyPI package for Linux distribution until
-> Store approval is granted.
+> For production store listings, you can request auto-connection permissions on the Snapcraft forum:
+> https://forum.snapcraft.io/c/store-requests/
 
 ```bash
 python manage.py build --snap
