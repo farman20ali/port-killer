@@ -20,10 +20,9 @@ pip install build twine
 
 ### Step 1: Prepare Your Package
 
-Update `setup.py` with your information:
-- Change `author` and `author_email`
-- Update `url` with your GitHub repository
-- Update `project_urls`
+Update `pyproject.toml` with your information:
+- Change `authors` name and email
+- Update `urls` with your GitHub repository
 
 This project depends on `psutil` for best cross-platform port/PID detection.
 
@@ -76,12 +75,12 @@ pip install kport
 
 This repo does not commit a `debian/` packaging directory.
 
-Instead, `deb_publish.py` generates a minimal Debian packaging skeleton at build time (in a temporary directory) and copies the resulting `.deb` into `dist/deb/`.
+Instead, `build_deb.py` generates a minimal Debian packaging skeleton at build time (in a temporary directory) and copies the resulting `.deb` into `dist/deb/`.
 
 Build on Debian/Ubuntu (recommended):
 
 ```bash
-python3 deb_publish.py
+python3 scripts/build_deb.py
 ```
 
 If you prefer installing prerequisites manually:
@@ -176,7 +175,7 @@ Then distribute the executables via GitHub Releases.
 We've included a helper script to make publishing easier:
 
 ```bash
-python publish.py
+python scripts/publish_pypi.py
 ```
 
 This interactive script will:
@@ -217,7 +216,7 @@ Before publishing, ensure:
 
 - [ ] All features work correctly
 - [ ] README.md is complete and accurate
-- [ ] setup.py contains correct information
+- [ ] `pyproject.toml` contains correct author/URL information
 - [ ] License file is included
 - [ ] Version number is correct
 - [ ] Code is committed to GitHub
@@ -229,9 +228,8 @@ Before publishing, ensure:
 
 When you want to release a new version:
 
-1. Update version in `setup.py` and `pyproject.toml`
-2. Update version in `src/kport/__init__.py`
-3. Update CHANGELOG or release notes
+1. Run `python manage.py sync-version X.Y.Z` — updates `pyproject.toml` and `src/kport/__init__.py` atomically
+2. Update CHANGELOG or release notes
 4. Rebuild and republish:
 
 ```bash
@@ -277,7 +275,7 @@ python -m twine upload dist/*
 
 ### Upload fails with "File already exists"
 - You cannot overwrite a version
-- Increment version number in setup.py
+- Increment version number in `pyproject.toml` using `python manage.py sync-version X.Y.Z`
 
 ### Package not installing
 - Check PyPI page: https://pypi.org/project/kport/

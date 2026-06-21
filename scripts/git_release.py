@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 class Colors:
@@ -60,10 +60,9 @@ def run_command(cmd: list[str], description: str, check: bool = True) -> subproc
 
 
 def read_version() -> str | None:
-    """Read version from pyproject.toml, setup.py, or src/kport/__init__.py."""
+    """Read version from pyproject.toml or src/kport/__init__.py."""
     for candidate in [
         REPO_ROOT / "pyproject.toml",
-        REPO_ROOT / "setup.py",
         REPO_ROOT / "src" / "kport" / "__init__.py",
     ]:
         if candidate.exists():
@@ -101,9 +100,9 @@ def build_pypi(dry_run: bool = False) -> bool:
 
     print_header("Building PyPI Packages")
 
-    publish_script = REPO_ROOT / "publish.py"
+    publish_script = REPO_ROOT / "scripts" / "publish_pypi.py"
     if not publish_script.exists():
-        print_error("publish.py not found")
+        print_error("publish_pypi.py not found")
         return False
 
     result = subprocess.run(
@@ -142,7 +141,7 @@ def main() -> None:
     # ── Read version ──────────────────────────────────────────────────────────
     current_version = read_version()
     if not current_version:
-        print_error("Could not read version from pyproject.toml / setup.py / __init__.py")
+        print_error("Could not read version from pyproject.toml / __init__.py")
         sys.exit(1)
 
     version = args.version or current_version
@@ -211,7 +210,7 @@ def main() -> None:
 
     print(f"\n  {Colors.BOLD}Next steps:{Colors.END}")
     if not args.no_pypi and pypi_success and not args.dry_run:
-        print(f"    1. Upload to PyPI:    python publish.py  (choose option 3 or 5)")
+        print(f"    1. Upload to PyPI:    python manage.py publish --pypi")
     print(f"    2. Watch Actions:     https://github.com/farman20ali/port-killer/actions")
     print(f"    3. Check release:     https://github.com/farman20ali/port-killer/releases/tag/{tag}")
     print(f"    4. Test install:      pip install kport=={version}")

@@ -41,7 +41,7 @@ if sys.platform == "win32":
             except Exception:
                 pass
 
-REPO_ROOT    = Path(__file__).resolve().parent
+REPO_ROOT    = Path(__file__).resolve().parents[1]
 DIST_MAC     = REPO_ROOT / "dist" / "mac"
 SCRIPTS_DIR  = REPO_ROOT / "packaging" / "macos" / "scripts"
 DIST_XML     = REPO_ROOT / "packaging" / "macos" / "distribution.xml"
@@ -85,7 +85,6 @@ def command_exists(name: str) -> bool:
 def read_version() -> str:
     for candidate in [
         REPO_ROOT / "pyproject.toml",
-        REPO_ROOT / "setup.py",
         REPO_ROOT / "src" / "kport" / "__init__.py",
     ]:
         if candidate.exists():

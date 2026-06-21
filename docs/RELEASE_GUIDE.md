@@ -2,120 +2,122 @@
 
 This document describes how to create and publish releases for kport.
 
+> **Quick path** — use `manage.py` for all release operations. No need to run individual scripts manually.
+
 ---
 
 ## Quick Start: Automated Release
 
-Use the automated release script:
-
 ```bash
-python3 release.py
+python manage.py release
 ```
 
-This script handles:
-- ✅ Version validation
+This interactive wizard handles:
+- ✅ Version validation and synchronisation (`pyproject.toml` + `src/kport/__init__.py`)
+- ✅ Running the full test suite
 - ✅ Git tag creation
 - ✅ PyPI package building and publishing
-- ✅ Debian package building
-- ✅ GitHub Release creation with all assets
+- ✅ GitHub Release creation with all platform artifacts
 - ✅ Release notes generation
 
 ---
 
 ## Manual Release Process
 
-If you prefer manual control, follow these steps:
+If you prefer step-by-step control:
 
 ### 1. Pre-Release Checklist
 
-- [ ] All tests pass
-- [ ] Documentation is up to date
+- [ ] All tests pass: `pytest`
 - [ ] CHANGELOG or release notes prepared
-- [ ] Version bumped in `setup.py`
-- [ ] No uncommitted changes
+- [ ] Version bumped in `pyproject.toml`
+- [ ] No uncommitted changes: `git status`
 
 ### 2. Version Update
 
-Edit `setup.py` and update the version:
+Edit the single version in `pyproject.toml`:
 
-```python
-version="3.1.1",  # Change this
+```toml
+[project]
+version = "3.2.4"   # change this
 ```
 
-Commit the version change:
+Then sync all other files automatically:
 
 ```bash
-git add setup.py
-git commit -m "Bump version to 3.1.1"
+python manage.py sync-version 3.2.4
+```
+
+This updates `pyproject.toml` **and** `src/kport/__init__.py` in one shot. Commit both:
+
+```bash
+git add pyproject.toml src/kport/__init__.py
+git commit -m "chore: bump version to 3.2.4"
 ```
 
 ### 3. Create Git Tag
 
 ```bash
-# Create annotated tag
-git tag -a v3.1.1 -m "Release v3.1.1"
-
-# Push commits and tags
+git tag -a v3.2.4 -m "Release v3.2.4"
 git push origin main
 git push origin --tags
 ```
 
 ### 4. Build Packages
 
-#### PyPI Package
-
 ```bash
-python3 publish.py
+# Build all packages for the current platform:
+python manage.py build --all
+
+# Or build selectively:
+python manage.py build --pypi
+python manage.py build --win
+python manage.py build --deb --rpm --snap
 ```
 
-Choose option 3 or 5 to build and upload to PyPI.
-
-#### Debian Package
+### 5. Publish Packages
 
 ```bash
-python3 deb_publish.py
+# Publish to PyPI:
+python manage.py publish --pypi
+
+# Publish snap (requires Store approval for classic confinement):
+python manage.py publish --snap
+
+# Publish to Chocolatey Community Repository:
+python manage.py publish --choco
 ```
 
-Choose option 3 or 4 to build the `.deb`.
-
-Output: `dist/deb/kport_*_all.deb`
-
-### 5. Create GitHub Release
+### 6. Create GitHub Release
 
 #### Option A: GitHub Web UI
 
 1. Go to: https://github.com/farman20ali/port-killer/releases/new
-2. Select tag: `v3.1.1`
-3. Release title: `kport v3.1.1`
+2. Select tag: `v3.2.4`
+3. Release title: `kport v3.2.4`
 4. Add release notes (features, fixes, breaking changes)
-   - You can use the generated `RELEASE_NOTES_*.md` file as a template
 5. Attach **built artifacts only** (GitHub auto-attaches source):
    - `dist/kport-*.whl` (Python wheel) ✅
-   - `dist/deb/kport_*_all.deb` (Debian package) ✅
-   - ~~`dist/kport-*.tar.gz`~~ ❌ **No need** - GitHub automatically attaches source code archives
+   - `dist/deb/kport_*_all.deb` ✅
+   - `dist/rpm/kport-*.rpm` ✅
+   - `dist/win/kport-*-setup.exe` ✅
+   - `dist/mac/kport-*.pkg` ✅
 6. Click "Publish release"
 
-> **Note:** GitHub automatically generates and attaches source code archives (`Source code (zip)` and `Source code (tar.gz)`) for every release. You only need to upload **built artifacts** like `.whl` and `.deb` files.
+> **Note:** GitHub automatically generates `Source code (zip)` and `Source code (tar.gz)` for every release — do **not** upload `dist/*.tar.gz` manually.
 
-#### Option B: GitHub CLI (if installed)
+#### Option B: GitHub CLI
 
 ```bash
-# Using release notes from file
-gh release create v3.1.1 \
-  --title "kport v3.1.1" \
-  --notes-file RELEASE_NOTES_3.1.1.md \
-  dist/*.whl \
-  dist/deb/*.deb
-
-# Or with inline notes
-gh release create v3.1.1 \
-  --title "kport v3.1.1" \
-  --notes "Release notes here" \
-  dist/*.whl \
-  dist/deb/*.deb
+gh release create v3.2.4 \
+  --title "kport v3.2.4" \
+  --notes-file docs/RELEASE_NOTES_3.2.4.md \
+  dist/kport-*.whl \
+  dist/deb/*.deb \
+  dist/rpm/*.rpm \
+  dist/win/*-setup.exe \
+  dist/mac/*.pkg
 ```
-
-> **Note:** Don't attach `dist/*.tar.gz` - GitHub automatically provides source archives for every release.
 
 ---
 
@@ -123,66 +125,38 @@ gh release create v3.1.1 \
 
 ### Before Release
 
-- [ ] Version updated in `setup.py`
-- [ ] All changes committed
-- [ ] No uncommitted or untracked files
-- [ ] Tests pass locally
-- [ ] Documentation reviewed
+- [ ] `pytest` passes (all 34+ tests green)
+- [ ] Version updated in `pyproject.toml` via `python manage.py sync-version X.Y.Z`
+- [ ] CHANGELOG updated with new version section
+- [ ] All changes committed, `git status` clean
 
 ### During Release
 
 - [ ] Git tag created and pushed
-- [ ] PyPI package built
+- [ ] `python manage.py build --all` succeeded for each platform
 - [ ] PyPI upload successful
-- [ ] Debian package built
-- [ ] GitHub Release created
-- [ ] Release assets uploaded
+- [ ] GitHub Release created with artifacts attached
 
 ### After Release
 
 - [ ] Test PyPI installation: `pip install kport`
 - [ ] Test Debian installation: `sudo dpkg -i kport_*.deb`
-- [ ] Test GitHub installation: `pip install git+https://github.com/farman20ali/port-killer.git@v3.1.1`
-- [ ] Update documentation if needed
-- [ ] Announce release (social media, mailing lists, etc.)
+- [ ] Test Windows installer (run the setup `.exe`)
+- [ ] Announce release in GitHub Discussions / social media
 
 ---
 
 ## Distribution Channels
 
-### PyPI (pip install kport)
-
-Users can install via pip:
-
-```bash
-pip install kport
-pip install --user kport  # User install (recommended)
-```
-
-### Debian Package
-
-Direct download from GitHub Releases:
-
-```bash
-wget https://github.com/farman20ali/port-killer/releases/download/v3.1.1/kport_3.1.1-1_all.deb
-sudo dpkg -i kport_3.1.1-1_all.deb
-```
-
-### GitHub Direct Install
-
-```bash
-pip install git+https://github.com/farman20ali/port-killer.git
-pip install git+https://github.com/farman20ali/port-killer.git@v3.1.1  # Specific version
-```
-
----
-
-## Making Debian Package Public via APT
-
-See [DEB_RELEASE.md](DEB_RELEASE.md) for advanced options:
-- **Option 1**: GitHub Releases (simplest, manual `dpkg -i` install)
-- **Option 2**: Host your own APT repository (enables `apt install kport`)
-- **Option 3**: Submit to official Debian repositories (most complex)
+| Channel | Command |
+|---------|---------|
+| PyPI | `pip install kport` |
+| Chocolatey (Windows) | `choco install kport` |
+| Snap | `sudo snap install kport` *(requires Store approval)* |
+| Debian/Ubuntu | `sudo dpkg -i kport_*.deb` |
+| RHEL/Fedora | `sudo rpm -i kport-*.rpm` |
+| macOS | open `kport-*.pkg` |
+| Source | `pip install git+https://github.com/farman20ali/port-killer.git` |
 
 ---
 
@@ -190,46 +164,36 @@ See [DEB_RELEASE.md](DEB_RELEASE.md) for advanced options:
 
 ### PyPI Upload Fails
 
-1. Check credentials: `~/.pypirc`
-2. Ensure version doesn't already exist
-3. Try Test PyPI first: `python3 publish.py` → option 2
+1. Check credentials in `~/.pypirc`
+2. Ensure version doesn't already exist on PyPI
+3. Test on Test PyPI first: `python manage.py publish --pypi --test`
 
 ### Git Tag Already Exists
 
-Delete and recreate:
-
 ```bash
-git tag -d v3.1.1
-git push origin :refs/tags/v3.1.1
-git tag -a v3.1.1 -m "Release v3.1.1"
+git tag -d v3.2.4
+git push origin :refs/tags/v3.2.4
+git tag -a v3.2.4 -m "Release v3.2.4"
 git push origin --tags
 ```
 
 ### Debian Build Fails
 
-Check build dependencies:
-
 ```bash
-python3 deb_publish.py  # Choose option 1 to check
-```
-
-Install missing tools:
-
-```bash
-sudo apt-get update
+python manage.py build --deb --check   # check prerequisites
 sudo apt-get install -y debhelper build-essential python3-all
 ```
 
 ---
 
-## Release Scripts
+## Release Scripts Reference
 
-- **`release.py`**: Automated full release workflow
-- **`publish.py`**: PyPI publishing (interactive)
-- **`deb_publish.py`**: Debian package building (interactive)
-
-Run any script with Python 3:
-
-```bash
-python3 release.py
-```
+| Script | Purpose |
+|--------|---------|
+| `python manage.py release` | Full interactive release wizard |
+| `python manage.py sync-version X.Y.Z` | Sync version across all files |
+| `python manage.py build --all` | Build all platform packages |
+| `python manage.py publish --pypi` | Upload to PyPI |
+| `python manage.py publish --snap` | Push snap to Snap Store |
+| `python manage.py publish --choco` | Push package to Chocolatey |
+| `python scripts/git_release.py` | Automated git tagging + GitHub release |

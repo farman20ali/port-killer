@@ -38,7 +38,7 @@ if sys.platform == "win32":
             except Exception:
                 pass
 
-REPO_ROOT     = Path(__file__).resolve().parent
+REPO_ROOT     = Path(__file__).resolve().parents[1]
 DIST_RPM      = REPO_ROOT / "dist" / "rpm"
 SPEC_TEMPLATE = REPO_ROOT / "packaging" / "linux" / "kport.spec.template"
 
@@ -80,7 +80,6 @@ def command_exists(name: str) -> bool:
 def read_version() -> str:
     for candidate in [
         REPO_ROOT / "pyproject.toml",
-        REPO_ROOT / "setup.py",
         REPO_ROOT / "src" / "kport" / "__init__.py",
     ]:
         if candidate.exists():

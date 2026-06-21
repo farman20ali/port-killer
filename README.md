@@ -81,9 +81,9 @@ python -m kport -h
 
 > 💡 **Tip:** If the `kport` command doesn't work after installation, see [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 >
-> 📖 For detailed platform installation options, see [INSTALL.md](INSTALL.md)
+> 📖 For detailed platform installation options, see [docs/INSTALL.md](docs/INSTALL.md)
 >
-> 🛠️ For packaging development and local compilation instructions, see [PACKAGING.md](PACKAGING.md)
+> 🛠️ For packaging development and local compilation instructions, see [docs/PACKAGING.md](docs/PACKAGING.md)
 
 ## 🚀 Usage
 
@@ -519,53 +519,55 @@ These tools are typically pre-installed on all platforms.
 
 ## 🔧 Development
 
-### Clone and setup
+### Setup & Local Development
+
+We provide a unified task runner `manage.py` at the root of the project to simplify development tasks:
 
 ```bash
+# 1. Clone the repository
 git clone https://github.com/farman20ali/port-killer.git
 cd port-killer
 
-# Install in development mode
-pip install -e .
+# 2. Set up the development environment (installs package in editable mode and dev dependencies)
+python manage.py setup
 ```
 
-### Run tests
+### Running Tests
 
 ```bash
-# Test inspecting a port
-kport -i 80
-
-# Test listing ports
-kport -l
+# Run the test suite (uses pytest, falls back to lightweight runner if not installed)
+python manage.py test
 ```
 
 ## 📚 Documentation
 
-- **[Installation Guide](INSTALL.md)** - Detailed installation instructions
-- **[Quick Start](QUICKSTART.md)** - Get started quickly
-- **[Packaging Guide](PACKAGING.md)** - Cross-platform binary and package builds
-- **[Publishing Guide](PUBLISH.md)** - How to publish kport to PyPI
+- **[Installation Guide](docs/INSTALL.md)** - Detailed installation instructions
+- **[Quick Start](docs/QUICKSTART.md)** - Get started quickly
+- **[Packaging Guide](docs/PACKAGING.md)** - Cross-platform binary and package builds
+- **[Publishing Guide](docs/PUBLISH.md)** - How to publish kport to PyPI
 - **[Release Guide](docs/RELEASE_GUIDE.md)** - Creating releases (manual & automated)
 - **[Release Notes v3.2.0](docs/RELEASE_NOTES_3.2.0.md)** - What's new in 3.2.0
 - **[Contributing](CONTRIBUTING.md)** - How to contribute
 
 ## 🚀 For Maintainers
 
-### Creating a Release
+### Creating and Publishing a Release
 
-Automated release (recommended):
+Everything is managed via the `manage.py` entrypoint. To prepare a release:
 
-```bash
-python3 release.py
-```
+1. Update the version number across metadata files:
+   ```bash
+   python manage.py sync-version <version>
+   ```
 
-This script handles:
-- Git tagging
-- PyPI package building
-- Debian package building  
-- GitHub release creation
+2. Tag a new Git release (which triggers GitHub Actions compilation) and publish packages:
+   ```bash
+   python manage.py publish --release-tag <version>
+   ```
 
-See [RELEASE_GUIDE.md](RELEASE_GUIDE.md) for manual release steps and troubleshooting.
+You can also run `python manage.py` without arguments to access the interactive menu for all setup, build, publish, test, and release tasks.
+
+See [docs/RELEASE_GUIDE.md](docs/RELEASE_GUIDE.md) for detailed manual steps and troubleshooting.
 
 ## 🤝 Contributing
 

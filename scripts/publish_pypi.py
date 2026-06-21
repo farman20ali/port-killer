@@ -5,6 +5,9 @@ Script to help publish kport to PyPI
 import subprocess
 import sys
 import os
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def run_command(cmd, description):
@@ -12,7 +15,7 @@ def run_command(cmd, description):
     print(f"\n{'='*60}")
     print(f"🔄 {description}")
     print(f"{'='*60}")
-    result = subprocess.run(cmd, shell=True)
+    result = subprocess.run(cmd, shell=True, cwd=str(REPO_ROOT))
     if result.returncode != 0:
         print(f"❌ Failed: {description}")
         sys.exit(1)
@@ -57,11 +60,12 @@ def clean_build():
     print("\n🧹 Cleaning previous builds...")
     dirs = ['dist', 'build', 'kport.egg-info']
     for d in dirs:
-        if os.path.exists(d):
+        path = REPO_ROOT / d
+        if path.exists():
             if sys.platform == 'win32':
-                subprocess.run(f'rmdir /s /q {d}', shell=True)
+                subprocess.run(f'rmdir /s /q "{path}"', shell=True)
             else:
-                subprocess.run(f'rm -rf {d}', shell=True)
+                subprocess.run(f'rm -rf "{path}"', shell=True)
     print("✅ Cleaned build directories")
 
 

@@ -49,7 +49,7 @@ if sys.platform == "win32":
     if added:
         os.environ["PATH"] = os.pathsep.join(paths)
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parents[1]
 DIST_CHOCO = REPO_ROOT / "dist" / "choco"
 CHOCO_DIR = REPO_ROOT / "packaging" / "chocolatey"
 NUSPEC_TEMPLATE = CHOCO_DIR / "kport.nuspec.template"
@@ -84,7 +84,6 @@ def header(msg: str) -> None:
 def read_version() -> str:
     for candidate in [
         REPO_ROOT / "pyproject.toml",
-        REPO_ROOT / "setup.py",
         REPO_ROOT / "src" / "kport" / "__init__.py",
     ]:
         if candidate.exists():
