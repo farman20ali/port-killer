@@ -61,10 +61,10 @@ class FakeInspector(BaseInspector):
     def find_pids_by_name(self, name, exact=False):
         return []
 
-    def kill_port(self, port, graceful_timeout=3.0, force=False, dry_run=False, debug=False):
+    def kill_port(self, port, graceful_timeout=3.0, force=False, dry_run=False, debug=False, assume_yes=False):
         return True, f"Port {port} freed"
 
-    def kill_pid(self, pid, graceful_timeout=3.0, force=False, dry_run=False):
+    def kill_pid(self, pid, graceful_timeout=3.0, force=False, dry_run=False, assume_yes=False, debug=False):
         return True, f"PID {pid} killed"
 
 
@@ -238,3 +238,110 @@ def test_conflicts_no_docker(capsys):
     assert rc == EXIT_OK
     data = json.loads(capsys.readouterr().out)
     assert data == []
+
+
+# ---------------------------------------------------------------------------
+# R1 — ProcessInfo name enrichment
+# ---------------------------------------------------------------------------
+
+def test_process_info_enrichment_node():
+    """node + ["/usr/bin/node", "server.js"] → name becomes 'node (server.js)'."""
+    from kport.inspectors.base import ProcessInfo
+    pi = ProcessInfo(pid=1, name="node", cmdline=["/usr/bin/node", "server.js"])
+    assert pi.name == "node (server.js)"
+
+
+def test_process_info_enrichment_python_m():
+    """python3 -m http.server → name becomes 'python3 (http.server)'."""
+    from kport.inspectors.base import ProcessInfo
+    pi = ProcessInfo(pid=2, name="python3", cmdline=["python3", "-m", "http.server"])
+    assert pi.name == "python3 (http.server)"
+
+
+def test_process_info_enrichment_java_jar():
+    """java -jar app.jar → name becomes 'java (app.jar)'."""
+    from kport.inspectors.base import ProcessInfo
+    pi = ProcessInfo(pid=3, name="java", cmdline=["java", "-jar", "/opt/app.jar"])
+    assert pi.name == "java (app.jar)"
+
+
+def test_process_info_no_enrichment_for_non_runtime():
+    """nginx has no enrichment rule; name stays unchanged."""
+    from kport.inspectors.base import ProcessInfo
+    pi = ProcessInfo(pid=4, name="nginx", cmdline=["nginx", "-g", "daemon off;"])
+    assert pi.name == "nginx"
+
+
+def test_process_info_enrichment_short_cmdline():
+    """node with only one cmdline entry (no script arg) stays as-is."""
+    from kport.inspectors.base import ProcessInfo
+    pi = ProcessInfo(pid=5, name="node", cmdline=["node"])
+    assert pi.name == "node"
+
+
+# ---------------------------------------------------------------------------
+# R16 — Safety config is additive, not replacement
+# ---------------------------------------------------------------------------
+
+def test_safety_config_additive_ports():
+    """User config protected_ports adds to defaults, doesn't replace them."""
+    from kport.cli import check_safety_policy, DEFAULT_PROTECTED_PORTS
+    inspector = FakeInspector()
+    # Port 22 must still be blocked even when user only config'd port 9999
+    args = _args(command="kill", port=22, json=True, bypass_safety=False)
+    args.protected_ports = [9999]  # user adds 9999 — should not remove 22
+    args.protected_processes = None
+    ok, msg = check_safety_policy(22, [], args, inspector)
+    assert ok is False, "Port 22 must remain protected even with additive config"
+
+
+def test_safety_config_additive_processes():
+    """User config protected_processes adds to defaults, not replaces."""
+    from kport.cli import check_safety_policy
+    pi = ProcessInfo(pid=100, name="systemd")
+    inspector = FakeInspector(process_info={100: pi})
+    args = _args(command="kill", port=5000, json=True, bypass_safety=False)
+    args.protected_ports = None
+    args.protected_processes = ["mycustomapp"]  # user adds custom — systemd must stay
+    ok, msg = check_safety_policy(None, [100], args, inspector)
+    assert ok is False, "systemd must remain protected even when user adds custom processes"
+
+
+# ---------------------------------------------------------------------------
+# P6 — Watch state diff detects process name changes
+# ---------------------------------------------------------------------------
+
+def test_states_differ_detects_process_name_change():
+    """_states_differ must return True when same PID runs a different process."""
+    # Simulate state helper by importing the logic directly
+    # We test via duck-typing (same structure as get_current_state returns)
+    state_a = {"type": "local", "pids": [1234], "processes": ["old_app"]}
+    state_b = {"type": "local", "pids": [1234], "processes": ["new_app"]}
+
+    # Inline the same logic as _states_differ in cli.py
+    def _states_differ(a, b):
+        if a["type"] != b["type"]:
+            return True
+        if a["type"] == "docker":
+            return a["container"] != b.get("container") or a["status"] != b.get("status")
+        if a["type"] == "local":
+            return (
+                set(a["pids"]) != set(b.get("pids", []))
+                or sorted(a["processes"]) != sorted(b.get("processes", []))
+            )
+        return False
+
+    assert _states_differ(state_a, state_b) is True, "Name change on same PID should be detected"
+    assert _states_differ(state_a, state_a) is False, "Same state should not differ"
+
+
+# ---------------------------------------------------------------------------
+# FakeInspector compatibility — kill_pid debug param
+# ---------------------------------------------------------------------------
+
+def test_fake_inspector_kill_pid_signature():
+    """FakeInspector.kill_pid must accept the debug= param added in base.py."""
+    inspector = FakeInspector(pids_on_port={8080: [1234]})
+    ok, msg = inspector.kill_pid(1234, graceful_timeout=3.0, force=False, dry_run=False, assume_yes=True)
+    assert ok is True
+

@@ -50,7 +50,11 @@ def list_docker_mappings(debug: bool = False) -> List[DockerPortMapping]:
 
     if ps.returncode != 0:
         if debug:
-            print(f"[debug] docker ps failed: {ps.stderr.strip()}", file=sys.stderr)
+            err = ps.stderr.strip()
+            if "permission denied" in err.lower() or "cannot connect" in err.lower():
+                print("[debug] Docker socket not accessible — is Docker running? Do you have permission (e.g. docker group)?", file=sys.stderr)
+            else:
+                print(f"[debug] docker ps failed: {err}", file=sys.stderr)
         return []
 
     mappings: List[DockerPortMapping] = []
@@ -145,9 +149,15 @@ def docker_mappings_for_host_port(port: int, debug: bool = False) -> List[Docker
 
 
 def docker_action_on_container(container_id: str, action: str, dry_run: bool, debug: bool = False) -> Tuple[bool, str]:
-    """Apply action (stop, restart, rm) on a Docker container."""
+    """
+    Apply action (stop, restart, rm) on a Docker container.
+
+    WARNING: 'rm' uses 'docker rm -f' which is irreversible — the container
+    and its non-persistent state will be permanently deleted.
+    """
     if dry_run:
-        return True, f"Dry-run: would docker {action} {container_id[:12]}"
+        suffix = " [IRREVERSIBLE once confirmed]" if action == "rm" else ""
+        return True, f"Dry-run: would docker {action} {container_id[:12]}{suffix}"
     if action == "stop":
         r = _run_docker(["stop", container_id], debug=debug)
     elif action == "restart":
@@ -156,7 +166,7 @@ def docker_action_on_container(container_id: str, action: str, dry_run: bool, de
         r = _run_docker(["rm", "-f", container_id], debug=debug)
     else:
         return False, f"Unknown docker action: {action}"
-    
+
     if r.returncode == 0:
         return True, f"docker {action} succeeded"
     return False, (r.stderr or r.stdout or "").strip() or f"docker {action} failed"

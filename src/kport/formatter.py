@@ -10,6 +10,7 @@ import sys
 from typing import List, Dict, Any, Optional
 from dataclasses import asdict
 
+
 class Colors:
     RED = '\033[91m'
     GREEN = '\033[92m'
@@ -22,13 +23,15 @@ class Colors:
     RESET = '\033[0m'
 
 
+# R13 fix: set up ANSI once at import time, not on every colorize() call.
 _ansi_enabled = False
 
 
-def _enable_ansi() -> None:
-    """Enable ANSI escape processing on Windows consoles (once)."""
+def _enable_ansi_once() -> None:
+    """Enable ANSI escape processing on Windows consoles (runs once at import)."""
     global _ansi_enabled
     if _ansi_enabled or platform.system() != "Windows":
+        _ansi_enabled = True
         return
     try:
         import ctypes
@@ -37,16 +40,36 @@ def _enable_ansi() -> None:
         mode = ctypes.c_ulong()
         if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
             kernel32.SetConsoleMode(handle, mode.value | 0x0004)
-        _ansi_enabled = True
     except Exception:
         pass
+    _ansi_enabled = True
+
+
+_enable_ansi_once()
 
 
 def colorize(text: str, color: str) -> str:
-    """Colorize text for terminal output, handling Windows console compatibility."""
-    if platform.system() == "Windows":
-        _enable_ansi()
+    """Colorize text for terminal output."""
     return f"{color}{text}{Colors.RESET}"
+
+
+# ---------------------------------------------------------------------------
+# Table helpers
+# ---------------------------------------------------------------------------
+
+def _trunc(s: str, n: int) -> str:
+    """Truncate string to n chars with ellipsis if needed."""
+    return s if len(s) <= n else s[:n - 1] + "…"
+
+
+def _col_widths(rows: List[List[str]], headers: List[str], max_width: int = 40) -> List[int]:
+    """Compute column widths as max(header, data) capped at max_width."""
+    widths = [len(h) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            if i < len(widths):
+                widths[i] = min(max_width, max(widths[i], len(cell)))
+    return widths
 
 
 def print_table_listen(bindings: List[Any]) -> None:
@@ -54,13 +77,27 @@ def print_table_listen(bindings: List[Any]) -> None:
     if not bindings:
         print(colorize("No listening ports found.", Colors.YELLOW))
         return
-    print(colorize(f"{'Port':<8} {'PID':<8} {'Process':<25} {'State':<12} {'Address':<25}", Colors.BOLD))
-    print("─" * 80)
-    for b in bindings:
-        pid = str(b.pid) if b.pid is not None else "-"
-        pname = b.process_name or "-"
-        state = b.state or "-"
-        print(f"{colorize(str(b.port), Colors.CYAN):<8} {pid:<8} {pname:<25} {state:<12} {b.laddr:<25}")
+
+    headers = ["Port", "PID", "Process", "State", "Address"]
+    rows = [
+        [
+            str(b.port),
+            str(b.pid) if b.pid is not None else "-",
+            b.process_name or "-",
+            b.state or "-",
+            b.laddr or "-",
+        ]
+        for b in bindings
+    ]
+    # P4 fix: compute dynamic column widths
+    widths = _col_widths(rows, headers)
+    header_line = "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers))
+    print(colorize(header_line, Colors.BOLD))
+    print("─" * (sum(widths) + 2 * len(widths)))
+    for row, b in zip(rows, bindings):
+        cells = [_trunc(row[j], widths[j]).ljust(widths[j]) for j in range(len(widths))]
+        cells[0] = colorize(cells[0].strip(), Colors.CYAN).ljust(widths[0])
+        print("  ".join(cells))
 
 
 def jsonify_bindings(bindings: List[Any]) -> str:
@@ -76,20 +113,22 @@ def confirm_prompt(prompt: str, assume_yes: bool = False) -> bool:
         resp = input(colorize(prompt + " (y/N): ", Colors.MAGENTA))
         return resp.strip().lower() in ("y", "yes")
     except KeyboardInterrupt:
-        print("\nOperation cancelled.")
-        sys.exit(1)
+        # R14 fix: propagate KeyboardInterrupt instead of calling sys.exit().
+        # The main() exception handler will cleanly return EXIT_GENERAL_ERROR.
+        print()
+        raise
 
 
 def choose_docker_action(assume_yes: bool) -> Optional[str]:
     """Interactive Docker action selector."""
     if assume_yes:
         return "stop"
-    print(colorize("\nChoose action:\n1) Stop container\n2) Restart container\n3) Remove container\n4) Cancel", Colors.CYAN))
+    print(colorize("\nChoose action:\n1) Stop container\n2) Restart container\n3) Remove container (irreversible!)\n4) Cancel", Colors.CYAN))
     try:
         resp = input(colorize("Select (1-4): ", Colors.MAGENTA)).strip()
     except KeyboardInterrupt:
-        print("\nOperation cancelled.")
-        return None
+        print()
+        raise
     mapping = {"1": "stop", "2": "restart", "3": "rm", "4": None}
     return mapping.get(resp)
 
@@ -99,10 +138,21 @@ def print_table_docker(mappings: List[Any]) -> None:
     if not mappings:
         print(colorize("No Docker-published ports found.", Colors.YELLOW))
         return
-    print(colorize(f"{'PORT':<8} {'CONTAINER':<20} {'IMAGE':<25} {'STATUS':<20}", Colors.BOLD))
-    print("─" * 80)
-    for m in mappings:
-        print(f"{colorize(str(m.host_port), Colors.CYAN):<8} {m.container_name:<20} {m.image:<25} {m.status:<20}")
+
+    headers = ["PORT", "CONTAINER", "IMAGE", "STATUS"]
+    rows = [
+        [str(m.host_port), m.container_name, m.image, m.status]
+        for m in mappings
+    ]
+    # P5 fix: dynamic column widths for long image / container names
+    widths = _col_widths(rows, headers)
+    header_line = "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers))
+    print(colorize(header_line, Colors.BOLD))
+    print("─" * (sum(widths) + 2 * len(widths)))
+    for row in rows:
+        cells = [_trunc(row[j], widths[j]).ljust(widths[j]) for j in range(len(widths))]
+        cells[0] = colorize(cells[0].strip(), Colors.CYAN).ljust(widths[0])
+        print("  ".join(cells))
 
 
 def print_table_list_product(local_bindings: List[Any], docker_maps: List[Any]) -> None:
@@ -118,19 +168,30 @@ def print_table_list_product(local_bindings: List[Any], docker_maps: List[Any]) 
     if not rows:
         print(colorize("No active ports found.", Colors.YELLOW))
         return
-    print(colorize(f"{'PORT':<8} {'TYPE':<10} {'OWNER':<25}", Colors.BOLD))
-    print("─" * 55)
+
+    # Build data rows for dynamic width computation
+    data_rows = []
     for port in sorted(rows.keys()):
         if "docker" in rows[port] and "local" in rows[port]:
             owner = rows[port]["docker"].container_name
-            print(f"{colorize(str(port), Colors.CYAN):<8} {'conflict':<10} {owner:<25}")
+            data_rows.append([str(port), "conflict", owner])
         elif "docker" in rows[port]:
             owner = rows[port]["docker"].container_name
-            print(f"{colorize(str(port), Colors.CYAN):<8} {'docker':<10} {owner:<25}")
+            data_rows.append([str(port), "docker", owner])
         else:
             b = rows[port]["local"]
             owner = b.process_name or "-"
-            print(f"{colorize(str(port), Colors.CYAN):<8} {'local':<10} {owner:<25}")
+            data_rows.append([str(port), "local", owner])
+
+    headers = ["PORT", "TYPE", "OWNER"]
+    widths = _col_widths(data_rows, headers)
+    header_line = "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers))
+    print(colorize(header_line, Colors.BOLD))
+    print("─" * (sum(widths) + 2 * len(widths)))
+    for row in data_rows:
+        cells = [_trunc(row[j], widths[j]).ljust(widths[j]) for j in range(len(widths))]
+        cells[0] = colorize(cells[0].strip(), Colors.CYAN).ljust(widths[0])
+        print("  ".join(cells))
 
 
 def jsonify_docker(mappings: List[Any]) -> str:
