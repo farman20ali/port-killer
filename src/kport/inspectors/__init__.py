@@ -5,6 +5,13 @@ Dynamically resolves and exposes the target inspector based on dependency availa
 
 from .base import BaseInspector, PortBinding, ProcessInfo
 
+__all__ = [
+    "get_inspector",
+    "BaseInspector",
+    "PortBinding",
+    "ProcessInfo",
+]
+
 USING_PSUTIL = False
 try:
     import psutil

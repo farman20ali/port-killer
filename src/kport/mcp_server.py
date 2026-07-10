@@ -5,6 +5,10 @@ Incorporates a strict safety shield to prevent AI agents from killing critical s
 """
 
 import os
+import sys
+import json
+import traceback
+from typing import Dict, Any
 
 from .inspectors import get_inspector
 from .docker_engine import list_docker_mappings, docker_mappings_for_host_port, docker_action_on_container
@@ -15,12 +19,6 @@ from .constants import PROTECTED_PORTS, PROTECTED_PROCESS_NAMES
 # MCP and CLI now share identical default protection lists.
 PROTECTED_PORTS = PROTECTED_PORTS  # re-export for backward compat
 PROTECTED_PROCESS_NAMES = PROTECTED_PROCESS_NAMES  # re-export for backward compat
-
-
-import sys
-import json
-import traceback
-from typing import Dict, Any, List, Optional
 
 def load_mcp_config() -> dict:
     """Load configuration dictionary from default kport config locations."""
@@ -374,5 +372,5 @@ def run_mcp_server() -> None:
                     sys.stdout.write(json.dumps(resp) + "\n")
                     sys.stdout.flush()
 
-        except Exception as e:
+        except Exception:
             log(f"RPC framing error: {traceback.format_exc()}")

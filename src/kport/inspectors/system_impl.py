@@ -9,7 +9,6 @@ import shutil
 import re
 import json
 import os
-import signal
 import socket
 import struct
 from typing import List, Dict, Optional, Tuple, Any

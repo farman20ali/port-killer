@@ -14,7 +14,7 @@ from dataclasses import asdict
 
 from .exceptions import KPortError, InvalidPortError, PermissionDeniedError
 from . import __version__
-from .inspectors import get_inspector, BaseInspector, PortBinding
+from .inspectors import get_inspector, BaseInspector
 from .constants import PROTECTED_PORTS, PROTECTED_PROCESS_NAMES
 from .docker_engine import (
     list_docker_mappings,
@@ -45,7 +45,7 @@ EXIT_PORT_FREE = 5
 class _QuietParser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
         print(colorize(f"Error: {message}", Colors.RED), file=sys.stderr)
-        print(f"Run 'kport --help' for usage.", file=sys.stderr)
+        print("Run 'kport --help' for usage.", file=sys.stderr)
         sys.exit(EXIT_INVALID_INPUT)
 
 
@@ -797,7 +797,7 @@ Examples:
     sp_watch.add_argument("--debug", action="store_true")
     sp_watch.add_argument("--config", type=str, default=None)
 
-    sp_mcp = sub.add_parser("mcp", help="Start the stdio Model Context Protocol (MCP) server")
+    sub.add_parser("mcp", help="Start the stdio Model Context Protocol (MCP) server")
 
     args = parser.parse_args(argv)
 

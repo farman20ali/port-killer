@@ -13,7 +13,7 @@ import signal
 import sys
 import time
 from typing import List, Optional, Tuple
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 # Top-level import — avoids circular import that existed when this was done
 # lazily inside kill_pid().
