@@ -9,14 +9,13 @@ import re
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Detect version from pyproject.toml (fallback: setup.py, then __init__.py)
+# Detect version from pyproject.toml (fallback: __init__.py)
 # ---------------------------------------------------------------------------
 REPO_ROOT = Path(SPECPATH).resolve().parents[1]
 
 def _read_version() -> str:
     for candidate in [
         REPO_ROOT / "pyproject.toml",
-        REPO_ROOT / "setup.py",
         REPO_ROOT / "src" / "kport" / "__init__.py",
     ]:
         if candidate.exists():

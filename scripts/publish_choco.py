@@ -4,16 +4,16 @@
 Publishes built .nupkg packages to the Chocolatey Community Repository.
 
 Usage (automated / CI):
-    python choco_publish.py --check                        # Check prerequisites
-    python choco_publish.py --publish                      # Publish .nupkg
-    python choco_publish.py --publish --skip-if-no-credentials  # CI: skip when no API key
-    python choco_publish.py --dry-run                        # Show what would happen
+    python scripts/publish_choco.py --check                        # Check prerequisites
+    python scripts/publish_choco.py --publish                      # Publish .nupkg
+    python scripts/publish_choco.py --publish --skip-if-no-credentials  # CI: skip when no API key
+    python scripts/publish_choco.py --dry-run                        # Show what would happen
 
 Interactive (recommended for first-time setup):
-    python choco_publish.py                                # Interactive menu
+    python scripts/publish_choco.py                                # Interactive menu
 
 Requirements:
-    - Built .nupkg file from choco_build.py
+    - Built .nupkg file from scripts/build_choco.py
     - Chocolatey CLI installed
     - CHOCO_API_KEY environment variable (or choco apikey configured locally)
 
@@ -38,7 +38,7 @@ if sys.platform == "win32":
             except Exception:
                 pass
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parents[1]
 DIST_CHOCO = REPO_ROOT / "dist" / "choco"
 CHOCO_SOURCE = "https://push.chocolatey.org/"
 
@@ -141,7 +141,7 @@ def check_requirements() -> bool:
         ok(f"Built package found: {nupkg_file.name} (v{version})")
     else:
         err(f"No built .nupkg found in {DIST_CHOCO}")
-        print("  Run: python choco_build.py --build")
+        print("  Run: python scripts/build_choco.py --build")
         print("  Ensure GitHub release asset exists before users install via choco")
         all_ok = False
 
@@ -155,7 +155,7 @@ def publish_choco(
     nupkg_file = find_nupkg_file()
     if not nupkg_file:
         err(f"No .nupkg found in {DIST_CHOCO}")
-        warn("Run: python choco_build.py --build")
+        warn("Run: python scripts/build_choco.py --build")
         print(f"  Release asset must exist at GitHub before install works")
         return 1
 
@@ -177,7 +177,7 @@ def publish_choco(
         print("1. A Chocolatey Community account: https://community.chocolatey.org/")
         print("2. An API key from: https://community.chocolatey.org/account")
         print("3. Set the environment variable: CHOCO_API_KEY=your-key-here")
-        print("\nThen: python choco_publish.py --publish")
+        print("\nThen: python scripts/publish_choco.py --publish")
         return 1
 
     cmd = [

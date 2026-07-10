@@ -34,7 +34,7 @@ if sys.platform == "win32":
             except Exception:
                 pass
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parents[1]
 DIST_SNAP = REPO_ROOT / "dist" / "snap"
 
 
@@ -161,7 +161,7 @@ def check_requirements() -> bool:
         ok(f"Built snap file found: {snap_file.name} (v{version})")
     else:
         err(f"No built snap file found in {DIST_SNAP}")
-        print("  Run: python snap_build.py --build")
+        print("  Run: python scripts/build_snap.py --build")
         all_ok = False
     
     return all_ok
@@ -173,7 +173,7 @@ def publish_snap(channel: str = "stable", dry_run: bool = False) -> int:
     
     if not snap_file:
         err(f"No snap file found in {DIST_SNAP}")
-        warn("Run: python snap_build.py --build")
+        warn("Run: python scripts/build_snap.py --build")
         return 1
     
     version = get_snap_version(snap_file)
@@ -183,7 +183,7 @@ def publish_snap(channel: str = "stable", dry_run: bool = False) -> int:
     if not check_snapcraft_authenticated():
         err("Not authenticated with Snap Store")
         print("\nRun: snapcraft login")
-        print("Then: python snap_publish.py --publish")
+        print("Then: python scripts/publish_snap.py --publish")
         return 1
     
     cmd = f"snapcraft upload {snap_file} --release {channel}"

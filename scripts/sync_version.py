@@ -32,11 +32,6 @@ def sync_version(version: str) -> None:
         rf'\1"{version}"',
     )
     replace_once(
-        ROOT / "setup.py",
-        r'^(    version=)["\'][^"\']+["\']',
-        rf'\1"{version}"',
-    )
-    replace_once(
         ROOT / "src" / "kport" / "__init__.py",
         r'^(__version__\s*=\s*)["\'][^"\']+["\']',
         rf'\1"{version}"',

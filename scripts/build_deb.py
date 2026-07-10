@@ -8,7 +8,7 @@ It helps you:
 - show the produced .deb path
 
 Usage:
-  python deb_publish.py
+  python build_deb.py
 
 Notes:
 - Building Debian packages is supported on Debian/Ubuntu (or derivatives).
@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parents[1]
 DIST_DIR = REPO_ROOT / "dist" / "deb"
 
 
@@ -59,19 +59,25 @@ def is_debian_like() -> bool:
 
 
 def read_project_version() -> str | None:
-    """Best-effort: extract version from setup.py."""
-    setup_py = REPO_ROOT / "setup.py"
-    if not setup_py.exists():
-        return None
-    text = setup_py.read_text(encoding="utf-8", errors="ignore")
-    m = re.search(r"\bversion\s*=\s*['\"]([^'\"]+)['\"]", text)
-    if not m:
-        return None
-    return m.group(1).strip()
+    """Extract version from pyproject.toml (preferred) or src/kport/__init__.py."""
+    for candidate in [
+        REPO_ROOT / "pyproject.toml",
+        REPO_ROOT / "src" / "kport" / "__init__.py",
+    ]:
+        if not candidate.exists():
+            continue
+        text = candidate.read_text(encoding="utf-8", errors="ignore")
+        m = re.search(
+            r"""(?:^version\s*=\s*["']|__version__\s*=\s*["'])([^"']+)""",
+            text, re.MULTILINE,
+        )
+        if m:
+            return m.group(1).strip()
+    return None
 
 
 def check_layout() -> None:
-    required = ["setup.py", "__main__.py"]
+    required = ["pyproject.toml", "__main__.py"]
     missing = [p for p in required if not (REPO_ROOT / p).exists()]
     if missing:
         print("❌ Missing required project files: " + ", ".join(missing))

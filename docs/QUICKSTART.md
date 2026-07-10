@@ -1,28 +1,42 @@
-# 🚀 Quick Start Guide — kport v3.2.0
+# 🚀 Quick Start Guide — kport
 
 ## Installation (Choose One Method)
 
-### ✅ Run directly from source
+### ✅ Run directly from source (no install needed)
 ```bash
 python -m kport --help
 python -m kport list
 ```
 
-### 📦 Install globally (Recommended — no admin needed)
+### 📦 Install globally (recommended — no admin needed)
 ```bash
-# Install to user directory
 pip install --user .
 ```
 
 After installation:
 ```bash
-kport --version   # kport 3.2.0
+kport --version   # kport 3.2.x
 kport list        # show all listening ports
 ```
 
 ### 🌍 Install from PyPI
 ```bash
 pip install kport
+```
+
+### 🪟 Windows — Chocolatey
+```powershell
+choco install kport
+```
+
+### 🐧 Linux — Debian/Ubuntu
+```bash
+sudo dpkg -i kport_*.deb          # from GitHub Releases
+```
+
+### 🐧 Linux — RHEL / Fedora
+```bash
+sudo rpm -i kport-*.rpm           # from GitHub Releases
 ```
 
 ---
@@ -60,7 +74,7 @@ kport conflicts
 
 ---
 
-## 👁️ Watch Mode (v3.2.0)
+## 👁️ Watch Mode
 
 Monitor a port and automatically kill processes that start using it:
 
@@ -80,7 +94,7 @@ kport watch 8080 --json
 
 ---
 
-## 🛡️ Safety Shield (v3.2.0)
+## 🛡️ Safety Shield
 
 Critical ports and processes are protected by default:
 
@@ -142,40 +156,51 @@ Add to your Claude Desktop / Cursor config:
 
 ---
 
-  ## 🔧 Legacy Flags (still supported)
+## 🔧 Legacy Flags (still supported)
 
-  ```bash
-  python -m kport -l                  # list all ports
-  python -m kport -i 8080             # inspect port
-  python -m kport -im 3000 3001 8080  # inspect multiple
-  python -m kport -ir 3000-3010       # inspect range
-  python -m kport -ip node            # inspect by process name
-  python -m kport -k 8080             # kill port
-  python -m kport -kp node            # kill by process name
-  python -m kport -ka 3000 3001 3002  # kill multiple ports
-  python -m kport -kr 3000-3010       # kill port range
-  ```
+```bash
+python -m kport -l                  # list all ports
+python -m kport -i 8080             # inspect port
+python -m kport -im 3000 3001 8080  # inspect multiple
+python -m kport -ir 3000-3010       # inspect range
+python -m kport -ip node            # inspect by process name
+python -m kport -k 8080             # kill port
+python -m kport -kp node            # kill by process name
+python -m kport -ka 3000 3001 3002  # kill multiple ports
+python -m kport -kr 3000-3010       # kill port range
+```
 
 ---
 
-## 📤 Packaging and Distribution
+## 🛠️ Developer — Build & Package
+
+All build operations use `manage.py`:
 
 ```bash
-# Build PIP wheel + sdist
-python -m build
+# Set up dev environment (installs all dependencies)
+python manage.py setup
 
-# Build Windows .exe installer
-python win_build.py
+# Run the full test suite
+python manage.py test
 
-# Build macOS .pkg installer
-python mac_build.py
+# Bump version across all files at once
+python manage.py sync-version 3.2.4
 
-# Build Debian .deb package
-python deb_publish.py
+# Build packages (use flag for your target):
+python manage.py build --all       # everything for the current OS
+python manage.py build --win       # Windows .exe installer
+python manage.py build --deb       # Debian .deb
+python manage.py build --rpm       # RHEL .rpm
+python manage.py build --snap      # Snap .snap (requires snapcraft)
+python manage.py build --pypi      # PyPI wheel + sdist
 
-# Build RPM package
-python rpm_build.py
+# Publish packages:
+python manage.py publish --pypi
+python manage.py publish --snap
+python manage.py publish --choco
 ```
+
+See [PACKAGING.md](PACKAGING.md) and [CONTRIBUTING.md](../CONTRIBUTING.md) for full details.
 
 ---
 
@@ -184,8 +209,7 @@ python rpm_build.py
 | File | Purpose |
 |------|---------|
 | `README.md` | Main documentation |
-| `INSTALL.md` | Detailed installation |
-| `PACKAGING.md` | Cross-platform packaging |
-| `PUBLISH.md` | PyPI publishing guide |
-| `docs/RELEASE_NOTES_3.2.0.md` | What's new in 3.2.0 |
+| `docs/INSTALL.md` | Detailed installation guide |
+| `docs/PACKAGING.md` | Cross-platform packaging |
+| `docs/RELEASE_GUIDE.md` | Release workflow |
 | `CONTRIBUTING.md` | How to contribute |

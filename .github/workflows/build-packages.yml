@@ -78,7 +78,7 @@ jobs:
             dh-python python3-all fakeroot
 
       - name: Build .deb
-        run: echo "3" | python deb_publish.py
+        run: echo "3" | python scripts/build_deb.py
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
@@ -106,7 +106,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends rpm
 
       - name: Build .rpm
-        run: python rpm_build.py --build
+        run: python scripts/build_rpm.py --build
 
       - name: Upload .rpm artifact
         uses: actions/upload-artifact@v4
@@ -229,7 +229,7 @@ jobs:
           echo "C:\Program Files (x86)\NSIS" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
 
       - name: Build kport.exe + installer
-        run: python win_build.py --build
+        run: python scripts/build_win.py --build
 
       - name: Smoke-test standalone exe
         shell: cmd
@@ -264,7 +264,7 @@ jobs:
 
       - name: Build Chocolatey package
         shell: powershell
-        run: python choco_build.py --build
+        run: python scripts/build_choco.py --build
 
       - name: Upload Chocolatey artifact
         uses: actions/upload-artifact@v4
@@ -307,7 +307,7 @@ jobs:
             Write-Host 'No Chocolatey package artifact found — skipping publish'
             exit 0
           }
-          python choco_publish.py --publish --skip-if-no-credentials
+          python scripts/publish_choco.py --publish --skip-if-no-credentials
 
   # ── 7. macOS .pkg installer ──────────────────────────────────────────────────
   build-mac:
@@ -326,7 +326,7 @@ jobs:
         run: pip install pyinstaller psutil
 
       - name: Build kport binary + .pkg
-        run: python mac_build.py --build
+        run: python scripts/build_mac.py --build
 
       - name: Smoke-test binary
         run: dist/mac/kport --version

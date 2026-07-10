@@ -76,7 +76,8 @@ if sys.platform == "win32":
     if added:
         os.environ["PATH"] = os.pathsep.join(paths)
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_DIR = Path(__file__).resolve().parent
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -98,7 +99,6 @@ def header(msg: str)   -> None:
 def read_version() -> str:
     for candidate in [
         REPO_ROOT / "pyproject.toml",
-        REPO_ROOT / "setup.py",
         REPO_ROOT / "src" / "kport" / "__init__.py",
     ]:
         if candidate.exists():
@@ -114,7 +114,7 @@ def read_version() -> str:
 
 def _run_script(script: str, extra_args: list[str], dry_run: bool) -> bool:
     """Invoke a sibling build script as a subprocess."""
-    script_path = REPO_ROOT / script
+    script_path = SCRIPT_DIR / script
     if not script_path.exists():
         err(f"Build script not found: {script_path}")
         return False
@@ -138,7 +138,7 @@ def build_win(version: str, check: bool, dry_run: bool) -> bool:
         return True  # non-fatal skip
 
     args = ["--check"] if check else ["--build"]
-    ok_result = _run_script("win_build.py", args, dry_run)
+    ok_result = _run_script("build_win.py", args, dry_run)
     if ok_result and not check and not dry_run:
         matches = list((REPO_ROOT / "dist" / "win").glob("kport-*-setup.exe"))
         if matches:
@@ -156,7 +156,7 @@ def build_mac(version: str, check: bool, dry_run: bool) -> bool:
         return True  # non-fatal skip
 
     args = ["--check"] if check else ["--build"]
-    ok_result = _run_script("mac_build.py", args, dry_run)
+    ok_result = _run_script("build_mac.py", args, dry_run)
     if ok_result and not check and not dry_run:
         matches = list((REPO_ROOT / "dist" / "mac").glob("kport-*.pkg"))
         if matches:
@@ -171,10 +171,10 @@ def build_deb(version: str, check: bool, dry_run: bool) -> bool:
         return True
 
     if check:
-        # Use deb_publish.py option 1 (check tools) in auto mode
-        script_path = REPO_ROOT / "deb_publish.py"
+        # Use build_deb.py option 1 (check tools) in auto mode
+        script_path = SCRIPT_DIR / "build_deb.py"
         if not script_path.exists():
-            err("deb_publish.py not found")
+            err("build_deb.py not found")
             return False
         result = subprocess.run(
             [sys.executable, str(script_path)],
@@ -183,13 +183,13 @@ def build_deb(version: str, check: bool, dry_run: bool) -> bool:
         return result.returncode == 0
 
     # Non-interactive build: send "3\n" (just build)
-    script_path = REPO_ROOT / "deb_publish.py"
+    script_path = SCRIPT_DIR / "build_deb.py"
     if not script_path.exists():
-        err("deb_publish.py not found")
+        err("build_deb.py not found")
         return False
 
     if dry_run:
-        warn("DRY RUN — would run: python deb_publish.py  [choice: 3]")
+        warn("DRY RUN — would run: python build_deb.py  [choice: 3]")
         return True
 
     result = subprocess.run(
@@ -211,7 +211,7 @@ def build_rpm(version: str, check: bool, dry_run: bool) -> bool:
         return True
 
     args = ["--check"] if check else ["--build"]
-    ok_result = _run_script("rpm_build.py", args, dry_run)
+    ok_result = _run_script("build_rpm.py", args, dry_run)
     if ok_result and not check and not dry_run:
         matches = list((REPO_ROOT / "dist" / "rpm").glob("*.rpm"))
         if matches:
@@ -226,7 +226,7 @@ def build_snap(version: str, check: bool, dry_run: bool) -> bool:
         return True
 
     args = ["--check"] if check else ["--build"]
-    ok_result = _run_script("snap_build.py", args, dry_run)
+    ok_result = _run_script("build_snap.py", args, dry_run)
     if ok_result and not check and not dry_run:
         matches = list((REPO_ROOT / "dist" / "snap").glob("*.snap"))
         if matches:
@@ -241,7 +241,7 @@ def build_choco(version: str, check: bool, dry_run: bool) -> bool:
         return True
 
     args = ["--check"] if check else ["--build"]
-    ok_result = _run_script("choco_build.py", args, dry_run)
+    ok_result = _run_script("build_choco.py", args, dry_run)
     if ok_result and not check and not dry_run:
         matches = list((REPO_ROOT / "dist" / "choco").glob("*.nupkg"))
         if matches:
@@ -284,7 +284,7 @@ def build_pypi(version: str, check: bool, dry_run: bool) -> bool:
         matches = list((REPO_ROOT / "dist").glob("*.whl"))
         if matches:
             ok(f"Wheel             → {matches[-1].name}")
-        ok("PyPI packages built. Upload with: python publish.py")
+        ok("PyPI packages built. Upload with: python manage.py publish --pypi")
         return True
     return False
 

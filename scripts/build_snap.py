@@ -30,7 +30,7 @@ if sys.platform == "win32":
             except Exception:
                 pass
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parents[1]
 DIST_SNAP = REPO_ROOT / "dist" / "snap"
 SNAP_DIR = REPO_ROOT / "packaging" / "snap"
 TEMPLATE = SNAP_DIR / "snapcraft.yaml.template"
@@ -62,7 +62,6 @@ def header(msg: str) -> None:
 def read_version() -> str:
     for candidate in [
         REPO_ROOT / "pyproject.toml",
-        REPO_ROOT / "setup.py",
         REPO_ROOT / "src" / "kport" / "__init__.py",
     ]:
         if candidate.exists():

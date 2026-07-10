@@ -36,7 +36,7 @@ if sys.platform == "win32":
             except Exception:
                 pass
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parents[1]
 VSCODE_EXT = REPO_ROOT / "vscode-extension"
 PACKAGE_JSON = VSCODE_EXT / "package.json"
 

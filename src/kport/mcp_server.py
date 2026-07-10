@@ -4,33 +4,23 @@ Implements standard stdio-based tool calls with zero dependencies.
 Incorporates a strict safety shield to prevent AI agents from killing critical system ports.
 """
 
-import sys
-import json
-import traceback
-from typing import Dict, Any, List
+import os
+
 from .inspectors import get_inspector
 from .docker_engine import list_docker_mappings, docker_mappings_for_host_port, docker_action_on_container
 from . import __version__
+from .constants import PROTECTED_PORTS, PROTECTED_PROCESS_NAMES
 
-# Security blocklist: ports that AI agents are prevented from killing by default.
-PROTECTED_PORTS = {
-    22,    # SSH
-    53,    # DNS
-    80,    # HTTP
-    443,   # HTTPS
-    5432,  # PostgreSQL
-    3306,  # MySQL
-    6379,  # Redis
-    6443,  # Kubernetes API
-}
-
-# Critical system process names that should never be targeted
-PROTECTED_PROCESS_NAMES = {
-    "systemd", "init", "docker", "dockerd", "sshd", "explorer.exe", "lsass.exe", "services.exe"
-}
+# R10 fix: use shared constants from kport.constants (single source of truth).
+# MCP and CLI now share identical default protection lists.
+PROTECTED_PORTS = PROTECTED_PORTS  # re-export for backward compat
+PROTECTED_PROCESS_NAMES = PROTECTED_PROCESS_NAMES  # re-export for backward compat
 
 
-import os
+import sys
+import json
+import traceback
+from typing import Dict, Any, List, Optional
 
 def load_mcp_config() -> dict:
     """Load configuration dictionary from default kport config locations."""
@@ -112,9 +102,8 @@ TOOLS = [
 ]
 
 
-def handle_list_ports() -> Dict[str, Any]:
+def handle_list_ports(inspector) -> Dict[str, Any]:
     """Execute list_ports tool request."""
-    inspector = get_inspector()
     local_bindings = inspector.list_listening()
     docker_maps = list_docker_mappings()
 
@@ -145,12 +134,11 @@ def handle_list_ports() -> Dict[str, Any]:
     }
 
 
-def handle_inspect_port(port: int) -> Dict[str, Any]:
+def handle_inspect_port(inspector, port: int) -> Dict[str, Any]:
     """Execute inspect_port tool request."""
     if not (1 <= port <= 65535):
         raise ValueError(f"Port {port} is out of bounds (1-65535)")
 
-    inspector = get_inspector()
     local_bindings = inspector.find_bindings_on_port(port)
     docker_hits = docker_mappings_for_host_port(port)
     pids = inspector.find_pids_on_port(port)
@@ -194,7 +182,7 @@ def handle_inspect_port(port: int) -> Dict[str, Any]:
     return response
 
 
-def handle_kill_port(port: int, force: bool = True, docker_action: str = "stop") -> Dict[str, Any]:
+def handle_kill_port(inspector, port: int, force: bool = True, docker_action: str = "stop") -> Dict[str, Any]:
     """Execute kill_port tool request under safety shield validations."""
     if not (1 <= port <= 65535):
         raise ValueError(f"Port {port} is out of bounds (1-65535)")
@@ -253,14 +241,17 @@ def handle_kill_port(port: int, force: bool = True, docker_action: str = "stop")
     # 5. Critical process name shield check
     for pid in pids:
         info = inspector.get_process_info(pid)
-        if info and info.name.lower() in protected_procs:
+        # R9 fix: was duplicate "# 5." label. Now correctly numbered as step 5.
+        # Strip enrichment suffix (e.g. "sshd (...)" should still match "sshd")
+        base_name = info.name.lower().split(" (")[0] if info else ""
+        if base_name in protected_procs:
             return {
                 "success": False,
                 "message": f"Security Shield Active: PID {pid} runs critical system process '{info.name}'. Termination aborted."
             }
 
-    # 5. Local process escalated kill
-    ok, msg = inspector.kill_port(port, graceful_timeout=3.0, force=force, dry_run=False, debug=True)
+    # 6. Local process escalated kill
+    ok, msg = inspector.kill_port(port, graceful_timeout=3.0, force=force, dry_run=False, debug=True, assume_yes=True)
     return {
         "success": ok,
         "type": "local",
@@ -272,6 +263,12 @@ def handle_kill_port(port: int, force: bool = True, docker_action: str = "stop")
 def run_mcp_server() -> None:
     """Run standard stdio MCP JSON-RPC execution loop."""
     log("kport MCP Server successfully started.")
+
+    # P3 fix: create ONE inspector for the entire server lifetime.
+    # Creating a new instance per-call was wasteful; more importantly,
+    # a single instance will correctly clear its own per-query cache
+    # (via _clear_cache()) on each call rather than allocating fresh objects.
+    inspector = get_inspector()
 
     for line in sys.stdin:
         if not line.strip():
@@ -317,15 +314,15 @@ def run_mcp_server() -> None:
 
                 try:
                     if tool_name == "list_ports":
-                        result_data = handle_list_ports()
+                        result_data = handle_list_ports(inspector)
                     elif tool_name == "inspect_port":
                         target_port = int(arguments.get("port"))
-                        result_data = handle_inspect_port(target_port)
+                        result_data = handle_inspect_port(inspector, target_port)
                     elif tool_name == "kill_port":
                         target_port = int(arguments.get("port"))
                         force_flag = bool(arguments.get("force", True))
                         docker_act = str(arguments.get("docker_action", "stop"))
-                        result_data = handle_kill_port(target_port, force_flag, docker_act)
+                        result_data = handle_kill_port(inspector, target_port, force_flag, docker_act)
                     else:
                         raise ValueError(f"Unknown tool: {tool_name}")
 

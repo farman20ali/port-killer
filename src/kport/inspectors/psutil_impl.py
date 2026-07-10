@@ -12,7 +12,9 @@ import psutil  # Safe to import because this implementation is dynamically loade
 
 class PsutilInspector(BaseInspector):
     def list_listening(self) -> List[PortBinding]:
-        bindings: Dict[Tuple[int, str], PortBinding] = {}
+        # R6 fix: key on (port, family, pid, state) so distinct processes/families
+        # on the same port are preserved, not silently dropped.
+        bindings: Dict[Tuple, PortBinding] = {}
         for conn in psutil.net_connections(kind='inet'):
             if not conn.laddr:
                 continue
@@ -20,8 +22,6 @@ class PsutilInspector(BaseInspector):
             port = conn.laddr.port if hasattr(conn.laddr, 'port') else conn.laddr[1]
             family = 'IPv6' if conn.family.name == 'AF_INET6' else 'IPv4'
             state = conn.status
-            
-            # For listening tables, show LISTEN status bindings
             pid = conn.pid
             proc_name = None
             if pid:
@@ -30,8 +30,9 @@ class PsutilInspector(BaseInspector):
                     proc_name = p.name()
                 except Exception:
                     proc_name = None
-            if (port, state) not in bindings:
-                bindings[(port, state)] = PortBinding(
+            key = (port, family, pid, state)
+            if key not in bindings:
+                bindings[key] = PortBinding(
                     port=port,
                     family=family,
                     laddr=laddr,
@@ -87,12 +88,28 @@ class PsutilInspector(BaseInspector):
     def get_process_info(self, pid: int) -> Optional[ProcessInfo]:
         try:
             p = psutil.Process(pid)
+            # R7 fix: store exe() result once — it triggers a syscall each time.
+            exe = None
+            try:
+                exe = p.exe() or None
+            except Exception:
+                pass
+            cmdline = None
+            try:
+                cmdline = p.cmdline() or None
+            except Exception:
+                pass
+            user = None
+            try:
+                user = p.username() if hasattr(p, 'username') else None
+            except Exception:
+                pass
             return ProcessInfo(
                 pid=pid,
                 name=p.name(),
-                exe=p.exe() if p.exe() else None,
-                cmdline=p.cmdline() if p.cmdline() else None,
-                user=p.username() if hasattr(p, 'username') else None
+                exe=exe,
+                cmdline=cmdline,
+                user=user,
             )
         except Exception:
             return None

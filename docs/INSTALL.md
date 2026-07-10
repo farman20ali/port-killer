@@ -81,9 +81,14 @@ sudo dnf install kport-*.rpm
 
 **Snap (Ubuntu and other snap-enabled distros):**
 ```bash
-sudo snap install kport_*.snap --classic --dangerous
+sudo snap install kport_*.snap --dangerous
 # After publishing to the Snap Store:
-# sudo snap install kport --classic
+# sudo snap install kport
+
+# Connect necessary interface plugs for process inspection and signaling:
+sudo snap connect kport:process-control
+sudo snap connect kport:system-observe
+sudo snap connect kport:network-observe
 ```
 
 ### Method 2: Using pip

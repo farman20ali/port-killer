@@ -73,7 +73,7 @@ Feature suggestions are welcome! Please:
 ## Development Setup
 
 ### Prerequisites
-- Python 3.6 or higher
+- Python 3.8 or higher
 - Git
 
 ### Installation for Development
@@ -82,12 +82,11 @@ Feature suggestions are welcome! Please:
 git clone https://github.com/farman20ali/port-killer.git
 cd port-killer
 
-# Install in editable mode
-pip install --user -e .
+# Set up the dev environment (editable install + dev dependencies)
+python manage.py setup
 
-# Run tests
-python -m kport --version
-python -m kport -h
+# Run the test suite to verify
+python manage.py test
 ```
 
 ## Code Style Guidelines
@@ -144,11 +143,21 @@ When adding features, update:
 
 (For maintainers)
 
-1. Update version in `setup.py`, `pyproject.toml` and `src/kport/__init__.py`
-2. Update `CHANGELOG.md`
-3. Create git tag
-4. Build and upload to PyPI
-5. Create GitHub release
+1. Sync the version number across all package metadata files:
+   ```bash
+   python manage.py sync-version <version>
+   ```
+2. Update release documentation (e.g. create a release notes file `docs/RELEASE_NOTES_<version>.md`).
+3. Commit the version updates to git:
+   ```bash
+   git add .
+   git commit -m "chore: release version <version>"
+   ```
+4. Build, tag a Git release, and publish all packages:
+   ```bash
+   python manage.py publish --release-tag <version>
+   ```
+5. GitHub Actions will automatically compile binaries and attach them to the GitHub release. You can monitor progress on GitHub.
 
 ## Questions?
 

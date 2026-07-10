@@ -26,3 +26,8 @@ class DockerError(KPortError):
 class PortBlockedError(KPortError):
     """Raised when a port cannot be freed or verified."""
     exit_code = 1
+
+
+class ProcessNotFoundError(KPortError):
+    """Raised when an expected process no longer exists (PID vanished)."""
+    exit_code = 1

@@ -111,9 +111,17 @@ def test_safety_policy_custom_config():
     assert not safe
     assert "Port 8080 is a protected port" in msg
 
-    # Port 80 is no longer protected (completely overridden by custom list)
+    # Port 80 is STILL protected (custom list is additive)
     safe, msg = check_safety_policy(80, [], args, inspector)
-    assert safe
+    assert not safe
+    assert "Port 80 is a protected port" in msg
+
+    # Default process like sshd is also still protected (additive)
+    pi_sshd = ProcessInfo(pid=222, name="sshd")
+    inspector.proc_info_map[222] = pi_sshd
+    safe, msg = check_safety_policy(None, [222], args, inspector)
+    assert not safe
+    assert "runs critical process 'sshd'" in msg
 
 
 def test_safety_policy_process_shield():

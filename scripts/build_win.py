@@ -55,7 +55,7 @@ if sys.platform == "win32":
     if added:
         os.environ["PATH"] = os.pathsep.join(paths)
 
-REPO_ROOT = Path(__file__).resolve().parent
+REPO_ROOT = Path(__file__).resolve().parents[1]
 DIST_WIN  = REPO_ROOT / "dist" / "win"
 SPEC_FILE = REPO_ROOT / "packaging" / "windows" / "kport.spec"
 NSI_FILE  = REPO_ROOT / "packaging" / "windows" / "installer.nsi"
@@ -99,7 +99,6 @@ def command_exists(name: str) -> bool:
 def read_version() -> str:
     for candidate in [
         REPO_ROOT / "pyproject.toml",
-        REPO_ROOT / "setup.py",
         REPO_ROOT / "src" / "kport" / "__init__.py",
     ]:
         if candidate.exists():
