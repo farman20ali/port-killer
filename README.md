@@ -658,3 +658,216 @@ Project Link: [https://github.com/farman20ali/port-killer](https://github.com/fa
 ---
 
 Made with ❤️ for developers who are tired of hunting down processes
+
+<!-- BEGIN AUTO-GENERATED USAGE -->
+
+### `kport --help`
+
+```
+usage: __main__.py [-h] [--json] [--dry-run] [-y] [--debug] [--config CONFIG]
+                   [--bypass-safety] [-i PORT] [-im PORT [PORT ...]]
+                   [-ir RANGE] [-ip NAME] [-k PORT] [-kp NAME]
+                   [-ka PORT [PORT ...]] [-kr RANGE] [-l] [--exact] [--force]
+                   [--graceful-timeout GRACEFUL_TIMEOUT] [-v] [--mcp]
+                   {inspect,explain,kill,kill-process,list,docker,conflicts,watch,mcp} ...
+
+kport - Cross-platform port inspector and killer
+
+positional arguments:
+  {inspect,explain,kill,kill-process,list,docker,conflicts,watch,mcp}
+    inspect             Inspect a port (docker-aware)
+    explain             Explain why a port is blocked
+    kill                Safely free a port (docker-aware)
+    kill-process        Kill processes by name
+    list                List active ports (local + docker)
+    docker              List Docker-published ports
+    conflicts           Detect docker/local port conflicts
+    watch               Live monitoring of port ownership
+    mcp                 Start the stdio Model Context Protocol (MCP) server
+
+options:
+  -h, --help            show this help message and exit
+  --json                Output machine-readable JSON
+  --dry-run             Show actions without executing
+  -y, --yes             Skip confirmation prompts
+  --debug               Verbose internal logs
+  --config CONFIG       Path to JSON config file
+  --bypass-safety       Bypass safety shields on protected ports/processes
+  -i, --inspect PORT    Inspect specified port
+  -im, --inspect-multiple PORT [PORT ...]
+                        Inspect multiple ports
+  -ir, --inspect-range RANGE
+                        Inspect port range
+  -ip, --inspect-process NAME
+                        Inspect processes by name
+  -k, --kill PORT       Kill processes using port
+  -kp, --kill-process NAME
+                        Kill processes by name
+  -ka, --kill-all PORT [PORT ...]
+                        Kill multiple ports
+  -kr, --kill-range RANGE
+                        Kill processes on range
+  -l, --list            List all listening ports
+  --exact               Exact process name matching
+  --force               Force kill stubborn processes (SIGKILL / fuser)
+  --graceful-timeout GRACEFUL_TIMEOUT
+                        Seconds to wait before force kill (default: 3.0)
+  -v, --version         show program's version number and exit
+  --mcp                 Start the MCP JSON-RPC server on stdio (alias for
+                        'kport mcp')
+
+Examples:
+  kport -i 8080
+  kport -im 3000 3001 3002
+  kport -ir 3000-3010
+  kport -k 8080 --yes
+  kport inspect 8080
+  kport kill 8080 --force
+  kport mcp
+```
+
+### `kport inspect --help`
+
+```
+usage: __main__.py inspect [-h] [--json] [--debug] [--config CONFIG] port
+
+positional arguments:
+  port
+
+options:
+  -h, --help       show this help message and exit
+  --json
+  --debug
+  --config CONFIG
+```
+
+### `kport explain --help`
+
+```
+usage: __main__.py explain [-h] [--json] [--debug] [--config CONFIG] port
+
+positional arguments:
+  port
+
+options:
+  -h, --help       show this help message and exit
+  --json
+  --debug
+  --config CONFIG
+```
+
+### `kport kill --help`
+
+```
+usage: __main__.py kill [-h] [--docker-action {stop,restart,rm}] [--json]
+                        [--dry-run] [-y] [--debug] [--force]
+                        [--graceful-timeout GRACEFUL_TIMEOUT]
+                        [--config CONFIG] [--bypass-safety]
+                        port
+
+positional arguments:
+  port
+
+options:
+  -h, --help            show this help message and exit
+  --docker-action {stop,restart,rm}
+                        Action when port belongs to Docker
+  --json
+  --dry-run
+  -y, --yes
+  --debug
+  --force
+  --graceful-timeout GRACEFUL_TIMEOUT
+  --config CONFIG
+  --bypass-safety       Bypass safety shields on protected ports/processes
+```
+
+### `kport kill-process --help`
+
+```
+usage: __main__.py kill-process [-h] [--exact] [--json] [--dry-run] [-y]
+                                [--debug] [--force]
+                                [--graceful-timeout GRACEFUL_TIMEOUT]
+                                [--config CONFIG] [--bypass-safety]
+                                name
+
+positional arguments:
+  name
+
+options:
+  -h, --help            show this help message and exit
+  --exact
+  --json
+  --dry-run
+  -y, --yes
+  --debug
+  --force
+  --graceful-timeout GRACEFUL_TIMEOUT
+  --config CONFIG
+  --bypass-safety       Bypass safety shields on protected ports/processes
+```
+
+### `kport list --help`
+
+```
+usage: __main__.py list [-h] [--json] [--debug] [--config CONFIG]
+
+options:
+  -h, --help       show this help message and exit
+  --json
+  --debug
+  --config CONFIG
+```
+
+### `kport docker --help`
+
+```
+usage: __main__.py docker [-h] [--json] [--debug] [--config CONFIG]
+
+options:
+  -h, --help       show this help message and exit
+  --json
+  --debug
+  --config CONFIG
+```
+
+### `kport conflicts --help`
+
+```
+usage: __main__.py conflicts [-h] [--json] [--debug] [--config CONFIG]
+
+options:
+  -h, --help       show this help message and exit
+  --json
+  --debug
+  --config CONFIG
+```
+
+### `kport watch --help`
+
+```
+usage: __main__.py watch [-h] [--interval INTERVAL] [--json] [--debug]
+                         [--config CONFIG]
+                         port
+
+positional arguments:
+  port
+
+options:
+  -h, --help           show this help message and exit
+  --interval INTERVAL  Polling interval in seconds
+  --json
+  --debug
+  --config CONFIG
+```
+
+### `kport mcp --help`
+
+```
+usage: __main__.py mcp [-h]
+
+options:
+  -h, --help  show this help message and exit
+```
+
+<!-- END AUTO-GENERATED USAGE -->
