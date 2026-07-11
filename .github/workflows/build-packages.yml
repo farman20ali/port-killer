@@ -49,7 +49,7 @@ jobs:
         run: python -m build
 
       - name: Upload PyPI artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: pypi-packages
           path: |
@@ -81,7 +81,7 @@ jobs:
         run: echo "3" | python scripts/build_deb.py
 
       - name: Upload .deb artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: deb-package
           path: dist/deb/*.deb
@@ -109,7 +109,7 @@ jobs:
         run: python scripts/build_rpm.py --build
 
       - name: Upload .rpm artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rpm-package
           path: dist/rpm/*.rpm
@@ -197,7 +197,7 @@ jobs:
           snapcraft upload-metadata "$SNAP_FILE" --force
 
       - name: Upload .snap artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: snap-package
           path: dist/snap/*.snap
@@ -236,7 +236,7 @@ jobs:
         run: dist\win\kport.exe --version
 
       - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-installer
           path: dist/win/kport-*-setup.exe
@@ -267,7 +267,7 @@ jobs:
         run: python scripts/build_choco.py --build
 
       - name: Upload Chocolatey artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: choco-package
           path: dist/choco/*.nupkg
@@ -332,7 +332,7 @@ jobs:
         run: dist/mac/kport --version
 
       - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-installer
           path: dist/mac/kport-*.pkg
