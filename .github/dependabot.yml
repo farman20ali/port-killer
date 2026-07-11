@@ -1,4 +1,4 @@
-﻿version: 2
+version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -17,7 +17,6 @@ updates:
       prefix: "chore"
     groups:
       dev-dependencies:
-        applies-to: security-updates
         patterns:
           - "pytest*"
           - "ruff"
