@@ -387,7 +387,7 @@ jobs:
           echo "Using release notes: $NOTES"
 
       - name: Upload artifacts to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           body_path: ${{ steps.notes.outputs.path }}
