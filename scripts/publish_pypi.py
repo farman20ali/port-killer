@@ -3,6 +3,7 @@
 Script to help publish kport to PyPI
 """
 import io
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -143,8 +144,13 @@ def check_license_metadata():
         sys.exit(1)
         
     pyproject_text = pyproject.read_text(encoding="utf-8")
-    
-    if 'license = "Apache-2.0"' not in pyproject_text:
+
+    license_pattern = re.compile(
+        r'^\s*license\s*=\s*(?:"Apache-2\.0"|\{[^\n]*text\s*=\s*"Apache-2\.0"[^\n]*\}|\{[^\n]*file\s*=\s*"LICENSE"[^\n]*\})',
+        re.MULTILINE,
+    )
+
+    if not license_pattern.search(pyproject_text):
         print("❌ pyproject.toml does not specify Apache-2.0 license correctly under project metadata")
         sys.exit(1)
         
