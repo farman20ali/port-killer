@@ -188,7 +188,7 @@ def generate_version_txt(version: str) -> None:
             StringStruct(u'FileDescription',  u'kport — Cross-platform port inspector and killer'),
             StringStruct(u'FileVersion',      u'{v_str}'),
             StringStruct(u'InternalName',     u'kport'),
-            StringStruct(u'LegalCopyright',   u'Copyright (C) 2024 Farman Ali. GNU AGPL v3.'),
+            StringStruct(u'LegalCopyright',   u'Copyright (C) 2026 Farman Ali Ujjan. Apache License 2.0.'),
             StringStruct(u'OriginalFilename', u'kport.exe'),
             StringStruct(u'ProductName',      u'kport'),
             StringStruct(u'ProductVersion',   u'{v_str}'),

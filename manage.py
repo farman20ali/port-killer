@@ -246,6 +246,21 @@ def cmd_sync_version(version: str) -> int:
     return run_script("sync_version.py", [version])
 
 
+def cmd_docs(check_only: bool = False) -> int:
+    """Regenerate README.md Usage section from live --help output.
+
+    Runs scripts/gen_readme_usage.py, which captures every subcommand's
+    --help text and inserts it between <!-- BEGIN/END AUTO-GENERATED USAGE -->
+    markers in README.md so the documentation never drifts from the actual CLI.
+
+    Pass check_only=True (or --check on the CLI) to fail with exit code 1 if
+    README is stale without modifying it (useful as a CI gate).
+    """
+    section("Regenerating README Usage Section")
+    script_args = ["--check"] if check_only else []
+    return run_script("gen_readme_usage.py", script_args)
+
+
 # ── Interactive Mode ──────────────────────────────────────────────────────────
 
 def interactive_menu() -> int:
@@ -269,11 +284,15 @@ def interactive_menu() -> int:
         print("  11. Publish Snap package (stable)")
         print("  12. Publish Snap package (edge)")
         print("  13. Publish Chocolatey package")
-        
+
+        print("\n📝 Documentation:")
+        print("  14. Regenerate README usage from --help (docs)")
+        print("  15. Check if README usage is stale (CI gate)")
+
         print("\n0. Exit")
-        
+
         try:
-            choice = input("\nEnter choice (0-13): ").strip()
+            choice = input("\nEnter choice (0-15): ").strip()
         except (KeyboardInterrupt, EOFError):
             print("\n👋 Goodbye!")
             return 0
@@ -321,6 +340,10 @@ def interactive_menu() -> int:
         elif choice == "13":
             args = argparse.Namespace(all=False, pypi=False, snap=False, choco=True, vscode=False, channel=None, release_tag=None, dry_run=False)
             cmd_publish(args)
+        elif choice == "14":
+            cmd_docs(check_only=False)
+        elif choice == "15":
+            cmd_docs(check_only=True)
         else:
             err("Invalid choice. Please choose again.")
 
@@ -367,6 +390,13 @@ def main() -> int:
     # Command: test
     subparsers.add_parser("test", help="Run automated test suite")
 
+    # Command: docs
+    docs_parser = subparsers.add_parser("docs", help="Regenerate README Usage section from live --help output")
+    docs_parser.add_argument(
+        "--check", action="store_true",
+        help="Exit 1 if README is stale instead of updating it (use as CI gate)",
+    )
+
     # Command: sync-version
     sync_parser = subparsers.add_parser("sync-version", help="Synchronize versions across metadata files")
     sync_parser.add_argument("version", help="Version to sync (e.g., 3.2.3)")
@@ -393,6 +423,8 @@ def main() -> int:
         return cmd_publish(args)
     elif args.command == "test":
         return cmd_test()
+    elif args.command == "docs":
+        return cmd_docs(check_only=args.check)
     elif args.command == "sync-version":
         return cmd_sync_version(args.version)
 

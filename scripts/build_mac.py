@@ -23,7 +23,6 @@ Output:
 from __future__ import annotations
 
 import argparse
-import os
 import platform
 import re
 import shutil
@@ -229,7 +228,7 @@ def build_pkg(version: str, dry_run: bool = False) -> Path | None:
             if final_pkg.exists():
                 ok(f"Installer: {final_pkg}")
                 print(f"\nInstall: double-click {final_pkg.name}")
-                print(f"Then run: kport --version")
+                print("Then run: kport --version")
             else:
                 err(f"Expected .pkg not found: {final_pkg}")
                 return None

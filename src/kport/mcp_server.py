@@ -5,6 +5,10 @@ Incorporates a strict safety shield to prevent AI agents from killing critical s
 """
 
 import os
+import sys
+import json
+import traceback
+from typing import Dict, Any
 
 from .inspectors import get_inspector
 from .docker_engine import list_docker_mappings, docker_mappings_for_host_port, docker_action_on_container
@@ -15,12 +19,6 @@ from .constants import PROTECTED_PORTS, PROTECTED_PROCESS_NAMES
 # MCP and CLI now share identical default protection lists.
 PROTECTED_PORTS = PROTECTED_PORTS  # re-export for backward compat
 PROTECTED_PROCESS_NAMES = PROTECTED_PROCESS_NAMES  # re-export for backward compat
-
-
-import sys
-import json
-import traceback
-from typing import Dict, Any, List, Optional
 
 def load_mcp_config() -> dict:
     """Load configuration dictionary from default kport config locations."""
@@ -189,17 +187,19 @@ def handle_kill_port(inspector, port: int, force: bool = True, docker_action: st
 
     # Load safety configurations dynamically
     cfg = load_mcp_config()
-    
-    # 1. Resolve active protected lists (merging defaults and config overrides)
+
+    # 1. Resolve active protected lists — ADDITIVE, not replacement.
+    #    A user config with protected_ports:[9999] should ADD to defaults,
+    #    not silently unprotect SSH (22), Redis (6379), etc.
     protected_ports = set(PROTECTED_PORTS)
     config_ports = cfg.get("protected_ports")
     if isinstance(config_ports, list):
-        protected_ports = set(config_ports)
-        
+        protected_ports.update(config_ports)   # additive union
+
     protected_procs = set(PROTECTED_PROCESS_NAMES)
     config_procs = cfg.get("protected_processes")
     if isinstance(config_procs, list):
-        protected_procs = {p.lower() for p in config_procs}
+        protected_procs.update(p.lower() for p in config_procs)  # additive union
 
     # 2. Protected ports shield check
     if port in protected_ports:
@@ -215,6 +215,14 @@ def handle_kill_port(inspector, port: int, force: bool = True, docker_action: st
     # 3. Docker container path
     if docker_hits:
         m = docker_hits[0]
+        if docker_action == "rm" and not force:
+            return {
+                "success": False,
+                "type": "docker",
+                "container_name": m.container_name,
+                "action": docker_action,
+                "message": "Removing a Docker container is irreversible and requires force parameter to be explicitly set to True."
+            }
         ok, msg = docker_action_on_container(m.container_id, docker_action, dry_run=False)
         return {
             "success": ok,
@@ -374,5 +382,5 @@ def run_mcp_server() -> None:
                     sys.stdout.write(json.dumps(resp) + "\n")
                     sys.stdout.flush()
 
-        except Exception as e:
+        except Exception:
             log(f"RPC framing error: {traceback.format_exc()}")

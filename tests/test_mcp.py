@@ -10,7 +10,6 @@ Run with:  pytest tests/test_mcp.py -v
 from __future__ import annotations
 
 import json
-import sys
 from io import StringIO
 from unittest.mock import MagicMock, patch
 

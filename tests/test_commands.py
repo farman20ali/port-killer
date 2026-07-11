@@ -11,11 +11,10 @@ from __future__ import annotations
 
 import argparse
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
-from kport.cli import handle_product_command, EXIT_OK, EXIT_PORT_FREE, EXIT_PERMISSION, EXIT_PORT_DOCKER
+from kport.cli import handle_product_command, EXIT_OK, EXIT_PORT_FREE, EXIT_PERMISSION
 from kport.inspectors.base import BaseInspector, ProcessInfo, PortBinding
 
 
@@ -88,7 +87,10 @@ def test_list_command_json_output(capsys):
         rc = handle_product_command(args, inspector)
     assert rc == EXIT_OK
     out = capsys.readouterr().out
-    data = json.loads(out)
+    envelope = json.loads(out)
+    assert envelope["schema_version"] == 1
+    assert envelope["command"] == "list"
+    data = envelope["data"]
     assert "local" in data
     assert "docker" in data
 
@@ -110,8 +112,10 @@ def test_docker_command_json(capsys):
     with patch("kport.cli.list_docker_mappings", return_value=[]):
         rc = handle_product_command(args, FakeInspector())
     assert rc == EXIT_OK
-    data = json.loads(capsys.readouterr().out)
-    assert isinstance(data, list)
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["schema_version"] == 1
+    assert envelope["command"] == "docker"
+    assert isinstance(envelope["data"], list)
 
 
 # ---------------------------------------------------------------------------
@@ -124,8 +128,10 @@ def test_inspect_free_port(capsys):
     with patch("kport.cli.docker_mappings_for_host_port", return_value=[]):
         rc = handle_product_command(args, inspector)
     out = capsys.readouterr().out
-    data = json.loads(out)
-    assert data["type"] == "free"
+    envelope = json.loads(out)
+    assert envelope["schema_version"] == 1
+    assert envelope["command"] == "inspect"
+    assert envelope["data"]["type"] == "free"
     assert rc == EXIT_PORT_FREE
 
 
@@ -138,8 +144,10 @@ def test_inspect_local_process(capsys):
     args = _args(command="inspect", port=8080, json=True)
     with patch("kport.cli.docker_mappings_for_host_port", return_value=[]):
         rc = handle_product_command(args, inspector)
-    data = json.loads(capsys.readouterr().out)
-    assert data["type"] == "local"
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["schema_version"] == 1
+    assert envelope["command"] == "inspect"
+    assert envelope["data"]["type"] == "local"
     assert rc == EXIT_OK
 
 
@@ -152,8 +160,10 @@ def test_explain_free_port(capsys):
     args = _args(command="explain", port=19999, json=True)
     with patch("kport.cli.docker_mappings_for_host_port", return_value=[]):
         rc = handle_product_command(args, inspector)
-    data = json.loads(capsys.readouterr().out)
-    assert data["blocked"] is False
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["schema_version"] == 1
+    assert envelope["command"] == "explain"
+    assert envelope["data"]["blocked"] is False
     assert rc == EXIT_PORT_FREE
 
 
@@ -166,8 +176,10 @@ def test_explain_blocked_port(capsys):
     args = _args(command="explain", port=7777, json=True)
     with patch("kport.cli.docker_mappings_for_host_port", return_value=[]):
         rc = handle_product_command(args, inspector)
-    data = json.loads(capsys.readouterr().out)
-    assert data["blocked"] is True
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["schema_version"] == 1
+    assert envelope["command"] == "explain"
+    assert envelope["data"]["blocked"] is True
     assert rc == EXIT_OK
 
 
@@ -193,8 +205,10 @@ def test_kill_protected_port_blocked(capsys):
     with patch("kport.cli.docker_mappings_for_host_port", return_value=[]):
         rc = handle_product_command(args, inspector)
     assert rc == EXIT_PERMISSION
-    data = json.loads(capsys.readouterr().out)
-    assert data["success"] is False
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["schema_version"] == 1
+    assert envelope["command"] == "kill"
+    assert envelope["data"]["success"] is False
 
 
 def test_kill_protected_port_with_bypass(capsys):
@@ -221,8 +235,10 @@ def test_kill_process_not_found(capsys):
     args = _args(command="kill-process", name="ghost", json=True, exact=False)
     rc = handle_product_command(args, inspector)
     assert rc == EXIT_OK
-    data = json.loads(capsys.readouterr().out)
-    assert data["pids"] == []
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["schema_version"] == 1
+    assert envelope["command"] == "kill-process"
+    assert envelope["data"]["pids"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -236,8 +252,10 @@ def test_conflicts_no_docker(capsys):
     with patch("kport.cli.list_docker_mappings", return_value=[]):
         rc = handle_product_command(args, inspector)
     assert rc == EXIT_OK
-    data = json.loads(capsys.readouterr().out)
-    assert data == []
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["schema_version"] == 1
+    assert envelope["command"] == "conflicts"
+    assert envelope["data"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -285,7 +303,7 @@ def test_process_info_enrichment_short_cmdline():
 
 def test_safety_config_additive_ports():
     """User config protected_ports adds to defaults, doesn't replace them."""
-    from kport.cli import check_safety_policy, DEFAULT_PROTECTED_PORTS
+    from kport.cli import check_safety_policy
     inspector = FakeInspector()
     # Port 22 must still be blocked even when user only config'd port 9999
     args = _args(command="kill", port=22, json=True, bypass_safety=False)

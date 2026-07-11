@@ -183,3 +183,7 @@ Unacceptable behavior can be reported to project maintainers.
 ---
 
 Thank you for contributing! 🙏
+
+## License
+
+By contributing to kport, you agree that your contributions will be licensed under the Apache License 2.0, the same license that covers the rest of the project.

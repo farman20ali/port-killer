@@ -5,8 +5,7 @@ Decouples UI and CLI layout generation from networking core logic.
 
 import json
 import platform
-import os
-import sys
+
 from typing import List, Dict, Any, Optional
 from dataclasses import asdict
 

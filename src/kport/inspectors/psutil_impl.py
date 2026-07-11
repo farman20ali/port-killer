@@ -4,8 +4,7 @@ Leverages psutil to get robust, cross-platform networking and process informatio
 """
 
 import os
-import signal
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional, Tuple
 from .base import BaseInspector, PortBinding, ProcessInfo
 
 import psutil  # Safe to import because this implementation is dynamically loaded only when psutil is active.
@@ -182,3 +181,10 @@ class PsutilInspector(BaseInspector):
                 return True
             except (ProcessLookupError, PermissionError):
                 return False
+
+    def get_child_pids(self, pid: int) -> List[int]:
+        try:
+            p = psutil.Process(pid)
+            return [c.pid for c in p.children(recursive=True)]
+        except Exception:
+            return []
