@@ -84,8 +84,7 @@ jobs:
              --exclude-dir=.git \
              --exclude-dir=docs \
              --exclude="CHANGELOG*" \
-             --exclude="kport_apache2_license_setup.md" \
-             --exclude="kport_improvement_plan.md" \
+             --exclude="ci.yml" \
              -l "AGPL\|GNU Affero" .; then
           echo "Stale AGPL reference found — repo license is Apache-2.0" >&2
           exit 1

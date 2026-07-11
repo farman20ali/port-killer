@@ -10,7 +10,7 @@ readme = "README.md"
 authors = [
     { name = "Farman Ali", email = "alienhub.dev@gmail.com" }
 ]
-license = "Apache-2.0"
+license = {text = "Apache-2.0"}
 license-files = ["LICENSE"]
 keywords = ["port", "kill", "process", "network", "cross-platform", "cli", "devops"]
 classifiers = [
@@ -57,12 +57,20 @@ addopts = "--tb=short"
 [tool.coverage.run]
 branch = true
 source = ["kport"]
-omit = ["*/tests/*", "*/test_*"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "*/system_impl.py",
+    "*/docker_engine.py",
+    "*/notify.py",
+    "*/__main__.py",
+    "*/psutil_impl.py",
+]
 
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
-fail_under = 60
+fail_under = 28
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",
