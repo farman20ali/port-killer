@@ -1,6 +1,44 @@
 """
-Inspectors initialization package for kport.
-Dynamically resolves and exposes the target inspector based on dependency availability.
+Inspectors package for kport.
+
+Inspector Selection Order
+-------------------------
+``get_inspector()`` resolves the best available backend at runtime using a
+two-level priority:
+
+1. **PsutilInspector** (``psutil_impl.py``) — preferred when ``psutil`` is
+   installed *and* can actually call ``psutil.net_connections(kind="inet")``
+   without raising ``PermissionError`` or ``psutil.AccessDenied``.
+
+   psutil wraps native OS APIs per-platform:
+   - Linux   → reads ``/proc/net/tcp*`` / ``/proc/<pid>/fd`` (same as FallbackInspector)
+   - macOS   → uses ``libproc``/``proc_pidinfo`` syscalls (avoids ``lsof`` shell-out)
+   - Windows → calls ``GetExtendedTcpTable``/``GetExtendedUdpTable`` via ctypes
+               (same as FallbackInspector on Windows)
+
+   Use-case: gives richer per-process metadata (exe path, username, full
+   cmdline) and is the preferred path on macOS where the fallback requires
+   shelling out to ``lsof``.
+
+2. **FallbackInspector** (``system_impl.py``) — used when psutil is absent or
+   inaccessible (e.g. inside a snap with restricted AppArmor policy).
+
+   Reads OS data directly without psutil:
+   - Linux   → parses ``/proc/net/tcp``, ``/proc/net/tcp6``, ``/proc/net/udp``
+               and ``/proc/<pid>/cmdline`` natively (no shell-out, no lsof)
+   - Windows → ctypes calls to ``iphlpapi.dll`` (``GetExtendedTcpTable`` etc.)
+   - macOS   → shells out to ``lsof -nP -iTCP -iUDP -sTCP:LISTEN`` as a last
+               resort (macOS lacks a stable ``/proc`` tree).
+
+   macOS roadmap note: if psutil is available (it is a hard dependency in
+   pyproject.toml since v3.2.5), the lsof shell-out is bypassed automatically.
+   A native ``libproc``/ctypes macOS path would remove the psutil dependency
+   entirely — tracked in Phase 3.2 of the improvement plan.
+
+Unit-test contract
+------------------
+To verify both paths are exercised, mock ``_psutil_accessible`` to return
+``False`` and assert that ``get_inspector()`` returns a ``FallbackInspector``.
 """
 
 from .base import BaseInspector, PortBinding, ProcessInfo
@@ -12,12 +50,9 @@ __all__ = [
     "ProcessInfo",
 ]
 
-USING_PSUTIL = False
-try:
-    import psutil
-    USING_PSUTIL = True
-except ImportError:
-    pass
+import importlib.util as _ilu
+
+USING_PSUTIL = _ilu.find_spec("psutil") is not None
 
 
 def _psutil_accessible() -> bool:

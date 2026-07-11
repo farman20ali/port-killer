@@ -181,3 +181,10 @@ class PsutilInspector(BaseInspector):
                 return True
             except (ProcessLookupError, PermissionError):
                 return False
+
+    def get_child_pids(self, pid: int) -> List[int]:
+        try:
+            p = psutil.Process(pid)
+            return [c.pid for c in p.children(recursive=True)]
+        except Exception:
+            return []

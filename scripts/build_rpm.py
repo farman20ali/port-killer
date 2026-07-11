@@ -19,7 +19,6 @@ Output:
 from __future__ import annotations
 
 import argparse
-import os
 import platform
 import re
 import shutil
@@ -180,7 +179,7 @@ def build_rpm(version: str, dry_run: bool = False) -> Path | None:
         dest = DIST_RPM / rpms[0].name
         shutil.copy2(rpms[0], dest)
         ok(f"RPM built: {dest}")
-        print(f"\nInstall with:")
+        print("\nInstall with:")
         print(f"  sudo rpm -i {dest}")
         print(f"  # or via dnf: sudo dnf install {dest}")
         return dest

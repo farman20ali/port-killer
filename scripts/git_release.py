@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import argparse
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -201,17 +200,17 @@ def main() -> None:
         print(f"  {icon} PyPI packages built locally")
 
     print(f"\n  {Colors.CYAN}GitHub Actions is now building:{Colors.END}")
-    print(f"    • Windows .exe installer")
-    print(f"    • macOS   .pkg installer")
-    print(f"    • Debian  .deb package")
-    print(f"    • RPM     .rpm package")
-    print(f"    • PyPI    .whl + .tar.gz")
-    print(f"    • GitHub  Release (artifacts auto-attached)")
+    print("    • Windows .exe installer")
+    print("    • macOS   .pkg installer")
+    print("    • Debian  .deb package")
+    print("    • RPM     .rpm package")
+    print("    • PyPI    .whl + .tar.gz")
+    print("    • GitHub  Release (artifacts auto-attached)")
 
     print(f"\n  {Colors.BOLD}Next steps:{Colors.END}")
     if not args.no_pypi and pypi_success and not args.dry_run:
-        print(f"    1. Upload to PyPI:    python manage.py publish --pypi")
-    print(f"    2. Watch Actions:     https://github.com/farman20ali/port-killer/actions")
+        print("    1. Upload to PyPI:    python manage.py publish --pypi")
+    print("    2. Watch Actions:     https://github.com/farman20ali/port-killer/actions")
     print(f"    3. Check release:     https://github.com/farman20ali/port-killer/releases/tag/{tag}")
     print(f"    4. Test install:      pip install kport=={version}")
 

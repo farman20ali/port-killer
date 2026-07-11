@@ -2,12 +2,23 @@
 """
 Script to help publish kport to PyPI
 """
+import io
 import subprocess
 import sys
-import os
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _configure_stdio() -> None:
+    """Use UTF-8 on Windows so emoji/symbols in CLI output do not crash."""
+    if sys.platform != "win32":
+        return
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, io.UnsupportedOperation):
+            pass
 
 
 def run_command(cmd, description):
@@ -121,8 +132,37 @@ def create_github_release():
     print("  pip install git+https://github.com/farman20ali/port-killer.git")
 
 
+def check_license_metadata():
+    """Verify that PyPI license expressions and LICENSE files match Apache-2.0"""
+    print("\n⚖️ Checking license metadata...")
+    pyproject = REPO_ROOT / "pyproject.toml"
+    license_file = REPO_ROOT / "LICENSE"
+    
+    if not pyproject.exists():
+        print("❌ pyproject.toml not found")
+        sys.exit(1)
+        
+    pyproject_text = pyproject.read_text(encoding="utf-8")
+    
+    if 'license = "Apache-2.0"' not in pyproject_text:
+        print("❌ pyproject.toml does not specify Apache-2.0 license correctly under project metadata")
+        sys.exit(1)
+        
+    if not license_file.exists():
+        print("❌ LICENSE file not found at repo root")
+        sys.exit(1)
+        
+    license_text = license_file.read_text(encoding="utf-8")
+    if "Apache License" not in license_text or "Version 2.0" not in license_text:
+        print("❌ LICENSE file does not appear to contain Apache License 2.0 text")
+        sys.exit(1)
+        
+    print("✅ License metadata check passed")
+
+
 def main():
     """Main function"""
+    _configure_stdio()
     print("="*60)
     print("🚀 kport Publishing Tool")
     print("="*60)
@@ -142,6 +182,7 @@ def main():
         sys.exit(0)
     
     if choice in ['1', '2', '3', '5']:
+        check_license_metadata()
         check_requirements()
         clean_build()
         build_package()

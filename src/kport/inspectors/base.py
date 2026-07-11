@@ -201,6 +201,67 @@ class BaseInspector:
         """Find port bindings matching a process name."""
         raise NotImplementedError()
 
+    def get_child_pids(self, pid: int) -> List[int]:
+        """Return direct child PIDs of *pid* (best-effort, empty on failure).
+
+        Subclasses should override this with a platform-native lookup
+        (e.g. psutil.Process.children() or parsing /proc/<pid>/status).
+        The base implementation always returns an empty list so subclasses that
+        don't implement it still work correctly via kill_pid().
+        """
+        return []
+
+    def kill_process_tree(
+        self,
+        pid: int,
+        graceful_timeout: float = 3.0,
+        force: bool = False,
+        dry_run: bool = False,
+        assume_yes: bool = False,
+        debug: bool = False,
+    ) -> Tuple[bool, str]:
+        """Terminate *pid* and all of its descendant processes.
+
+        Kill order: depth-first (children before parent) to avoid orphaned
+        zombies when the parent is killed before its children.
+
+        Returns (all_ok, summary_message).
+        """
+        # Gather the full subtree before killing anything: once the root dies
+        # the child list may change (children get re-parented to init/PID-1).
+        children = self.get_child_pids(pid)
+
+        killed = []
+        failed = []
+
+        for child_pid in children:
+            ok, msg = self.kill_pid(
+                child_pid,
+                graceful_timeout=graceful_timeout,
+                force=force,
+                dry_run=dry_run,
+                assume_yes=assume_yes,
+                debug=debug,
+            )
+            (killed if ok else failed).append((child_pid, msg))
+
+        # Now kill the root
+        ok, msg = self.kill_pid(
+            pid,
+            graceful_timeout=graceful_timeout,
+            force=force,
+            dry_run=dry_run,
+            assume_yes=assume_yes,
+            debug=debug,
+        )
+        (killed if ok else failed).append((pid, msg))
+
+        if not failed:
+            n = len(killed)
+            return True, f"Killed process tree: {n} process(es) terminated"
+        failed_pids = [str(p) for p, _ in failed]
+        return False, f"Failed to kill PIDs: {', '.join(failed_pids)}"
+
     def send_signal(self, pid: int, sig: int) -> bool:
         """Send a standard signal (TERM, KILL) to target PID."""
         raise NotImplementedError()
@@ -278,6 +339,11 @@ class BaseInspector:
         # Still alive after graceful timeout — decide whether to force kill
         if not force:
             try:
+                # Escalated (sudo/UAC) kills are the most destructive action this tool can take.
+                # We deliberately refuse to auto-escalate in non-interactive contexts unless the
+                # operator has explicitly passed --yes (assume_yes=True). This prevents CI/agent
+                # pipelines from silently gaining root-level kill capability without explicit opt-in.
+                # Do not relax this check without a corresponding audit-log feature (see roadmap).
                 if sys.stdin.isatty() and sys.stdout.isatty():
                     info = self.get_process_info(pid)
                     pname = f" ({info.name})" if info else ""

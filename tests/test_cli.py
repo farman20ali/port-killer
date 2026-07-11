@@ -3,9 +3,11 @@ Unit tests for kport CLI modules and configuration parameters.
 Tested via pytest.
 """
 
+import argparse
 import pytest
 from kport.exceptions import InvalidPortError
-from kport.cli import validate_port, parse_port_range
+from kport.cli import validate_port, parse_port_range, check_safety_policy
+from kport.inspectors.base import BaseInspector, ProcessInfo
 
 def test_validate_port_valid():
     """Verify that valid ports pass validation silently."""
@@ -48,9 +50,7 @@ def test_parse_port_range_invalid():
         parse_port_range("80-99999")  # out of bounds port
 
 
-import argparse
-from kport.inspectors.base import BaseInspector, ProcessInfo
-from kport.cli import check_safety_policy
+
 
 class MockInspector(BaseInspector):
     def __init__(self, pids_on_port=None, proc_info_map=None):
@@ -182,3 +182,31 @@ def test_fallback_inspector_init():
     from kport.inspectors.system_impl import FallbackInspector
     inspector = FallbackInspector()
     assert inspector is not None
+
+
+def test_confirm_docker_rm(monkeypatch, capsys):
+    from kport.cli import confirm_docker_rm
+
+    # 1. assume_yes=True, force=True
+    assert confirm_docker_rm("my-container", "1234567890123456", assume_yes=True, force=True) is True
+
+    # 2. assume_yes=True, force=False (should reject and write to stderr)
+    assert confirm_docker_rm("my-container", "1234567890123456", assume_yes=True, force=False) is False
+    captured = capsys.readouterr()
+    assert "Error: Removing a Docker container is irreversible." in captured.err
+
+    # 3. assume_yes=False, matching input name
+    monkeypatch.setattr("builtins.input", lambda _: "my-container")
+    assert confirm_docker_rm("my-container", "1234567890123456", assume_yes=False, force=False) is True
+
+    # 4. assume_yes=False, matching short ID
+    monkeypatch.setattr("builtins.input", lambda _: "123456789012")
+    assert confirm_docker_rm("my-container", "1234567890123456", assume_yes=False, force=False) is True
+
+    # 5. assume_yes=False, matching full ID
+    monkeypatch.setattr("builtins.input", lambda _: "1234567890123456")
+    assert confirm_docker_rm("my-container", "1234567890123456", assume_yes=False, force=False) is True
+
+    # 6. assume_yes=False, non-matching input
+    monkeypatch.setattr("builtins.input", lambda _: "wrong-name")
+    assert confirm_docker_rm("my-container", "1234567890123456", assume_yes=False, force=False) is False

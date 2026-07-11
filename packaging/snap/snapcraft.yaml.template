@@ -50,7 +50,7 @@ description: |
 
 grade: stable
 confinement: strict
-license: AGPL-3.0-only
+license: Apache-2.0
 contact: alienhub.dev@gmail.com
 website: https://github.com/farman20ali/port-killer
 issues: https://github.com/farman20ali/port-killer/issues

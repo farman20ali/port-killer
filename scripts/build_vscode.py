@@ -21,11 +21,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 if sys.platform == "win32":

@@ -1,0 +1,25 @@
+﻿version: 2
+updates:
+  # Keep GitHub Actions up to date
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels: ["dependencies", "ci"]
+    commit-message:
+      prefix: "ci"
+
+  # Keep Python (pip) dependencies up to date
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels: ["dependencies", "python"]
+    commit-message:
+      prefix: "chore"
+    # Group minor/patch bumps to reduce noise
+    groups:
+      dev-dependencies:
+        patterns:
+          - "pytest*"
+          - "ruff"

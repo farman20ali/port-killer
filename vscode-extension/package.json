@@ -2,10 +2,10 @@
   "name": "kport-vscode",
   "displayName": "KPort - Port Killer & MCP",
   "description": "Inspect and free ports from VS Code. Registers the kport MCP server for AI assistants.",
-  "version": "3.2.5",
+  "version": "3.2.6",
   "publisher": "alienhub",
   "icon": "icon_128_128.png",
-  "license": "AGPL-3.0-only",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/farman20ali/port-killer.git",

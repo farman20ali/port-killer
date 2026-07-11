@@ -2,7 +2,7 @@
 
 [![Version](https://img.shields.io/badge/version-3.2.0-blue.svg)](https://github.com/farman20ali/port-killer)
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/farman20ali/port-killer)
 
 A powerful, cross-platform command-line tool to inspect, kill, and monitor processes using specific ports — with **AI safety shields**, **Watch Mode**, **Docker awareness**, and an **MCP server** for AI agent integration.
@@ -581,15 +581,16 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 📝 License
 
-This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 **What this means:**
 - ✅ Free to use, modify, and distribute
-- ✅ Must share source code of any modifications
-- ✅ **Network use = distribution**: If you run a modified version as a service, you must share the source code
-- ❌ Cannot use in proprietary SaaS without sharing modifications
+- ✅ Can use in proprietary/commercial software without open-sourcing your code
+- ✅ Must preserve copyright notices and attribution
+- ✅ Must include a copy of the license in distributions
+- ❌ Contributors do not grant patent rights beyond what's needed to use the software
 
-For commercial licensing or if AGPL doesn't fit your use case, contact: alienhub.dev@gmail.com
+For questions or commercial inquiries, contact: alienhub.dev@gmail.com
 
 ## ⚠️ Important Notes
 
@@ -658,3 +659,259 @@ Project Link: [https://github.com/farman20ali/port-killer](https://github.com/fa
 ---
 
 Made with ❤️ for developers who are tired of hunting down processes
+
+<!-- BEGIN AUTO-GENERATED USAGE -->
+
+### `kport --help`
+
+```
+usage: __main__.py [-h] [--json] [--dry-run] [-y] [--debug] [--config CONFIG]
+                   [--bypass-safety] [-i PORT] [-im PORT [PORT ...]]
+                   [-ir RANGE] [-ip NAME] [-k PORT] [-kp NAME]
+                   [-ka PORT [PORT ...]] [-kr RANGE] [-l] [--exact] [--force]
+                   [--graceful-timeout GRACEFUL_TIMEOUT] [-v] [--mcp]
+                   {inspect,explain,kill,kill-process,list,docker,conflicts,watch,mcp,completion} ...
+
+kport - Cross-platform port inspector and killer
+
+positional arguments:
+  {inspect,explain,kill,kill-process,list,docker,conflicts,watch,mcp,completion}
+    inspect             Inspect a port (docker-aware)
+    explain             Explain why a port is blocked
+    kill                Safely free a port (docker-aware)
+    kill-process        Kill processes by name
+    list                List active ports (local + docker)
+    docker              List Docker-published ports
+    conflicts           Detect docker/local port conflicts
+    watch               Live monitoring of port ownership
+    mcp                 Start the stdio Model Context Protocol (MCP) server
+    completion          Generate shell autocompletion scripts
+
+options:
+  -h, --help            show this help message and exit
+  --json                Output machine-readable JSON
+  --dry-run             Show actions without executing
+  -y, --yes             Skip confirmation prompts
+  --debug               Verbose internal logs
+  --config CONFIG       Path to JSON config file
+  --bypass-safety       Bypass safety shields on protected ports/processes
+  -i, --inspect PORT    Inspect specified port
+  -im, --inspect-multiple PORT [PORT ...]
+                        Inspect multiple ports
+  -ir, --inspect-range RANGE
+                        Inspect port range
+  -ip, --inspect-process NAME
+                        Inspect processes by name
+  -k, --kill PORT       Kill processes using port
+  -kp, --kill-process NAME
+                        Kill processes by name
+  -ka, --kill-all PORT [PORT ...]
+                        Kill multiple ports
+  -kr, --kill-range RANGE
+                        Kill processes on range
+  -l, --list            List all listening ports
+  --exact               Exact process name matching
+  --force               Force kill stubborn processes (SIGKILL / fuser)
+  --graceful-timeout GRACEFUL_TIMEOUT
+                        Seconds to wait before force kill (default: 3.0)
+  -v, --version         show program's version number and exit
+  --mcp                 Start the MCP JSON-RPC server on stdio (alias for
+                        'kport mcp')
+
+Examples:
+  kport -i 8080
+  kport -im 3000 3001 3002
+  kport -ir 3000-3010
+  kport -k 8080 --yes
+  kport inspect 8080
+  kport kill 8080 --force
+  kport mcp
+```
+
+### `kport inspect --help`
+
+```
+usage: __main__.py inspect [-h] [--json] [--dry-run] [-y] [--debug]
+                           [--config CONFIG] [--bypass-safety]
+                           [--profile PROFILE]
+                           [port]
+
+positional arguments:
+  port
+
+options:
+  -h, --help         show this help message and exit
+  --json             Output machine-readable JSON
+  --dry-run          Show actions without executing
+  -y, --yes          Skip confirmation prompts
+  --debug            Verbose internal logs
+  --config CONFIG    Path to JSON config file
+  --bypass-safety    Bypass safety shields on protected ports/processes
+  --profile PROFILE  Named port profile from config
+```
+
+### `kport explain --help`
+
+```
+usage: __main__.py explain [-h] [--json] [--dry-run] [-y] [--debug]
+                           [--config CONFIG] [--bypass-safety]
+                           port
+
+positional arguments:
+  port
+
+options:
+  -h, --help       show this help message and exit
+  --json           Output machine-readable JSON
+  --dry-run        Show actions without executing
+  -y, --yes        Skip confirmation prompts
+  --debug          Verbose internal logs
+  --config CONFIG  Path to JSON config file
+  --bypass-safety  Bypass safety shields on protected ports/processes
+```
+
+### `kport kill --help`
+
+```
+usage: __main__.py kill [-h] [--json] [--dry-run] [-y] [--debug]
+                        [--config CONFIG] [--bypass-safety]
+                        [--profile PROFILE]
+                        [--docker-action {stop,restart,rm}] [--force]
+                        [--graceful-timeout GRACEFUL_TIMEOUT]
+                        [port]
+
+positional arguments:
+  port
+
+options:
+  -h, --help            show this help message and exit
+  --json                Output machine-readable JSON
+  --dry-run             Show actions without executing
+  -y, --yes             Skip confirmation prompts
+  --debug               Verbose internal logs
+  --config CONFIG       Path to JSON config file
+  --bypass-safety       Bypass safety shields on protected ports/processes
+  --profile PROFILE     Named port profile from config
+  --docker-action {stop,restart,rm}
+                        Action when port belongs to Docker
+  --force
+  --graceful-timeout GRACEFUL_TIMEOUT
+```
+
+### `kport kill-process --help`
+
+```
+usage: __main__.py kill-process [-h] [--json] [--dry-run] [-y] [--debug]
+                                [--config CONFIG] [--bypass-safety] [--exact]
+                                [--force]
+                                [--graceful-timeout GRACEFUL_TIMEOUT]
+                                name
+
+positional arguments:
+  name
+
+options:
+  -h, --help            show this help message and exit
+  --json                Output machine-readable JSON
+  --dry-run             Show actions without executing
+  -y, --yes             Skip confirmation prompts
+  --debug               Verbose internal logs
+  --config CONFIG       Path to JSON config file
+  --bypass-safety       Bypass safety shields on protected ports/processes
+  --exact
+  --force
+  --graceful-timeout GRACEFUL_TIMEOUT
+```
+
+### `kport list --help`
+
+```
+usage: __main__.py list [-h] [--json] [--dry-run] [-y] [--debug]
+                        [--config CONFIG] [--bypass-safety]
+
+options:
+  -h, --help       show this help message and exit
+  --json           Output machine-readable JSON
+  --dry-run        Show actions without executing
+  -y, --yes        Skip confirmation prompts
+  --debug          Verbose internal logs
+  --config CONFIG  Path to JSON config file
+  --bypass-safety  Bypass safety shields on protected ports/processes
+```
+
+### `kport docker --help`
+
+```
+usage: __main__.py docker [-h] [--json] [--dry-run] [-y] [--debug]
+                          [--config CONFIG] [--bypass-safety]
+
+options:
+  -h, --help       show this help message and exit
+  --json           Output machine-readable JSON
+  --dry-run        Show actions without executing
+  -y, --yes        Skip confirmation prompts
+  --debug          Verbose internal logs
+  --config CONFIG  Path to JSON config file
+  --bypass-safety  Bypass safety shields on protected ports/processes
+```
+
+### `kport conflicts --help`
+
+```
+usage: __main__.py conflicts [-h] [--json] [--dry-run] [-y] [--debug]
+                             [--config CONFIG] [--bypass-safety]
+
+options:
+  -h, --help       show this help message and exit
+  --json           Output machine-readable JSON
+  --dry-run        Show actions without executing
+  -y, --yes        Skip confirmation prompts
+  --debug          Verbose internal logs
+  --config CONFIG  Path to JSON config file
+  --bypass-safety  Bypass safety shields on protected ports/processes
+```
+
+### `kport watch --help`
+
+```
+usage: __main__.py watch [-h] [--json] [--dry-run] [-y] [--debug]
+                         [--config CONFIG] [--bypass-safety]
+                         [--ports PORTS [PORTS ...]] [--range RANGE]
+                         [--interval INTERVAL] [--notify]
+                         [port]
+
+positional arguments:
+  port
+
+options:
+  -h, --help            show this help message and exit
+  --json                Output machine-readable JSON
+  --dry-run             Show actions without executing
+  -y, --yes             Skip confirmation prompts
+  --debug               Verbose internal logs
+  --config CONFIG       Path to JSON config file
+  --bypass-safety       Bypass safety shields on protected ports/processes
+  --ports PORTS [PORTS ...]
+                        Multiple ports to watch
+  --range RANGE         Range of ports to watch (e.g. 3000-3010)
+  --interval INTERVAL   Polling interval in seconds
+  --notify              Send OS desktop notification on state change
+```
+
+### `kport mcp --help`
+
+```
+usage: __main__.py mcp [-h] [--json] [--dry-run] [-y] [--debug]
+                       [--config CONFIG] [--bypass-safety]
+
+options:
+  -h, --help       show this help message and exit
+  --json           Output machine-readable JSON
+  --dry-run        Show actions without executing
+  -y, --yes        Skip confirmation prompts
+  --debug          Verbose internal logs
+  --config CONFIG  Path to JSON config file
+  --bypass-safety  Bypass safety shields on protected ports/processes
+```
+
+<!-- END AUTO-GENERATED USAGE -->

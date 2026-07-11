@@ -4,13 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kport"
-version = "3.2.5"
+version = "3.2.6"
 description = "A cross-platform command-line tool to inspect and kill processes using specific ports"
 readme = "README.md"
 authors = [
     { name = "Farman Ali", email = "alienhub.dev@gmail.com" }
 ]
-license = { file = "LICENSE" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 keywords = ["port", "kill", "process", "network", "cross-platform", "cli", "devops"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -38,6 +39,7 @@ packaging = [
 dev = [
     "pytest>=7.0.0",
     "pytest-mock>=3.6.0",
+    "pytest-cov>=4.0.0",
     "ruff>=0.1.0"
 ]
 
@@ -50,3 +52,24 @@ kport = "kport.cli:main"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+addopts = "--tb=short"
+
+[tool.coverage.run]
+branch = true
+source = ["kport"]
+omit = ["*/tests/*", "*/test_*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 60
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if TYPE_CHECKING",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -187,17 +187,19 @@ def handle_kill_port(inspector, port: int, force: bool = True, docker_action: st
 
     # Load safety configurations dynamically
     cfg = load_mcp_config()
-    
-    # 1. Resolve active protected lists (merging defaults and config overrides)
+
+    # 1. Resolve active protected lists — ADDITIVE, not replacement.
+    #    A user config with protected_ports:[9999] should ADD to defaults,
+    #    not silently unprotect SSH (22), Redis (6379), etc.
     protected_ports = set(PROTECTED_PORTS)
     config_ports = cfg.get("protected_ports")
     if isinstance(config_ports, list):
-        protected_ports = set(config_ports)
-        
+        protected_ports.update(config_ports)   # additive union
+
     protected_procs = set(PROTECTED_PROCESS_NAMES)
     config_procs = cfg.get("protected_processes")
     if isinstance(config_procs, list):
-        protected_procs = {p.lower() for p in config_procs}
+        protected_procs.update(p.lower() for p in config_procs)  # additive union
 
     # 2. Protected ports shield check
     if port in protected_ports:
@@ -213,6 +215,14 @@ def handle_kill_port(inspector, port: int, force: bool = True, docker_action: st
     # 3. Docker container path
     if docker_hits:
         m = docker_hits[0]
+        if docker_action == "rm" and not force:
+            return {
+                "success": False,
+                "type": "docker",
+                "container_name": m.container_name,
+                "action": docker_action,
+                "message": "Removing a Docker container is irreversible and requires force parameter to be explicitly set to True."
+            }
         ok, msg = docker_action_on_container(m.container_id, docker_action, dry_run=False)
         return {
             "success": ok,

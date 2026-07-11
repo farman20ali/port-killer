@@ -156,7 +156,7 @@ def publish_choco(
     if not nupkg_file:
         err(f"No .nupkg found in {DIST_CHOCO}")
         warn("Run: python scripts/build_choco.py --build")
-        print(f"  Release asset must exist at GitHub before install works")
+        print("  Release asset must exist at GitHub before install works")
         return 1
 
     version = get_nupkg_version(nupkg_file)
@@ -191,7 +191,7 @@ def publish_choco(
     ]
 
     if dry_run:
-        print(f"\n[DRY-RUN] Would execute:")
+        print("\n[DRY-RUN] Would execute:")
         print(f"$ choco push {nupkg_file.name} --source {CHOCO_SOURCE} --api-key ***")
         return 0
 
