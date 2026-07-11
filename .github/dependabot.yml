@@ -1,6 +1,5 @@
 ﻿version: 2
 updates:
-  # Keep GitHub Actions up to date
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -9,7 +8,6 @@ updates:
     commit-message:
       prefix: "ci"
 
-  # Keep Python (pip) dependencies up to date
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
@@ -19,6 +17,7 @@ updates:
       prefix: "chore"
     groups:
       dev-dependencies:
+        applies-to: security-updates
         patterns:
           - "pytest*"
           - "ruff"
