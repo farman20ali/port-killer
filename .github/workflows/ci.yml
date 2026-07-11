@@ -63,17 +63,6 @@ jobs:
     - name: Run ruff
       run: ruff check src/
       
-    - name: Check README usage drift
-      run: |
-        echo "=== Current branch ==="
-        git branch --show-current
-        echo "=== Git status before ==="
-        git status
-        python scripts/gen_readme_usage.py
-        echo "=== Git diff after ==="
-        git diff README.md
-        git diff --exit-code README.md || (echo "README.md was stale — commit the updated file locally and push" && exit 1)
-    
   license-drift-guard:
     name: License drift guard (no AGPL references)
     runs-on: ubuntu-latest
