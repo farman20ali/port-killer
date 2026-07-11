@@ -257,7 +257,7 @@ jobs:
           python-version: "3.11"
 
       - name: Download Windows installer artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: windows-installer
           path: dist/win
@@ -292,7 +292,7 @@ jobs:
           python-version: "3.11"
 
       - name: Download Chocolatey package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: choco-package
@@ -350,7 +350,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: release-assets
 
