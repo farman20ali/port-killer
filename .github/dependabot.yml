@@ -17,7 +17,6 @@ updates:
     labels: ["dependencies", "python"]
     commit-message:
       prefix: "chore"
-    # Group minor/patch bumps to reduce noise
     groups:
       dev-dependencies:
         patterns:
