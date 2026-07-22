@@ -100,6 +100,8 @@ class PortBinding:
     pid: Optional[int] = None
     process_name: Optional[str] = None
     state: Optional[str] = None
+    proto: str = "tcp"
+
 
 
 # ---------------------------------------------------------------------------
@@ -177,17 +179,17 @@ def _escalate_kill_windows(pid: int, assume_yes: bool, debug: bool = False) -> b
 # ---------------------------------------------------------------------------
 
 class BaseInspector:
-    def list_listening(self) -> List[PortBinding]:
+    def list_listening(self, proto: str = "tcp") -> List[PortBinding]:
         """List all active listening ports."""
         raise NotImplementedError()
 
-    def find_pids_on_port(self, port: int) -> List[int]:
+    def find_pids_on_port(self, port: int, proto: str = "tcp") -> List[int]:
         """Find PIDs currently bound to a port."""
         raise NotImplementedError()
 
-    def find_bindings_on_port(self, port: int) -> List[PortBinding]:
+    def find_bindings_on_port(self, port: int, proto: str = "tcp") -> List[PortBinding]:
         """Find listening bindings for a specific port."""
-        return [b for b in self.list_listening() if b.port == port]
+        return [b for b in self.list_listening(proto=proto) if b.port == port]
 
     def get_process_info(self, pid: int) -> Optional[ProcessInfo]:
         """Get details about a specific process PID."""
@@ -197,9 +199,10 @@ class BaseInspector:
         """Find PIDs matching a process name."""
         raise NotImplementedError()
 
-    def find_ports_by_process_name(self, name: str, exact: bool = False) -> List[PortBinding]:
+    def find_ports_by_process_name(self, name: str, exact: bool = False, proto: str = "tcp") -> List[PortBinding]:
         """Find port bindings matching a process name."""
         raise NotImplementedError()
+
 
     def get_child_pids(self, pid: int) -> List[int]:
         """Return direct child PIDs of *pid* (best-effort, empty on failure).
@@ -391,13 +394,15 @@ class BaseInspector:
         dry_run: bool = False,
         debug: bool = False,
         assume_yes: bool = False,
+        kill_tree: bool = False,
+        proto: str = "tcp",
     ) -> Tuple[bool, str]:
         """
         Kill all processes using a specific port.
 
         Escalation path:
           1. Find PIDs on port (fetched once).
-          2. kill_pid() per PID (SIGTERM → poll → SIGKILL → sudo/UAC).
+          2. kill_process_tree() or kill_pid() per PID.
           3. On Linux: fuser fallback if PIDs survive and force=True.
           4. Final socket verification.
         """
@@ -405,7 +410,7 @@ class BaseInspector:
             return True, f"Dry-run: would terminate port {port}"
 
         # C4 fix: fetch PIDs once — consistent snapshot for the entire kill sequence
-        pids = self.find_pids_on_port(port)
+        pids = self.find_pids_on_port(port, proto=proto)
         if not pids:
             return True, "No process found on port"
 
@@ -414,19 +419,30 @@ class BaseInspector:
         remaining_pids: List[int] = []
 
         for pid in pids:
-            ok, msg = self.kill_pid(
-                pid,
-                graceful_timeout=graceful_timeout,
-                force=force,
-                dry_run=dry_run,
-                assume_yes=assume_yes,
-                debug=debug,
-            )
+            if kill_tree:
+                ok, msg = self.kill_process_tree(
+                    pid,
+                    graceful_timeout=graceful_timeout,
+                    force=force,
+                    dry_run=dry_run,
+                    assume_yes=assume_yes,
+                    debug=debug,
+                )
+            else:
+                ok, msg = self.kill_pid(
+                    pid,
+                    graceful_timeout=graceful_timeout,
+                    force=force,
+                    dry_run=dry_run,
+                    assume_yes=assume_yes,
+                    debug=debug,
+                )
             if ok:
                 killed_count += 1
             else:
                 remaining_pids.append(pid)
                 errors.append(f"PID {pid}: {msg}")
+
 
         # Linux fuser fallback — only when forced and fuser is available
         if remaining_pids and platform.system() != "Windows" and force and shutil.which("fuser"):

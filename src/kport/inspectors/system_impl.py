@@ -137,24 +137,55 @@ def _list_listening_linux_native() -> Optional[List[PortBinding]]:
         pid: _get_linux_process_info(pid) for pid in unique_pids
     }
 
-    def _make_binding(ip: str, port: int, inode: int, family: str, state: str) -> PortBinding:
+    def _make_binding(ip: str, port: int, inode: int, family: str, state: str, proto: str = 'tcp') -> PortBinding:
         pid = inode_to_pid.get(inode)
         info = pid_to_info.get(pid) if pid else None
         pname = info.name if info else None
         laddr = f"[{ip}]:{port}" if family == 'IPv6' else f"{ip}:{port}"
-        return PortBinding(port=port, family=family, laddr=laddr, pid=pid, process_name=pname, state=state)
+        return PortBinding(port=port, family=family, laddr=laddr, pid=pid, process_name=pname, state=state, proto=proto)
 
     bindings = []
     for ip, port, inode in _parse_proc_net_file('/proc/net/tcp', 'IPv4'):
-        bindings.append(_make_binding(ip, port, inode, 'IPv4', 'LISTEN'))
+        bindings.append(_make_binding(ip, port, inode, 'IPv4', 'LISTEN', 'tcp'))
     for ip, port, inode in _parse_proc_net_file('/proc/net/tcp6', 'IPv6'):
-        bindings.append(_make_binding(ip, port, inode, 'IPv6', 'LISTEN'))
+        bindings.append(_make_binding(ip, port, inode, 'IPv6', 'LISTEN', 'tcp'))
     # UDP has no state — entries are active bindings, not connections.
     for ip, port, inode in _parse_proc_net_file('/proc/net/udp', 'IPv4'):
-        bindings.append(_make_binding(ip, port, inode, 'IPv4', 'UDP'))
+        bindings.append(_make_binding(ip, port, inode, 'IPv4', 'UDP', 'udp'))
     for ip, port, inode in _parse_proc_net_file('/proc/net/udp6', 'IPv6'):
-        bindings.append(_make_binding(ip, port, inode, 'IPv6', 'UDP'))
+        bindings.append(_make_binding(ip, port, inode, 'IPv6', 'UDP', 'udp'))
 
+
+    return bindings
+
+
+def _list_listening_proc_pid_net(pid: int) -> List[PortBinding]:
+    """
+    Read port bindings from /proc/<pid>/net/tcp and /proc/<pid>/net/tcp6.
+
+    This is the per-process network namespace view. Snap-packaged and Docker
+    processes live in their own netns — their sockets don't appear in the
+    host /proc/net/tcp inode map, but are visible here without root in most
+    snap/container configurations because the file is readable by the pid's
+    owner or root.
+    """
+    if platform.system() != "Linux":
+        return []
+
+    bindings: List[PortBinding] = []
+    for filename, family in [
+        (f'/proc/{pid}/net/tcp', 'IPv4'),
+        (f'/proc/{pid}/net/tcp6', 'IPv6'),
+    ]:
+        try:
+            for ip, port, _inode in _parse_proc_net_file(filename, family):
+                laddr = f"[{ip}]:{port}" if family == 'IPv6' else f"{ip}:{port}"
+                bindings.append(PortBinding(
+                    port=port, family=family, laddr=laddr,
+                    pid=pid, process_name=None, state='LISTEN'
+                ))
+        except Exception:
+            pass
     return bindings
 
 
@@ -469,7 +500,7 @@ class FallbackInspector(BaseInspector):
     def _process_name_for_pid(self, pid: int) -> Optional[str]:
         return self._ensure_tasklist_cache().get(pid)
 
-    def _binding_from_windows_conn(self, item: Dict[str, Any]) -> Optional[PortBinding]:
+    def _binding_from_windows_conn(self, item: Dict[str, Any], proto: str = 'tcp') -> Optional[PortBinding]:
         try:
             port = int(item.get("LocalPort"))
         except Exception:
@@ -482,9 +513,9 @@ class FallbackInspector(BaseInspector):
         laddr = f"{item.get('LocalAddress')}:{port}"
         state = item.get("State")
         pname = self._process_name_for_pid(pid) if pid else None
-        return PortBinding(port=port, family='IPv4', laddr=laddr, pid=pid, process_name=pname, state=state)
+        return PortBinding(port=port, family='IPv4', laddr=laddr, pid=pid, process_name=pname, state=state, proto=proto)
 
-    def list_listening(self) -> List[PortBinding]:
+    def list_listening(self, proto: str = "tcp") -> List[PortBinding]:
         self._clear_cache()  # C1: always fresh snapshot
         if self.system == "Windows":
             bindings: List[PortBinding] = []
@@ -493,7 +524,12 @@ class FallbackInspector(BaseInspector):
             except Exception:
                 pass
             if not bindings:
-                bindings = self._windows_listening()
+                bindings = self._windows_listening(proto=proto)
+            else:
+                if proto == "tcp":
+                    bindings = [b for b in bindings if b.proto == "tcp"]
+                elif proto == "udp":
+                    bindings = [b for b in bindings if b.proto == "udp"]
             return bindings
         else:
             bindings = []
@@ -502,41 +538,75 @@ class FallbackInspector(BaseInspector):
             except Exception:
                 bindings = []
             if not bindings:
-                bindings = self._unix_listening()
+                bindings = self._unix_listening(proto=proto)
+            else:
+                if proto == "tcp":
+                    bindings = [b for b in bindings if b.proto == "tcp"]
+                elif proto == "udp":
+                    bindings = [b for b in bindings if b.proto == "udp"]
             return bindings
 
-    def find_bindings_on_port(self, port: int) -> List[PortBinding]:
+    def find_bindings_on_port(self, port: int, proto: str = "tcp") -> List[PortBinding]:
         self._clear_cache()  # C1
         if self.system == "Windows":
             try:
                 bindings = _windows_listening_native()
                 if bindings:
-                    return [b for b in bindings if b.port == port]
+                    filtered = [b for b in bindings if b.port == port]
+                    if proto == "tcp":
+                        return [b for b in filtered if b.proto == "tcp"]
+                    elif proto == "udp":
+                        return [b for b in filtered if b.proto == "udp"]
+                    return filtered
             except Exception:
                 pass
-            return self._windows_bindings_on_port(port)
+            return self._windows_bindings_on_port(port, proto=proto)
         else:
             try:
                 bindings = _list_listening_linux_native() or []
                 if bindings:
-                    return [b for b in bindings if b.port == port]
+                    filtered = [b for b in bindings if b.port == port]
+                    if proto == "tcp":
+                        return [b for b in filtered if b.proto == "tcp"]
+                    elif proto == "udp":
+                        return [b for b in filtered if b.proto == "udp"]
+                    return filtered
             except Exception:
                 pass
-            return [b for b in self._unix_listening() if b.port == port]
+            return [b for b in self._unix_listening(proto=proto) if b.port == port]
 
-    def _windows_bindings_on_port(self, port: int) -> List[PortBinding]:
+    def _windows_bindings_on_port(self, port: int, proto: str = "tcp") -> List[PortBinding]:
         bindings: List[PortBinding] = []
         self._ensure_tasklist_cache()
-        ps_data = self._run_powershell_json(
-            f"Get-NetTCPConnection -State Listen -LocalPort {port} | "
-            "Select-Object LocalAddress,LocalPort,OwningProcess,State | ConvertTo-Json -Depth 3"
-        )
-        if ps_data is not None:
-            items = ps_data if isinstance(ps_data, list) else [ps_data]
+
+        def _from_ps(data, bp):
+            if data is None:
+                return
+            items = data if isinstance(data, list) else [data]
             for it in items:
-                binding = self._binding_from_windows_conn(it)
-                if binding:
-                    bindings.append(binding)
+                if bp == "udp":
+                    it = dict(it)
+                    it.setdefault("State", "UDP")
+                b = self._binding_from_windows_conn(it, proto=bp)
+                if b:
+                    bindings.append(b)
+
+        ps_tcp = None
+        ps_udp = None
+        if proto in ("tcp", "both"):
+            ps_tcp = self._run_powershell_json(
+                f"Get-NetTCPConnection -State Listen -LocalPort {port} | "
+                "Select-Object LocalAddress,LocalPort,OwningProcess,State | ConvertTo-Json -Depth 3"
+            )
+        if proto in ("udp", "both"):
+            ps_udp = self._run_powershell_json(
+                f"Get-NetUDPEndpoint -LocalPort {port} | "
+                "Select-Object LocalAddress,LocalPort,OwningProcess | ConvertTo-Json -Depth 3"
+            )
+
+        if ps_tcp is not None or ps_udp is not None:
+            _from_ps(ps_tcp, "tcp")
+            _from_ps(ps_udp, "udp")
             return sorted(bindings, key=lambda b: b.port)
 
         if not shutil.which("netstat"):
@@ -548,7 +618,12 @@ class FallbackInspector(BaseInspector):
                 if not line:
                     continue
                 parts = re.split(r'\s+', line)
-                if len(parts) >= 5 and parts[0].upper() in ("TCP", "UDP"):
+                if len(parts) >= 4 and parts[0].upper() in ("TCP", "UDP"):
+                    line_proto = parts[0].lower()
+                    if proto == "tcp" and line_proto != "tcp":
+                        continue
+                    if proto == "udp" and line_proto != "udp":
+                        continue
                     local_addr = parts[1]
                     if ':' not in local_addr:
                         continue
@@ -558,7 +633,7 @@ class FallbackInspector(BaseInspector):
                             continue
                     except ValueError:
                         continue
-                    state = parts[3] if len(parts) >= 5 else ""
+                    state = parts[3] if line_proto == "tcp" and len(parts) >= 5 else "UDP"
                     pid = None
                     try:
                         pid = int(parts[-1])
@@ -567,25 +642,45 @@ class FallbackInspector(BaseInspector):
                     pname = self._process_name_for_pid(pid) if pid else None
                     bindings.append(PortBinding(
                         port=port, family='IPv4', laddr=local_addr, pid=pid,
-                        process_name=pname, state=state,
+                        process_name=pname, state=state, proto=line_proto
                     ))
         except Exception:
             pass
         return sorted(bindings, key=lambda b: b.port)
 
-    def _windows_listening(self) -> List[PortBinding]:
+
+    def _windows_listening(self, proto: str = "tcp") -> List[PortBinding]:
         bindings: List[PortBinding] = []
         self._ensure_tasklist_cache()
-        ps_data = self._run_powershell_json(
-            "Get-NetTCPConnection -State Listen | "
-            "Select-Object LocalAddress,LocalPort,OwningProcess,State | ConvertTo-Json -Depth 3"
-        )
-        if ps_data is not None:
-            items = ps_data if isinstance(ps_data, list) else [ps_data]
+
+        def _from_ps(data, bp):
+            if data is None:
+                return
+            items = data if isinstance(data, list) else [data]
             for it in items:
-                binding = self._binding_from_windows_conn(it)
-                if binding:
-                    bindings.append(binding)
+                if bp == "udp":
+                    it = dict(it)
+                    it.setdefault("State", "UDP")
+                b = self._binding_from_windows_conn(it, proto=bp)
+                if b:
+                    bindings.append(b)
+
+        ps_tcp = None
+        ps_udp = None
+        if proto in ("tcp", "both"):
+            ps_tcp = self._run_powershell_json(
+                "Get-NetTCPConnection -State Listen | "
+                "Select-Object LocalAddress,LocalPort,OwningProcess,State | ConvertTo-Json -Depth 3"
+            )
+        if proto in ("udp", "both"):
+            ps_udp = self._run_powershell_json(
+                "Get-NetUDPEndpoint | "
+                "Select-Object LocalAddress,LocalPort,OwningProcess | ConvertTo-Json -Depth 3"
+            )
+
+        if ps_tcp is not None or ps_udp is not None:
+            _from_ps(ps_tcp, "tcp")
+            _from_ps(ps_udp, "udp")
             return sorted(bindings, key=lambda b: b.port)
 
         if not shutil.which("netstat"):
@@ -598,9 +693,14 @@ class FallbackInspector(BaseInspector):
                 if not line:
                     continue
                 parts = re.split(r'\s+', line)
-                if len(parts) >= 5 and parts[0].upper() in ("TCP", "UDP"):
+                if len(parts) >= 4 and parts[0].upper() in ("TCP", "UDP"):
+                    line_proto = parts[0].lower()
+                    if proto == "tcp" and line_proto != "tcp":
+                        continue
+                    if proto == "udp" and line_proto != "udp":
+                        continue
                     local_addr = parts[1]
-                    state = parts[3] if len(parts) >= 5 else ""
+                    state = parts[3] if line_proto == "tcp" and len(parts) >= 5 else "UDP"
                     pid = None
                     try:
                         pid = int(parts[-1])
@@ -615,24 +715,42 @@ class FallbackInspector(BaseInspector):
                         pname = self._process_name_for_pid(pid) if pid else None
                         bindings.append(PortBinding(
                             port=port, family='IPv4', laddr=local_addr, pid=pid,
-                            process_name=pname, state=state,
+                            process_name=pname, state=state, proto=line_proto
                         ))
         except Exception:
             pass
         return sorted(bindings, key=lambda b: b.port)
 
-    def _unix_listening(self) -> List[PortBinding]:
+
+    def _unix_listening(self, proto: str = "tcp") -> List[PortBinding]:
         bindings: List[PortBinding] = []
         if shutil.which("lsof"):
             try:
                 proc = self._run_subprocess(["lsof", "-i", "-P", "-n"])
                 lines = proc.stdout.splitlines()
                 for line in lines:
-                    if "LISTEN" not in line and "LISTENING" not in line:
-                        continue
                     parts = re.split(r'\s+', line)
                     if len(parts) < 9:
                         continue
+                    # parts[7] is the TYPE column: "TCP", "UDP", "TCP6", "UDP6", etc.
+                    node_type = parts[7].upper()
+                    if "TCP" in node_type:
+                        line_proto = "tcp"
+                    elif "UDP" in node_type:
+                        line_proto = "udp"
+                    else:
+                        continue
+
+                    # For TCP we only want LISTEN entries; UDP has no state
+                    if line_proto == "tcp" and "LISTEN" not in line.upper():
+                        continue
+
+                    # Filter by requested protocol
+                    if proto == "tcp" and line_proto != "tcp":
+                        continue
+                    if proto == "udp" and line_proto != "udp":
+                        continue
+
                     command = parts[0]
                     pid = None
                     try:
@@ -641,23 +759,43 @@ class FallbackInspector(BaseInspector):
                         pid = None
                     name_field = parts[8]
                     if ':' in name_field:
-                        port = None
                         try:
-                            port = int(name_field.rsplit(':', 1)[-1])
+                            raw_port = name_field.rsplit(':', 1)[-1]
+                            # Strip trailing "(LISTEN)" if present
+                            raw_port = raw_port.split('(')[0].strip()
+                            port = int(raw_port)
                         except Exception:
                             continue
-                        bindings.append(PortBinding(port=port, family='IPv4', laddr=name_field, pid=pid, process_name=command, state="LISTEN"))
+                        family = 'IPv6' if '6' in node_type else 'IPv4'
+                        state = "LISTEN" if line_proto == "tcp" else "UDP"
+                        bindings.append(PortBinding(
+                            port=port, family=family, laddr=name_field,
+                            pid=pid, process_name=command, state=state, proto=line_proto
+                        ))
             except Exception:
                 pass
         else:
             if shutil.which("ss"):
                 try:
-                    proc = self._run_subprocess(["ss", "-ltnp"])
+                    if proto == "tcp":
+                        ss_opts = "-ltnp"
+                    elif proto == "udp":
+                        ss_opts = "-lunp"
+                    else:
+                        ss_opts = "-ltunp"
+                    proc = self._run_subprocess(["ss", ss_opts])
                     lines = proc.stdout.splitlines()
                     for line in lines:
-                        if "LISTEN" not in line:
-                            continue
                         parts = re.split(r'\s+', line)
+                        if not parts or parts[0] in ("Netid", "State"):
+                            continue
+                        netid = parts[0].lower()
+                        if "tcp" not in netid and "udp" not in netid:
+                            continue
+                        line_proto = "tcp" if "tcp" in netid else "udp"
+                        # For TCP skip non-LISTEN rows
+                        if line_proto == "tcp" and len(parts) > 1 and "LISTEN" not in parts[1].upper():
+                            continue
                         for token in parts:
                             if ':' in token and re.search(r':\d+$', token):
                                 try:
@@ -668,7 +806,12 @@ class FallbackInspector(BaseInspector):
                                     if pid:
                                         info = self.get_process_info(pid)
                                         pname = info.name if info else None
-                                    bindings.append(PortBinding(port=port, family='IPv4', laddr=token, pid=pid, process_name=pname, state="LISTEN"))
+                                    family = 'IPv6' if '[' in token else 'IPv4'
+                                    state = "LISTEN" if line_proto == "tcp" else "UDP"
+                                    bindings.append(PortBinding(
+                                        port=port, family=family, laddr=token,
+                                        pid=pid, process_name=pname, state=state, proto=line_proto
+                                    ))
                                     break
                                 except Exception:
                                     continue
@@ -676,53 +819,81 @@ class FallbackInspector(BaseInspector):
                     pass
         return sorted(bindings, key=lambda b: b.port)
 
-    def find_pids_on_port(self, port: int) -> List[int]:
+
+    def find_pids_on_port(self, port: int, proto: str = "tcp") -> List[int]:
         self._clear_cache()  # C1
         if self.system == "Windows":
             try:
                 bindings = _windows_listening_native()
                 if bindings:
+                    if proto == "tcp":
+                        return sorted({b.pid for b in bindings if b.port == port and b.pid and b.proto == "tcp"})
+                    elif proto == "udp":
+                        return sorted({b.pid for b in bindings if b.port == port and b.pid and b.proto == "udp"})
                     return sorted({b.pid for b in bindings if b.port == port and b.pid})
             except Exception:
                 pass
-            return self._windows_pids_on_port(port)
+            return self._windows_pids_on_port(port, proto=proto)
         else:
             try:
                 bindings = _list_listening_linux_native() or []
                 if bindings:
+                    if proto == "tcp":
+                        return sorted({b.pid for b in bindings if b.port == port and b.pid and b.proto == "tcp"})
+                    elif proto == "udp":
+                        return sorted({b.pid for b in bindings if b.port == port and b.pid and b.proto == "udp"})
                     return sorted({b.pid for b in bindings if b.port == port and b.pid})
             except Exception:
                 pass
-            return self._unix_pids_on_port(port)
+            return self._unix_pids_on_port(port, proto=proto)
 
-    def _windows_pids_on_port(self, port: int) -> List[int]:
+    def _windows_pids_on_port(self, port: int, proto: str = "tcp") -> List[int]:
         pids = set()
-        ps_data = self._run_powershell_json(
-            f"Get-NetTCPConnection -State Listen -LocalPort {port} | "
-            "Select-Object -ExpandProperty OwningProcess | ConvertTo-Json -Depth 2"
-        )
-        if ps_data is not None:
-            if isinstance(ps_data, list):
-                for v in ps_data:
+
+        def _collect(data):
+            if isinstance(data, list):
+                for v in data:
                     try:
                         pids.add(int(v))
                     except Exception:
-                        continue
-            else:
+                        pass
+            elif data is not None:
                 try:
-                    pids.add(int(ps_data))
+                    pids.add(int(data))
                 except Exception:
                     pass
+
+        ps_tcp = None
+        ps_udp = None
+        if proto in ("tcp", "both"):
+            ps_tcp = self._run_powershell_json(
+                f"Get-NetTCPConnection -State Listen -LocalPort {port} | "
+                "Select-Object -ExpandProperty OwningProcess | ConvertTo-Json -Depth 2"
+            )
+        if proto in ("udp", "both"):
+            ps_udp = self._run_powershell_json(
+                f"Get-NetUDPEndpoint -LocalPort {port} | "
+                "Select-Object -ExpandProperty OwningProcess | ConvertTo-Json -Depth 2"
+            )
+
+        if ps_tcp is not None or ps_udp is not None:
+            _collect(ps_tcp)
+            _collect(ps_udp)
             return sorted(pids)
+
         if not shutil.which("netstat"):
             return []
         proc = self._run_subprocess(["netstat", "-ano"])
-        # R3: check returncode before parsing output
         if proc.returncode != 0:
             return []
         for line in proc.stdout.splitlines():
             parts = re.split(r'\s+', line.strip())
-            if len(parts) >= 5:
+            if len(parts) >= 4 and parts[0].upper() in ("TCP", "UDP"):
+                line_proto = parts[0].lower()
+                if proto == "tcp" and line_proto != "tcp":
+                    continue
+                if proto == "udp" and line_proto != "udp":
+                    continue
                 local_addr = parts[1]
                 if ':' in local_addr and local_addr.rsplit(':', 1)[-1] == str(port):
                     try:
@@ -732,10 +903,17 @@ class FallbackInspector(BaseInspector):
                         continue
         return sorted(pids)
 
-    def _unix_pids_on_port(self, port: int) -> List[int]:
+    def _unix_pids_on_port(self, port: int, proto: str = "tcp") -> List[int]:
         pids = set()
         if shutil.which("lsof"):
-            proc = self._run_subprocess(["lsof", "-t", "-i", f":{port}"])
+            # Use lsof's protocol-specific filter: TCP:port, UDP:port, or :port for both
+            if proto == "tcp":
+                spec = f"TCP:{port}"
+            elif proto == "udp":
+                spec = f"UDP:{port}"
+            else:
+                spec = f":{port}"
+            proc = self._run_subprocess(["lsof", "-t", "-i", spec])
             for line in proc.stdout.splitlines():
                 try:
                     pids.add(int(line.strip()))
@@ -743,9 +921,15 @@ class FallbackInspector(BaseInspector):
                     continue
         else:
             if shutil.which("ss"):
-                proc = self._run_subprocess(["ss", "-ltnp"])
+                if proto == "tcp":
+                    ss_opts = "-ltnp"
+                elif proto == "udp":
+                    ss_opts = "-lunp"
+                else:
+                    ss_opts = "-ltunp"
+                proc = self._run_subprocess(["ss", ss_opts])
                 for line in proc.stdout.splitlines():
-                    if f":{port} " in line or f":{port}\n" in line:
+                    if f":{port} " in line or line.endswith(f":{port}"):
                         m = re.search(r'pid=(\d+)', line)
                         if m:
                             try:
@@ -859,18 +1043,69 @@ class FallbackInspector(BaseInspector):
                 return sorted(set(pids))
 
     def find_ports_by_process_name(self, name: str, exact: bool = False) -> List[PortBinding]:
+        """
+        Find all port bindings for processes matching `name`.
+
+        Three-layer cross-platform strategy — maximises data available without
+        elevation before ever suggesting 'try sudo':
+
+        Layer 1 (Port table, no elevation needed):
+          - Linux:   /proc/net/tcp* inode map + /proc/<pid>/fd socket resolution
+          - Windows: ctypes IPHLPAPI GetExtendedTcpTable (gives port→PID directly)
+          - macOS:   lsof -i -P -n (works for own processes without sudo)
+
+        Layer 2 (Namespace / container fallback, Linux only):
+          - /proc/<pid>/net/tcp — per-process network namespace view.
+            Snap / Docker processes live in their own netns; the host /proc/net/tcp
+            doesn't see their sockets, but /proc/<pid>/net/tcp does, and it's
+            readable without root in most snap configurations.
+
+        Layer 3 (lsof / subprocess fallback):
+          - Standard lsof / ss parsing for macOS and Linux without /proc support.
+        """
         self._clear_cache()  # C1
         results: List[PortBinding] = []
         name_lower = name.lower()
 
+        # ------------------------------------------------------------------ #
+        # Windows path — Layer 1: native ctypes gives port→PID without admin  #
+        # ------------------------------------------------------------------ #
+        if self.system == "Windows":
+            # Step 1: find PIDs by name (tasklist works without admin)
+            pids_by_name = set(self.find_pids_by_name(name, exact=exact))
+            if not pids_by_name:
+                return results
+
+            # Step 2: get all listening bindings via native IPHLPAPI (no elevation)
+            try:
+                all_bindings = _windows_listening_native()
+            except Exception:
+                all_bindings = []
+
+            if not all_bindings:
+                # Step 2b: subprocess fallback via netstat -ano
+                all_bindings = self._windows_listening()
+
+            # Step 3: filter bindings to the PIDs we found
+            for b in all_bindings:
+                if b.pid in pids_by_name:
+                    # Enrich process name if missing
+                    if not b.process_name:
+                        info = self.get_process_info(b.pid)
+                        b.process_name = info.name if info else name
+                    results.append(b)
+
+            return sorted(results, key=lambda b: (b.pid or 0, b.port))
+
+        # ------------------------------------------------------------------ #
+        # macOS / Linux — try lsof first (fast, works for own processes)      #
+        # ------------------------------------------------------------------ #
         if shutil.which("lsof"):
             try:
                 proc = self._run_subprocess(["lsof", "-i", "-P", "-n"])
                 out = proc.stdout or ""
                 for line in out.splitlines():
                     # C2 fix: correct filter logic.
-                    # In fuzzy mode: keep lines where name appears anywhere.
-                    # In exact mode: keep lines where the command field matches exactly.
                     parts = re.split(r'\s+', line)
                     if len(parts) < 9:
                         continue
@@ -900,20 +1135,80 @@ class FallbackInspector(BaseInspector):
                     ))
             except Exception:
                 pass
-        else:
-            # C7 fix: removed dead inner `if shutil.which("lsof")` that could never
-            # execute (we're already in the `else` branch meaning lsof is absent).
-            # Fall back to pids-first, then use /proc or ps to find their sockets.
-            pids = self.find_pids_by_name(name, exact)
-            for pid in pids:
-                # Try native /proc on Linux
+
+            # If lsof returned results, we're done
+            if results:
+                return sorted(results, key=lambda b: (b.pid or 0, b.port))
+
+        # ------------------------------------------------------------------ #
+        # Linux Layer 1 fallback: /proc/net/tcp inode map                     #
+        # Works for processes in the host network namespace.                   #
+        # ------------------------------------------------------------------ #
+        if platform.system() == "Linux":
+            pids_by_name = set(self.find_pids_by_name(name, exact=exact))
+            if pids_by_name:
+                # Layer 1: host-level /proc/net/tcp (fast, no elevation)
                 try:
-                    bindings = _list_listening_linux_native() or []
-                    for b in bindings:
-                        if b.pid == pid:
+                    host_bindings = _list_listening_linux_native() or []
+                    for b in host_bindings:
+                        if b.pid in pids_by_name:
+                            if not b.process_name:
+                                info = self.get_process_info(b.pid)
+                                b.process_name = info.name if info else name
                             results.append(b)
                 except Exception:
                     pass
+
+                # Layer 2: per-process network namespace (/proc/<pid>/net/tcp)
+                # This handles snap-packaged / container processes whose sockets
+                # don't appear in the host /proc/net/tcp view.
+                if not results:
+                    for pid in pids_by_name:
+                        ns_bindings = _list_listening_proc_pid_net(pid)
+                        for b in ns_bindings:
+                            b.pid = pid
+                            if not b.process_name:
+                                info = self.get_process_info(pid)
+                                b.process_name = info.name if info else name
+                            results.append(b)
+
+        # ------------------------------------------------------------------ #
+        # Final fallback: ss (Linux without /proc write access)               #
+        # ------------------------------------------------------------------ #
+        if not results and shutil.which("ss"):
+            pids_by_name = getattr(self, '_last_pids_by_name', None) or set(
+                self.find_pids_by_name(name, exact=exact)
+            )
+            try:
+                proc = self._run_subprocess(["ss", "-ltnp"])
+                for line in proc.stdout.splitlines():
+                    if "LISTEN" not in line:
+                        continue
+                    m_pid = re.search(r'pid=(\d+)', line)
+                    if not m_pid:
+                        continue
+                    try:
+                        pid = int(m_pid.group(1))
+                    except Exception:
+                        continue
+                    if pid not in pids_by_name:
+                        continue
+                    for token in re.split(r'\s+', line):
+                        if ':' in token and re.search(r':\d+$', token):
+                            try:
+                                port = int(token.rsplit(':', 1)[-1])
+                                info = self.get_process_info(pid)
+                                pname = info.name if info else name
+                                results.append(PortBinding(
+                                    port=port, family='IPv4', laddr=token,
+                                    pid=pid, process_name=pname, state="LISTEN"
+                                ))
+                                break
+                            except Exception:
+                                continue
+            except Exception:
+                pass
+
         return sorted(results, key=lambda b: (b.pid or 0, b.port))
 
     def send_signal(self, pid: int, sig: int) -> bool:
@@ -950,3 +1245,66 @@ class FallbackInspector(BaseInspector):
                 return True
             except (ProcessLookupError, PermissionError) as e:
                 return isinstance(e, PermissionError)
+
+    def get_child_pids(self, pid: int) -> List[int]:
+        if self.system == "Windows":
+            ps = self._powershell()
+            if ps:
+                try:
+                    cmd = [ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
+                           f"Get-CimInstance Win32_Process -Filter 'ParentProcessId = {pid}' | Select-Object -ExpandProperty ProcessId"]
+                    proc = self._run_subprocess(cmd)
+                    if proc.returncode == 0:
+                        pids = []
+                        for line in proc.stdout.splitlines():
+                            line = line.strip()
+                            if line.isdigit():
+                                pids.append(int(line))
+                        all_pids = []
+                        for child in pids:
+                            all_pids.append(child)
+                            all_pids.extend(self.get_child_pids(child))
+                        return sorted(set(all_pids))
+                except Exception:
+                    pass
+            try:
+                proc = self._run_subprocess(["wmic", "process", "where", f"ParentProcessId={pid}", "get", "ProcessId"])
+                if proc.returncode == 0:
+                    pids = []
+                    for line in proc.stdout.splitlines():
+                        line = line.strip()
+                        if line.isdigit():
+                            pids.append(int(line))
+                    all_pids = []
+                    for child in pids:
+                        all_pids.append(child)
+                        all_pids.extend(self.get_child_pids(child))
+                    return sorted(set(all_pids))
+            except Exception:
+                pass
+            return []
+        else:
+            try:
+                proc = self._run_subprocess(["ps", "-ax", "-o", "ppid=,pid="])
+                if proc.returncode == 0:
+                    parent_to_children = {}
+                    for line in proc.stdout.splitlines():
+                        parts = line.strip().split()
+                        if len(parts) == 2:
+                            try:
+                                ppid = int(parts[0])
+                                cpid = int(parts[1])
+                                parent_to_children.setdefault(ppid, []).append(cpid)
+                            except ValueError:
+                                continue
+                    descendants = []
+                    def gather(parent):
+                        for child in parent_to_children.get(parent, []):
+                            descendants.append(child)
+                            gather(child)
+                    gather(pid)
+                    return sorted(set(descendants))
+            except Exception:
+                pass
+            return []
+

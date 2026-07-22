@@ -42,25 +42,25 @@ class FakeInspector(BaseInspector):
         self._info = process_info or {}
         self._listening = listening or []
 
-    def find_pids_on_port(self, port: int):
+    def find_pids_on_port(self, port: int, proto: str = "tcp"):
         return self._pids.get(port, [])
 
-    def find_bindings_on_port(self, port: int):
+    def find_bindings_on_port(self, port: int, proto: str = "tcp"):
         return self._bindings.get(port, [])
 
     def get_process_info(self, pid: int):
         return self._info.get(pid)
 
-    def list_listening(self):
+    def list_listening(self, proto: str = "tcp"):
         return self._listening
 
-    def find_ports_by_process_name(self, name, exact=False):
+    def find_ports_by_process_name(self, name, exact=False, proto: str = "tcp"):
         return []
 
     def find_pids_by_name(self, name, exact=False):
         return []
 
-    def kill_port(self, port, graceful_timeout=3.0, force=False, dry_run=False, debug=False, assume_yes=False):
+    def kill_port(self, port, graceful_timeout=3.0, force=False, dry_run=False, debug=False, assume_yes=False, kill_tree=False, **kwargs):
         return True, f"Port {port} freed"
 
     def kill_pid(self, pid, graceful_timeout=3.0, force=False, dry_run=False, assume_yes=False, debug=False):
@@ -70,7 +70,8 @@ class FakeInspector(BaseInspector):
 def _args(**kwargs) -> argparse.Namespace:
     defaults = dict(json=False, debug=False, dry_run=False, yes=True, force=False,
                     graceful_timeout=None, bypass_safety=False, docker_action=None,
-                    protected_ports=None, protected_processes=None)
+                    protected_ports=None, protected_processes=None,
+                    proto="tcp", wait_for_exit=None, kill_tree=False)
     defaults.update(kwargs)
     return argparse.Namespace(**defaults)
 

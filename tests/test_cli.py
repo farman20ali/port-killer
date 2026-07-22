@@ -187,26 +187,42 @@ def test_fallback_inspector_init():
 def test_confirm_docker_rm(monkeypatch, capsys):
     from kport.cli import confirm_docker_rm
 
-    # 1. assume_yes=True, force=True
+    # 1. assume_yes=True, force=True → skips prompt entirely
     assert confirm_docker_rm("my-container", "1234567890123456", assume_yes=True, force=True) is True
 
-    # 2. assume_yes=True, force=False (should reject and write to stderr)
+    # 2. assume_yes=True, force=False → rejected with error message (rm is irreversible)
     assert confirm_docker_rm("my-container", "1234567890123456", assume_yes=True, force=False) is False
     captured = capsys.readouterr()
     assert "Error: Removing a Docker container is irreversible." in captured.err
 
-    # 3. assume_yes=False, matching input name
-    monkeypatch.setattr("builtins.input", lambda _: "my-container")
+    # 3. assume_yes=False, input 'y' → accepted (new simplified prompt)
+    monkeypatch.setattr("builtins.input", lambda _: "y")
     assert confirm_docker_rm("my-container", "1234567890123456", assume_yes=False, force=False) is True
 
-    # 4. assume_yes=False, matching short ID
-    monkeypatch.setattr("builtins.input", lambda _: "123456789012")
+    # 4. assume_yes=False, input 'yes' → accepted
+    monkeypatch.setattr("builtins.input", lambda _: "yes")
     assert confirm_docker_rm("my-container", "1234567890123456", assume_yes=False, force=False) is True
 
-    # 5. assume_yes=False, matching full ID
-    monkeypatch.setattr("builtins.input", lambda _: "1234567890123456")
+    # 5. assume_yes=False, input 'YES' (case-insensitive) → accepted
+    monkeypatch.setattr("builtins.input", lambda _: "YES")
     assert confirm_docker_rm("my-container", "1234567890123456", assume_yes=False, force=False) is True
 
-    # 6. assume_yes=False, non-matching input
-    monkeypatch.setattr("builtins.input", lambda _: "wrong-name")
+    # 6. assume_yes=False, input 'n' → rejected
+    monkeypatch.setattr("builtins.input", lambda _: "n")
     assert confirm_docker_rm("my-container", "1234567890123456", assume_yes=False, force=False) is False
+
+    # 7. assume_yes=False, input '' (Enter) → rejected (default is N)
+    monkeypatch.setattr("builtins.input", lambda _: "")
+    assert confirm_docker_rm("my-container", "1234567890123456", assume_yes=False, force=False) is False
+
+    # 8. Context card is shown (container name and ID appear in stdout)
+    monkeypatch.setattr("builtins.input", lambda _: "n")
+    confirm_docker_rm(
+        "my-container", "1234567890123456", assume_yes=False, force=False,
+        image="myimage:latest", host_port=8080, container_port=8080
+    )
+    captured = capsys.readouterr()
+    assert "my-container" in captured.out
+    assert "123456789012" in captured.out   # short ID
+    assert "myimage:latest" in captured.out
+    assert "8080" in captured.out

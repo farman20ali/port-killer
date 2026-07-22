@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kport"
-version = "3.2.6"
+version = "4.0.0"
 description = "A cross-platform command-line tool to inspect and kill processes using specific ports"
 readme = "README.md"
 authors = [
@@ -24,11 +24,10 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 requires-python = ">=3.8"
-dependencies = [
-    "psutil>=5.9.0",
-]
+dependencies = []
 
 [project.optional-dependencies]
+fast = ["psutil>=5.9.0"]
 psutil = ["psutil>=5.9.0"]
 mcp = ["mcp>=0.1.0"]
 packaging = [
