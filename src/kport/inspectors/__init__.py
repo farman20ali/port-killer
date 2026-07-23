@@ -52,7 +52,10 @@ __all__ = [
 
 import importlib.util as _ilu
 
-USING_PSUTIL = _ilu.find_spec("psutil") is not None
+try:
+    USING_PSUTIL = _ilu.find_spec("psutil") is not None
+except (ImportError, ValueError):
+    USING_PSUTIL = False
 
 
 def _psutil_accessible() -> bool:
@@ -69,6 +72,7 @@ def _psutil_accessible() -> bool:
         return False
     try:
         import psutil as _p
+
         _p.net_connections(kind="inet")
         return True
     except PermissionError:
@@ -77,6 +81,7 @@ def _psutil_accessible() -> bool:
         # psutil.AccessDenied is NOT a subclass of PermissionError; catch it too.
         try:
             import psutil as _p2
+
             if isinstance(exc, _p2.AccessDenied):
                 return False
         except Exception:
@@ -89,6 +94,8 @@ def get_inspector() -> BaseInspector:
     """Resolve and return the appropriate inspector instance for the host system."""
     if _psutil_accessible():
         from .psutil_impl import PsutilInspector
+
         return PsutilInspector()
     from .system_impl import FallbackInspector
+
     return FallbackInspector()

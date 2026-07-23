@@ -25,6 +25,7 @@ from kport.constants import RUNTIME_ENRICHMENT_NAMES
 # Process name enrichment
 # ---------------------------------------------------------------------------
 
+
 def enrich_process_name(name: str, cmdline: Optional[List[str]]) -> str:
     """
     Enrich generic runtime process names with their script / module / jar.
@@ -45,7 +46,10 @@ def enrich_process_name(name: str, cmdline: Optional[List[str]]) -> str:
     name_base = name.lower()
     if name_base.endswith(".exe"):
         name_base = name_base[:-4]
-    if base not in RUNTIME_ENRICHMENT_NAMES and name_base not in RUNTIME_ENRICHMENT_NAMES:
+    if (
+        base not in RUNTIME_ENRICHMENT_NAMES
+        and name_base not in RUNTIME_ENRICHMENT_NAMES
+    ):
         return name
 
     # Walk arguments; skip the executable itself (index 0)
@@ -64,8 +68,20 @@ def enrich_process_name(name: str, cmdline: Optional[List[str]]) -> str:
         # Any argument that looks like a script/jar file and isn't a flag
         if not arg.startswith("-"):
             _, ext = os.path.splitext(arg)
-            if ext.lower() in (".js", ".mjs", ".cjs", ".ts", ".py", ".rb", ".php",
-                               ".jar", ".war", ".ear", ".pl", ".pm"):
+            if ext.lower() in (
+                ".js",
+                ".mjs",
+                ".cjs",
+                ".ts",
+                ".py",
+                ".rb",
+                ".php",
+                ".jar",
+                ".war",
+                ".ear",
+                ".pl",
+                ".pm",
+            ):
                 return f"{name} ({os.path.basename(arg)})"
             # node / bun / deno — first positional that is a bare file name
             if base in {"node", "nodejs", "bun", "deno", "tsx", "ts-node"}:
@@ -78,6 +94,7 @@ def enrich_process_name(name: str, cmdline: Optional[List[str]]) -> str:
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ProcessInfo:
@@ -100,13 +117,17 @@ class PortBinding:
     pid: Optional[int] = None
     process_name: Optional[str] = None
     state: Optional[str] = None
+    proto: str = "tcp"
 
 
 # ---------------------------------------------------------------------------
 # Privilege escalation helpers
 # ---------------------------------------------------------------------------
 
-def _escalate_kill_unix(pid: int, sig: int, assume_yes: bool, debug: bool = False) -> bool:
+
+def _escalate_kill_unix(
+    pid: int, sig: int, assume_yes: bool, debug: bool = False
+) -> bool:
     """
     Attempt a privilege-escalated kill on Unix via sudo.
     Returns True if the process disappeared after the sudo kill, False otherwise.
@@ -131,7 +152,9 @@ def _escalate_kill_unix(pid: int, sig: int, assume_yes: bool, debug: bool = Fals
             print(f"[debug] sudo kill -{sig_name} {pid}", file=sys.stderr)
         result = subprocess.run(
             [sudo, "kill", f"-{sig_name}", str(pid)],
-            capture_output=True, text=True, timeout=10
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return result.returncode == 0
     except Exception:
@@ -164,8 +187,18 @@ def _escalate_kill_windows(pid: int, assume_yes: bool, debug: bool = False) -> b
         if debug:
             print(f"[debug] PowerShell UAC taskkill PID {pid}", file=sys.stderr)
         result = subprocess.run(
-            [ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-            capture_output=True, text=True, timeout=30
+            [
+                ps,
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                script,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         return result.returncode == 0
     except Exception:
@@ -176,18 +209,19 @@ def _escalate_kill_windows(pid: int, assume_yes: bool, debug: bool = False) -> b
 # Base inspector
 # ---------------------------------------------------------------------------
 
+
 class BaseInspector:
-    def list_listening(self) -> List[PortBinding]:
+    def list_listening(self, proto: str = "tcp") -> List[PortBinding]:
         """List all active listening ports."""
         raise NotImplementedError()
 
-    def find_pids_on_port(self, port: int) -> List[int]:
+    def find_pids_on_port(self, port: int, proto: str = "tcp") -> List[int]:
         """Find PIDs currently bound to a port."""
         raise NotImplementedError()
 
-    def find_bindings_on_port(self, port: int) -> List[PortBinding]:
+    def find_bindings_on_port(self, port: int, proto: str = "tcp") -> List[PortBinding]:
         """Find listening bindings for a specific port."""
-        return [b for b in self.list_listening() if b.port == port]
+        return [b for b in self.list_listening(proto=proto) if b.port == port]
 
     def get_process_info(self, pid: int) -> Optional[ProcessInfo]:
         """Get details about a specific process PID."""
@@ -197,7 +231,9 @@ class BaseInspector:
         """Find PIDs matching a process name."""
         raise NotImplementedError()
 
-    def find_ports_by_process_name(self, name: str, exact: bool = False) -> List[PortBinding]:
+    def find_ports_by_process_name(
+        self, name: str, exact: bool = False, proto: str = "tcp"
+    ) -> List[PortBinding]:
         """Find port bindings matching a process name."""
         raise NotImplementedError()
 
@@ -274,7 +310,9 @@ class BaseInspector:
     # Escalated kill
     # ------------------------------------------------------------------
 
-    def _try_escalate(self, pid: int, sig: int, assume_yes: bool, debug: bool = False) -> bool:
+    def _try_escalate(
+        self, pid: int, sig: int, assume_yes: bool, debug: bool = False
+    ) -> bool:
         """
         Attempt privilege-escalated termination.
         Returns True if escalation succeeded (process is gone), False otherwise.
@@ -322,10 +360,16 @@ class BaseInspector:
         except PermissionError:
             # Attempt privilege escalation before giving up
             if debug:
-                print(f"[debug] PermissionError on SIGTERM for PID {pid}, attempting escalation", file=sys.stderr)
+                print(
+                    f"[debug] PermissionError on SIGTERM for PID {pid}, attempting escalation",
+                    file=sys.stderr,
+                )
             if self._try_escalate(pid, signal.SIGTERM, assume_yes, debug=debug):
                 return True, "Terminated via privilege escalation"
-            return False, "Permission denied — could not escalate. Try running with sudo/admin."
+            return (
+                False,
+                "Permission denied — could not escalate. Try running with sudo/admin.",
+            )
         except Exception as e:
             return False, f"SIGTERM error: {e}"
 
@@ -372,7 +416,10 @@ class BaseInspector:
             return True, "Process disappeared"
         except PermissionError:
             if debug:
-                print(f"[debug] PermissionError on SIGKILL for PID {pid}, attempting escalation", file=sys.stderr)
+                print(
+                    f"[debug] PermissionError on SIGKILL for PID {pid}, attempting escalation",
+                    file=sys.stderr,
+                )
             if self._try_escalate(pid, signal.SIGKILL, assume_yes, debug=debug):
                 return True, "Force-killed via privilege escalation"
             return False, "Permission denied on force kill — could not escalate."
@@ -391,13 +438,15 @@ class BaseInspector:
         dry_run: bool = False,
         debug: bool = False,
         assume_yes: bool = False,
+        kill_tree: bool = False,
+        proto: str = "tcp",
     ) -> Tuple[bool, str]:
         """
         Kill all processes using a specific port.
 
         Escalation path:
           1. Find PIDs on port (fetched once).
-          2. kill_pid() per PID (SIGTERM → poll → SIGKILL → sudo/UAC).
+          2. kill_process_tree() or kill_pid() per PID.
           3. On Linux: fuser fallback if PIDs survive and force=True.
           4. Final socket verification.
         """
@@ -405,7 +454,7 @@ class BaseInspector:
             return True, f"Dry-run: would terminate port {port}"
 
         # C4 fix: fetch PIDs once — consistent snapshot for the entire kill sequence
-        pids = self.find_pids_on_port(port)
+        pids = self.find_pids_on_port(port, proto=proto)
         if not pids:
             return True, "No process found on port"
 
@@ -414,14 +463,24 @@ class BaseInspector:
         remaining_pids: List[int] = []
 
         for pid in pids:
-            ok, msg = self.kill_pid(
-                pid,
-                graceful_timeout=graceful_timeout,
-                force=force,
-                dry_run=dry_run,
-                assume_yes=assume_yes,
-                debug=debug,
-            )
+            if kill_tree:
+                ok, msg = self.kill_process_tree(
+                    pid,
+                    graceful_timeout=graceful_timeout,
+                    force=force,
+                    dry_run=dry_run,
+                    assume_yes=assume_yes,
+                    debug=debug,
+                )
+            else:
+                ok, msg = self.kill_pid(
+                    pid,
+                    graceful_timeout=graceful_timeout,
+                    force=force,
+                    dry_run=dry_run,
+                    assume_yes=assume_yes,
+                    debug=debug,
+                )
             if ok:
                 killed_count += 1
             else:
@@ -429,11 +488,24 @@ class BaseInspector:
                 errors.append(f"PID {pid}: {msg}")
 
         # Linux fuser fallback — only when forced and fuser is available
-        if remaining_pids and platform.system() != "Windows" and force and shutil.which("fuser"):
+        if (
+            remaining_pids
+            and platform.system() != "Windows"
+            and force
+            and shutil.which("fuser")
+        ):
             if debug:
-                print(f"[debug] PIDs {remaining_pids} survived standard signals. Triggering fuser fallback...", file=sys.stderr)
+                print(
+                    f"[debug] PIDs {remaining_pids} survived standard signals. Triggering fuser fallback...",
+                    file=sys.stderr,
+                )
             try:
-                subprocess.run(["fuser", "-k", f"{port}/tcp"], capture_output=True, text=True, timeout=5)
+                subprocess.run(
+                    ["fuser", "-k", f"{port}/tcp"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
                 time.sleep(0.5)
                 remaining_pids = [p for p in remaining_pids if self.is_process_alive(p)]
                 if not remaining_pids:

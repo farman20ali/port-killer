@@ -1,292 +1,223 @@
-# Publishing Guide for kport
+# Publishing Guide — kport
 
-This guide will help you publish `kport` so anyone can easily install it.
+> **Already live:** PyPI · Snap · APT/.deb · Chocolatey (in review)
 
-## 📋 Prerequisites
+---
 
-1. **GitHub account** - For hosting the code
-2. **PyPI account** - For publishing to Python Package Index
-   - Sign up at: https://pypi.org/account/register/
-   - Sign up for Test PyPI: https://test.pypi.org/account/register/
+## Prerequisites
 
-3. **Install required tools**:
 ```bash
 pip install build twine
 ```
 
----
-
-## 🚀 Method 1: Publish to PyPI (RECOMMENDED)
-
-### Step 1: Prepare Your Package
-
-Update `pyproject.toml` with your information:
-- Change `authors` name and email
-- Update `urls` with your GitHub repository
-
-This project depends on `psutil` for best cross-platform port/PID detection.
-
-### Step 2: Build the Package
-
-```bash
-# Clean previous builds
-Remove-Item -Recurse -Force dist, build, *.egg-info -ErrorAction SilentlyContinue
-
-# Build the package
-python -m build
-```
-
-### Step 3: Test on Test PyPI (RECOMMENDED)
-
-```bash
-# Upload to Test PyPI first
-python -m twine upload --repository testpypi dist/*
-
-# Test installation from Test PyPI
-pip install --index-url https://test.pypi.org/simple/ kport
-or 
-pip install --index-url https://test.pypi.org/simple/ --no-deps kport==1.0.0
-
-```
-
-### Step 4: Upload to Production PyPI
-
-```bash
-# Upload to PyPI
-python -m twine upload dist/*
-```
-
-### Step 5: Verify
-
-After uploading, anyone can install with:
-```bash
-# Recommended: Install to user directory (avoids permission issues)
-pip install --user kport
-
-# Or install system-wide (may require admin/sudo)
-pip install kport
-```
-
-> 💡 **Important:** Recommend users to install with `--user` flag to avoid permission issues!
-
----
-
-## 🐧 Method 4: Publish a Debian (.deb) Package
-
-This repo does not commit a `debian/` packaging directory.
-
-Instead, `build_deb.py` generates a minimal Debian packaging skeleton at build time (in a temporary directory) and copies the resulting `.deb` into `dist/deb/`.
-
-Build on Debian/Ubuntu (recommended):
-
-```bash
-python3 scripts/build_deb.py
-```
-
-If you prefer installing prerequisites manually:
-
-```bash
-sudo apt-get update
-sudo apt-get install -y debhelper dh-python python3-all build-essential
-```
-
-Install:
-
-```bash
-sudo dpkg -i dist/deb/kport_*_all.deb
-```
-
-For GitHub Release steps (attach the `.deb`) and options to publish an APT repository, see [DEB_RELEASE.md](DEB_RELEASE.md).
-
-## 🐙 Method 2: GitHub Installation
-
-### Step 1: Push to GitHub
-
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-git remote add origin https://github.com/farman20ali/port-killer.git
-git push -u origin main
-```
-
-### Step 2: Create a Release
-
-1. Go to: https://github.com/farman20ali/port-killer/releases/new
-2. Create a new tag: `v1.0.0`
-3. Set release title: `kport v1.0.0 - Cross-Platform Port Inspector & Killer`
-4. Add release notes describing features:
-   - Inspect ports by port number or process name
-   - Kill processes by port, process name, or multiple ports
-   - List all active listening ports
-   - Cross-platform support (Windows, Linux, macOS)
-   - Colorized terminal output
-   - Confirmation prompts for safety
-5. Publish release
-
-### Step 3: Installation
-
-Anyone can now install with:
-```bash
-pip install git+https://github.com/farman20ali/port-killer.git
-```
-
-Or install a specific version:
-```bash
-pip install git+https://github.com/farman20ali/port-killer.git@v1.0.0
-```
-
----
-
-## 🔧 Method 3: Create Standalone Executables
-
-For users without Python, create standalone executables:
-
-### Windows (.exe)
-
-```powershell
-# Install PyInstaller
-pip install pyinstaller
-
-# Create standalone executable
-pyinstaller --onefile --name kport __main__.py
-
-# Executable will be in dist/kport.exe
-```
-
-### Linux
-
-```bash
-# Install PyInstaller
-pip install pyinstaller
-
-# Create standalone executable
-pyinstaller --onefile --name kport __main__.py
-
-# Executable will be in dist/kport
-```
-
-Then distribute the executables via GitHub Releases.
-
----
-
-## 🎯 Quick Publish Script
-
-We've included a helper script to make publishing easier:
-
-```bash
-python scripts/publish_pypi.py
-```
-
-This interactive script will:
-1. Check and install requirements
-2. Clean build directories
-3. Build the package
-4. Upload to Test PyPI
-5. Upload to Production PyPI
-
----
-
-## 📦 Configure PyPI Credentials
-
-### Option 1: Use API Token (Recommended)
-
-1. Generate token at: https://pypi.org/manage/account/token/
-2. Create `~/.pypirc` (or `%USERPROFILE%\.pypirc` on Windows):
+Configure `~/.pypirc` with your PyPI API token:
 
 ```ini
 [pypi]
 username = __token__
-password = pypi-AgEIcHlwaS5vcmcC...your-token-here
+password = pypi-AgEI...your-token
 
 [testpypi]
 username = __token__
-password = pypi-AgENdGVzdC5weXBpLm9yZwI...your-token-here
+password = pypi-AgEN...your-test-token
 ```
 
-### Option 2: Username/Password
-
-Twine will prompt you for credentials when uploading.
-
 ---
 
-## ✅ Verification Checklist
-
-Before publishing, ensure:
-
-- [ ] All features work correctly
-- [ ] README.md is complete and accurate
-- [ ] `pyproject.toml` contains correct author/URL information
-- [ ] License file is included
-- [ ] Version number is correct
-- [ ] Code is committed to GitHub
-- [ ] Tests pass (if you have any)
-- [ ] Documentation is up to date
-
----
-## 🔄 Updating Your Package
-
-When you want to release a new version:
-
-1. Run `python manage.py sync-version X.Y.Z` — updates `pyproject.toml` and `src/kport/__init__.py` atomically
-2. Update CHANGELOG or release notes
-4. Rebuild and republish:
+## PyPI
 
 ```bash
-# Clean old builds
-Remove-Item -Recurse -Force dist, build, *.egg-info -ErrorAction SilentlyContinue
+# Bump version atomically
+python manage.py sync-version X.Y.Z
 
-# Build and upload
+# Build
 python -m build
+
+# Test first (optional)
+python -m twine upload --repository testpypi dist/*
+pip install --index-url https://test.pypi.org/simple/ --no-deps kport==X.Y.Z
+
+# Publish
 python -m twine upload dist/*
 ```
 
+Or use the helper script: `python scripts/publish_pypi.py`
+
+**Troubleshooting:**
+- `403` → check API token / package name not taken
+- `File already exists` → increment version with `python manage.py sync-version X.Y.Z`
+
 ---
 
-## 📊 After Publishing
+## Debian (.deb)
 
-### Promote Your Tool
-
-1. **GitHub**: Add badges to README.md
-```markdown
-![PyPI](https://img.shields.io/pypi/v/kport)
-![Python Version](https://img.shields.io/pypi/pyversions/kport)
-![Downloads](https://img.shields.io/pypi/dm/kport)
+```bash
+python3 scripts/build_deb.py
+sudo dpkg -i dist/deb/kport_*_all.deb
 ```
 
-2. **Share on**:
-   - Reddit (r/Python, r/commandline)
-   - Twitter/X
-   - Dev.to
-   - Hacker News
-
-3. **Add to package managers**:
-   - Homebrew (for macOS)
-   - Chocolatey (for Windows)
-   - Snap Store (for Linux)
+Attach the `.deb` to the GitHub Release. See `BUILD_GUIDE.md` for APT repo options.
 
 ---
 
-## 🆘 Troubleshooting
+## Standalone Executables (PyInstaller)
 
-### Upload fails with 403 error
-- Check your API token or credentials
-- Ensure package name is not taken
+```bash
+pip install pyinstaller
+pyinstaller --onefile --name kport src/kport/__main__.py
+# Output: dist/kport  (or dist/kport.exe on Windows)
+```
 
-### Upload fails with "File already exists"
-- You cannot overwrite a version
-- Increment version number in `pyproject.toml` using `python manage.py sync-version X.Y.Z`
-
-### Package not installing
-- Check PyPI page: https://pypi.org/project/kport/
-- Verify package name is correct
-- Try with `--no-cache-dir`: `pip install --no-cache-dir kport`
+Attach the binary to the GitHub Release.
 
 ---
 
-## 📚 Resources
+## Homebrew Tap
 
-- PyPI: https://pypi.org/
-- PyPI Help: https://pypi.org/help/
-- Python Packaging Guide: https://packaging.python.org/
-- Twine Documentation: https://twine.readthedocs.io/
+**Goal:** `brew tap farman20ali/kport && brew install kport`
+
+1. Create a GitHub repo named **`homebrew-kport`** (the prefix is required).
+2. Add `Formula/kport.rb`:
+
+```ruby
+class Kport < Formula
+  include Language::Python::Virtualenv
+
+  desc "Cross-platform port inspector and killer"
+  homepage "https://github.com/farman20ali/port-killer"
+  url "https://github.com/farman20ali/port-killer/releases/download/vX.Y.Z/kport-X.Y.Z.tar.gz"
+  sha256 "<sha256 of tarball>"
+  license "Apache-2.0"
+
+  depends_on "python@3.12"
+
+  def install
+    virtualenv_install_with_resources
+  end
+
+  test do
+    assert_match "X.Y.Z", shell_output("#{bin}/kport -v")
+  end
+end
+```
+
+3. Push to `main`, then verify:
+
+```bash
+brew tap farman20ali/kport
+brew install kport && kport -v
+brew test kport
+```
+
+---
+
+## AUR (Arch Linux)
+
+**Requires human step:** create an AUR account + SSH key at https://aur.archlinux.org.
+
+Once access exists, write `PKGBUILD`:
+
+```bash
+pkgname=kport
+pkgver=X.Y.Z
+pkgrel=1
+pkgdesc="Cross-platform port inspector and killer"
+arch=('any')
+url="https://github.com/farman20ali/port-killer"
+license=('Apache')
+depends=('python')
+makedepends=('python-build' 'python-installer' 'python-wheel')
+source=("https://github.com/farman20ali/port-killer/releases/download/v$pkgver/kport-$pkgver.tar.gz")
+sha256sums=('<sha256>')
+
+build() {
+  cd "$pkgname-$pkgver"
+  python -m build --wheel --no-isolation
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  python -m installer --destdir="$pkgdir" dist/*.whl
+}
+```
+
+Then:
+
+```bash
+makepkg --printsrcinfo > .SRCINFO
+git remote add origin ssh://aur@aur.archlinux.org/kport.git
+git add PKGBUILD .SRCINFO && git commit -m "kport X.Y.Z"
+git push origin master
+```
+
+---
+
+## Fedora COPR
+
+**Requires human step:** create a FAS account at https://copr.fedorainfracloud.org.
+
+```bash
+copr-cli create kport --chroot fedora-40-x86_64 --chroot fedora-41-x86_64 \
+  --description "Cross-platform port inspector and killer"
+
+copr-cli build kport \
+  https://github.com/farman20ali/port-killer/releases/download/vX.Y.Z/kport-X.Y.Z-1.noarch.rpm
+```
+
+Install: `dnf copr enable farman20ali/kport && dnf install kport`
+
+---
+
+## VS Code Marketplace + Open VSX
+
+**Requires human step:** create publisher tokens (`VSCE_PAT` for Marketplace, `OVSX_PAT` for Open VSX).
+
+```bash
+npx vsce publish --packagePath kport-vscode-X.Y.Z.vsix -p $VSCE_PAT
+npx ovsx publish kport-vscode-X.Y.Z.vsix -p $OVSX_PAT
+```
+
+---
+
+## Winget
+
+**Requires human step:** confirm the installer supports silent mode before submitting.
+
+```powershell
+kport-X.Y.Z-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+```
+
+If silent install works, scaffold and submit:
+
+```powershell
+winget install wingetcreate
+wingetcreate new https://github.com/farman20ali/port-killer/releases/download/vX.Y.Z/kport-X.Y.Z-setup.exe
+# Package Identifier: farman20ali.kport
+wingetcreate submit
+```
+
+A PR is opened against `microsoft/winget-pkgs`. Expect a few days for automated + human review.
+
+---
+
+## Sequencing Summary
+
+| Order | Channel | Review latency | Notes |
+|---|---|---|---|
+| 1 | PyPI | Instant | Already live |
+| 1 | Snap / APT | Instant | Already live |
+| 1 | Homebrew Tap | None | Fully agent-executable |
+| 1 | AUR | None after signup | Needs human AUR account once |
+| 1 | Fedora COPR | None after signup | Needs human FAS account once |
+| 1 | VS Code / Open VSX | Automated scan only | Needs human token creation once |
+| 2 | Winget | Days (automated + human mod) | Needs silent-install check + PR monitoring |
+| 2 | Homebrew Core | 1–3 weeks | Open after tap proves adoption |
+| 3 | Chocolatey | In review | Submitted |
+
+---
+
+## Resources
+
+- https://pypi.org/help/
+- https://packaging.python.org/
+- https://twine.readthedocs.io/

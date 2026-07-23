@@ -20,8 +20,14 @@ from kport.inspectors.base import BaseInspector, ProcessInfo, PortBinding
 
 def _binding(port: int, pid: int = 1234, name: str = "node") -> PortBinding:
     """Return a real PortBinding dataclass (required for asdict() in CLI code)."""
-    return PortBinding(port=port, family="inet", laddr=f"0.0.0.0:{port}",
-                       pid=pid, process_name=name, state="LISTEN")
+    return PortBinding(
+        port=port,
+        family="inet",
+        laddr=f"0.0.0.0:{port}",
+        pid=pid,
+        process_name=name,
+        state="LISTEN",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -42,35 +48,65 @@ class FakeInspector(BaseInspector):
         self._info = process_info or {}
         self._listening = listening or []
 
-    def find_pids_on_port(self, port: int):
+    def find_pids_on_port(self, port: int, proto: str = "tcp"):
         return self._pids.get(port, [])
 
-    def find_bindings_on_port(self, port: int):
+    def find_bindings_on_port(self, port: int, proto: str = "tcp"):
         return self._bindings.get(port, [])
 
     def get_process_info(self, pid: int):
         return self._info.get(pid)
 
-    def list_listening(self):
+    def list_listening(self, proto: str = "tcp"):
         return self._listening
 
-    def find_ports_by_process_name(self, name, exact=False):
+    def find_ports_by_process_name(self, name, exact=False, proto: str = "tcp"):
         return []
 
     def find_pids_by_name(self, name, exact=False):
         return []
 
-    def kill_port(self, port, graceful_timeout=3.0, force=False, dry_run=False, debug=False, assume_yes=False):
+    def kill_port(
+        self,
+        port,
+        graceful_timeout=3.0,
+        force=False,
+        dry_run=False,
+        debug=False,
+        assume_yes=False,
+        kill_tree=False,
+        **kwargs,
+    ):
         return True, f"Port {port} freed"
 
-    def kill_pid(self, pid, graceful_timeout=3.0, force=False, dry_run=False, assume_yes=False, debug=False):
+    def kill_pid(
+        self,
+        pid,
+        graceful_timeout=3.0,
+        force=False,
+        dry_run=False,
+        assume_yes=False,
+        debug=False,
+    ):
         return True, f"PID {pid} killed"
 
 
 def _args(**kwargs) -> argparse.Namespace:
-    defaults = dict(json=False, debug=False, dry_run=False, yes=True, force=False,
-                    graceful_timeout=None, bypass_safety=False, docker_action=None,
-                    protected_ports=None, protected_processes=None)
+    defaults = dict(
+        json=False,
+        debug=False,
+        dry_run=False,
+        yes=True,
+        force=False,
+        graceful_timeout=None,
+        bypass_safety=False,
+        docker_action=None,
+        protected_ports=None,
+        protected_processes=None,
+        proto="tcp",
+        wait_for_exit=None,
+        kill_tree=False,
+    )
     defaults.update(kwargs)
     return argparse.Namespace(**defaults)
 
@@ -78,6 +114,7 @@ def _args(**kwargs) -> argparse.Namespace:
 # ---------------------------------------------------------------------------
 # list
 # ---------------------------------------------------------------------------
+
 
 def test_list_command_json_output(capsys):
     binding = _binding(8080)
@@ -107,6 +144,7 @@ def test_list_command_text_output(capsys):
 # docker
 # ---------------------------------------------------------------------------
 
+
 def test_docker_command_json(capsys):
     args = _args(command="docker", json=True, extra=[])
     with patch("kport.cli.list_docker_mappings", return_value=[]):
@@ -121,6 +159,7 @@ def test_docker_command_json(capsys):
 # ---------------------------------------------------------------------------
 # inspect
 # ---------------------------------------------------------------------------
+
 
 def test_inspect_free_port(capsys):
     inspector = FakeInspector()
@@ -155,6 +194,7 @@ def test_inspect_local_process(capsys):
 # explain
 # ---------------------------------------------------------------------------
 
+
 def test_explain_free_port(capsys):
     inspector = FakeInspector()
     args = _args(command="explain", port=19999, json=True)
@@ -186,6 +226,7 @@ def test_explain_blocked_port(capsys):
 # ---------------------------------------------------------------------------
 # kill
 # ---------------------------------------------------------------------------
+
 
 def test_kill_free_port(capsys):
     inspector = FakeInspector()
@@ -230,6 +271,7 @@ def test_kill_protected_port_with_bypass(capsys):
 # kill-process
 # ---------------------------------------------------------------------------
 
+
 def test_kill_process_not_found(capsys):
     inspector = FakeInspector()
     args = _args(command="kill-process", name="ghost", json=True, exact=False)
@@ -244,6 +286,7 @@ def test_kill_process_not_found(capsys):
 # ---------------------------------------------------------------------------
 # conflicts
 # ---------------------------------------------------------------------------
+
 
 def test_conflicts_no_docker(capsys):
     """With no Docker containers there should be no conflicts."""
@@ -262,9 +305,11 @@ def test_conflicts_no_docker(capsys):
 # R1 — ProcessInfo name enrichment
 # ---------------------------------------------------------------------------
 
+
 def test_process_info_enrichment_node():
     """node + ["/usr/bin/node", "server.js"] → name becomes 'node (server.js)'."""
     from kport.inspectors.base import ProcessInfo
+
     pi = ProcessInfo(pid=1, name="node", cmdline=["/usr/bin/node", "server.js"])
     assert pi.name == "node (server.js)"
 
@@ -272,6 +317,7 @@ def test_process_info_enrichment_node():
 def test_process_info_enrichment_python_m():
     """python3 -m http.server → name becomes 'python3 (http.server)'."""
     from kport.inspectors.base import ProcessInfo
+
     pi = ProcessInfo(pid=2, name="python3", cmdline=["python3", "-m", "http.server"])
     assert pi.name == "python3 (http.server)"
 
@@ -279,6 +325,7 @@ def test_process_info_enrichment_python_m():
 def test_process_info_enrichment_java_jar():
     """java -jar app.jar → name becomes 'java (app.jar)'."""
     from kport.inspectors.base import ProcessInfo
+
     pi = ProcessInfo(pid=3, name="java", cmdline=["java", "-jar", "/opt/app.jar"])
     assert pi.name == "java (app.jar)"
 
@@ -286,6 +333,7 @@ def test_process_info_enrichment_java_jar():
 def test_process_info_no_enrichment_for_non_runtime():
     """nginx has no enrichment rule; name stays unchanged."""
     from kport.inspectors.base import ProcessInfo
+
     pi = ProcessInfo(pid=4, name="nginx", cmdline=["nginx", "-g", "daemon off;"])
     assert pi.name == "nginx"
 
@@ -293,6 +341,7 @@ def test_process_info_no_enrichment_for_non_runtime():
 def test_process_info_enrichment_short_cmdline():
     """node with only one cmdline entry (no script arg) stays as-is."""
     from kport.inspectors.base import ProcessInfo
+
     pi = ProcessInfo(pid=5, name="node", cmdline=["node"])
     assert pi.name == "node"
 
@@ -301,9 +350,11 @@ def test_process_info_enrichment_short_cmdline():
 # R16 — Safety config is additive, not replacement
 # ---------------------------------------------------------------------------
 
+
 def test_safety_config_additive_ports():
     """User config protected_ports adds to defaults, doesn't replace them."""
     from kport.cli import check_safety_policy
+
     inspector = FakeInspector()
     # Port 22 must still be blocked even when user only config'd port 9999
     args = _args(command="kill", port=22, json=True, bypass_safety=False)
@@ -316,18 +367,22 @@ def test_safety_config_additive_ports():
 def test_safety_config_additive_processes():
     """User config protected_processes adds to defaults, not replaces."""
     from kport.cli import check_safety_policy
+
     pi = ProcessInfo(pid=100, name="systemd")
     inspector = FakeInspector(process_info={100: pi})
     args = _args(command="kill", port=5000, json=True, bypass_safety=False)
     args.protected_ports = None
     args.protected_processes = ["mycustomapp"]  # user adds custom — systemd must stay
     ok, msg = check_safety_policy(None, [100], args, inspector)
-    assert ok is False, "systemd must remain protected even when user adds custom processes"
+    assert ok is False, (
+        "systemd must remain protected even when user adds custom processes"
+    )
 
 
 # ---------------------------------------------------------------------------
 # P6 — Watch state diff detects process name changes
 # ---------------------------------------------------------------------------
+
 
 def test_states_differ_detects_process_name_change():
     """_states_differ must return True when same PID runs a different process."""
@@ -341,15 +396,18 @@ def test_states_differ_detects_process_name_change():
         if a["type"] != b["type"]:
             return True
         if a["type"] == "docker":
-            return a["container"] != b.get("container") or a["status"] != b.get("status")
-        if a["type"] == "local":
-            return (
-                set(a["pids"]) != set(b.get("pids", []))
-                or sorted(a["processes"]) != sorted(b.get("processes", []))
+            return a["container"] != b.get("container") or a["status"] != b.get(
+                "status"
             )
+        if a["type"] == "local":
+            return set(a["pids"]) != set(b.get("pids", [])) or sorted(
+                a["processes"]
+            ) != sorted(b.get("processes", []))
         return False
 
-    assert _states_differ(state_a, state_b) is True, "Name change on same PID should be detected"
+    assert _states_differ(state_a, state_b) is True, (
+        "Name change on same PID should be detected"
+    )
     assert _states_differ(state_a, state_a) is False, "Same state should not differ"
 
 
@@ -357,9 +415,11 @@ def test_states_differ_detects_process_name_change():
 # FakeInspector compatibility — kill_pid debug param
 # ---------------------------------------------------------------------------
 
+
 def test_fake_inspector_kill_pid_signature():
     """FakeInspector.kill_pid must accept the debug= param added in base.py."""
     inspector = FakeInspector(pids_on_port={8080: [1234]})
-    ok, msg = inspector.kill_pid(1234, graceful_timeout=3.0, force=False, dry_run=False, assume_yes=True)
+    ok, msg = inspector.kill_pid(
+        1234, graceful_timeout=3.0, force=False, dry_run=False, assume_yes=True
+    )
     assert ok is True
-

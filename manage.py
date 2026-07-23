@@ -90,7 +90,7 @@ def cmd_setup() -> int:
     
     # 1. Install dependencies in editable mode
     info("Installing package and development dependencies in editable mode...")
-    pip_cmd = [sys.executable, "-m", "pip", "install", "-e", ".[dev,mcp,packaging]"]
+    pip_cmd = [sys.executable, "-m", "pip", "install", "--break-system-packages", "-e", ".[dev,mcp,packaging]"]
     print(f"$ {' '.join(pip_cmd)}")
     res = subprocess.run(pip_cmd, cwd=str(REPO_ROOT))
     if res.returncode != 0:

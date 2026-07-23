@@ -1,0 +1,21 @@
+pkgname=kport
+pkgver={version}
+pkgrel=1
+pkgdesc="Cross-platform port inspector and killer"
+arch=('any')
+url="https://github.com/farman20ali/port-killer"
+license=('Apache')
+depends=('python')
+makedepends=('python-build' 'python-installer' 'python-wheel')
+source=("https://github.com/farman20ali/port-killer/releases/download/v$pkgver/kport-$pkgver.tar.gz")
+sha256sums=('{sha256}')
+
+build() {
+  cd "$pkgname-$pkgver"
+  python -m build --wheel --no-isolation
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  python -m installer --destdir="$pkgdir" dist/*.whl
+}

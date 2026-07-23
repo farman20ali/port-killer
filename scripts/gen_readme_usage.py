@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """gen_readme_usage.py -- Regenerate README.md Usage section from live --help output.
 
 Usage:
@@ -31,6 +31,7 @@ SUBCOMMANDS = [
     ["docker"],
     ["conflicts"],
     ["watch"],
+    ["interactive"],
     ["mcp"],
 ]
 

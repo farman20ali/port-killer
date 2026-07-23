@@ -10,6 +10,7 @@ import sys
 from typing import List, Optional, Tuple
 from dataclasses import dataclass
 
+
 @dataclass
 class DockerPortMapping:
     container_id: str
@@ -43,16 +44,24 @@ def list_docker_mappings(debug: bool = False) -> List[DockerPortMapping]:
         return []
 
     # Get container ID, Names, Image, Status, Ports, and Labels in a single subprocess call
-    ps = _run_docker([
-        "ps", "--no-trunc", 
-        "--format", "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}\t{{.Labels}}"
-    ], debug=debug)
+    ps = _run_docker(
+        [
+            "ps",
+            "--no-trunc",
+            "--format",
+            "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}\t{{.Labels}}",
+        ],
+        debug=debug,
+    )
 
     if ps.returncode != 0:
         if debug:
             err = ps.stderr.strip()
             if "permission denied" in err.lower() or "cannot connect" in err.lower():
-                print("[debug] Docker socket not accessible — is Docker running? Do you have permission (e.g. docker group)?", file=sys.stderr)
+                print(
+                    "[debug] Docker socket not accessible — is Docker running? Do you have permission (e.g. docker group)?",
+                    file=sys.stderr,
+                )
             else:
                 print(f"[debug] docker ps failed: {err}", file=sys.stderr)
         return []
@@ -64,7 +73,7 @@ def list_docker_mappings(debug: bool = False) -> List[DockerPortMapping]:
         parts = line.split("\t")
         if len(parts) < 5:
             continue
-        
+
         container_id = parts[0].strip()
         name = parts[1].strip()
         image = parts[2].strip()
@@ -83,13 +92,13 @@ def list_docker_mappings(debug: bool = False) -> List[DockerPortMapping]:
                 continue
 
             left, right = [e.strip() for e in entry.split("->", 1)]
-            
+
             # Host binding: "0.0.0.0:8080" or "[::]:8080"
             m_left = re.search(r":(\d+)$", left)
             if not m_left:
                 continue
             host_port = int(m_left.group(1))
-            host_ip = left[:left.rfind(":")].strip() or None
+            host_ip = left[: left.rfind(":")].strip() or None
 
             # Container binding: "80/tcp"
             m_right = re.match(r"^(\d+)\/(tcp|udp)$", right)
@@ -143,12 +152,16 @@ def list_docker_mappings(debug: bool = False) -> List[DockerPortMapping]:
     return sorted(uniq, key=lambda x: (x.host_port, x.container_name))
 
 
-def docker_mappings_for_host_port(port: int, debug: bool = False) -> List[DockerPortMapping]:
+def docker_mappings_for_host_port(
+    port: int, debug: bool = False
+) -> List[DockerPortMapping]:
     """Retrieve Docker port mappings matching a specific host port."""
     return [m for m in list_docker_mappings(debug=debug) if m.host_port == port]
 
 
-def docker_action_on_container(container_id: str, action: str, dry_run: bool, debug: bool = False) -> Tuple[bool, str]:
+def docker_action_on_container(
+    container_id: str, action: str, dry_run: bool, debug: bool = False
+) -> Tuple[bool, str]:
     """
     Apply action (stop, restart, rm) on a Docker container.
 

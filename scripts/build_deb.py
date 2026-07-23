@@ -350,14 +350,21 @@ def main() -> None:
         print("⚠️  This does not look like a Debian/Ubuntu system.")
         print("Building .deb typically requires Debian/Ubuntu tooling (dpkg-buildpackage, debhelper).")
 
-    print("\nWhat would you like to do?")
-    print("1. Check build tools")
-    print("2. Install build dependencies (apt-get, requires sudo)")
-    print("3. Build .deb")
-    print("4. Build .deb and show install command")
-    print("0. Exit")
+    if len(sys.argv) > 1:
+        choice = sys.argv[1].strip()
+    else:
+        print("\nWhat would you like to do?")
+        print("1. Check build tools")
+        print("2. Install build dependencies (apt-get, requires sudo)")
+        print("3. Build .deb")
+        print("4. Build .deb and show install command")
+        print("0. Exit")
 
-    choice = input("\nEnter your choice (0-4): ").strip()
+        try:
+            choice = input("\nEnter your choice (0-4): ").strip()
+        except EOFError:
+            print("0")
+            choice = "0"
 
     if choice == "0":
         print("👋 Goodbye!")
@@ -402,7 +409,11 @@ def main() -> None:
             unmet = check_debian_build_deps(work_dir)
         if unmet:
             print("⚠️  Missing Build-Depends: " + ", ".join(unmet))
-            proceed = input("Install missing Build-Depends now? (y/N): ").strip().lower()
+            try:
+                proceed = input("Install missing Build-Depends now? (y/N): ").strip().lower()
+            except EOFError:
+                proceed = "n"
+                print()
             if proceed in ("y", "yes"):
                 install_missing_packages(unmet)
             else:

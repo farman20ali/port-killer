@@ -177,24 +177,24 @@ def build_deb(version: str, check: bool, dry_run: bool) -> bool:
             err("build_deb.py not found")
             return False
         result = subprocess.run(
-            [sys.executable, str(script_path)],
-            input="1\n", text=True, cwd=str(REPO_ROOT),
+            [sys.executable, str(script_path), "1"],
+            cwd=str(REPO_ROOT),
         )
         return result.returncode == 0
 
-    # Non-interactive build: send "3\n" (just build)
+    # Non-interactive build: pass "3" as argument (just build)
     script_path = SCRIPT_DIR / "build_deb.py"
     if not script_path.exists():
         err("build_deb.py not found")
         return False
 
     if dry_run:
-        warn("DRY RUN — would run: python build_deb.py  [choice: 3]")
+        warn("DRY RUN — would run: python build_deb.py 3")
         return True
 
     result = subprocess.run(
-        [sys.executable, str(script_path)],
-        input="3\n", text=True, cwd=str(REPO_ROOT),
+        [sys.executable, str(script_path), "3"],
+        cwd=str(REPO_ROOT),
     )
     if result.returncode == 0:
         matches = list((REPO_ROOT / "dist" / "deb").glob("*.deb"))

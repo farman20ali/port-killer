@@ -45,6 +45,35 @@ def sync_version(version: str) -> None:
             rf'\1"{version}"',
         )
 
+    win_version = ROOT / "packaging" / "windows" / "version.txt"
+    if win_version.exists():
+        # e.g., "4.0.0" -> "4, 0, 0, 0" and "4.0.0.0"
+        m = re.match(r"^(\d+)\.(\d+)\.(\d+)", version)
+        if m:
+            major, minor, patch = m.groups()
+            tuple_str = f"({major}, {minor}, {patch}, 0)"
+            dotted_str = f"{major}.{minor}.{patch}.0"
+            replace_once(
+                win_version,
+                r'(filevers=)\([^)]+\)',
+                f'\\g<1>{tuple_str}',
+            )
+            replace_once(
+                win_version,
+                r'(prodvers=)\([^)]+\)',
+                f'\\g<1>{tuple_str}',
+            )
+            replace_once(
+                win_version,
+                r"(\s*StringStruct\(u'FileVersion',\s*u')[^']+'\),",
+                f"\\g<1>{dotted_str}'),",
+            )
+            replace_once(
+                win_version,
+                r"(\s*StringStruct\(u'ProductVersion',\s*u')[^']+'\),",
+                f"\\g<1>{dotted_str}'),",
+            )
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Sync kport version metadata")

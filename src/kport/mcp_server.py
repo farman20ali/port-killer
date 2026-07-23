@@ -11,7 +11,11 @@ import traceback
 from typing import Dict, Any
 
 from .inspectors import get_inspector
-from .docker_engine import list_docker_mappings, docker_mappings_for_host_port, docker_action_on_container
+from .docker_engine import (
+    list_docker_mappings,
+    docker_mappings_for_host_port,
+    docker_action_on_container,
+)
 from . import __version__
 from .constants import PROTECTED_PORTS, PROTECTED_PROCESS_NAMES
 
@@ -19,6 +23,7 @@ from .constants import PROTECTED_PORTS, PROTECTED_PROCESS_NAMES
 # MCP and CLI now share identical default protection lists.
 PROTECTED_PORTS = PROTECTED_PORTS  # re-export for backward compat
 PROTECTED_PROCESS_NAMES = PROTECTED_PROCESS_NAMES  # re-export for backward compat
+
 
 def load_mcp_config() -> dict:
     """Load configuration dictionary from default kport config locations."""
@@ -49,10 +54,7 @@ TOOLS = [
     {
         "name": "list_ports",
         "description": "Lists all active listening ports on the host machine, including both local processes and Docker containers with their PIDs, names, and states.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {}
-        }
+        "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "inspect_port",
@@ -64,11 +66,11 @@ TOOLS = [
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 65535,
-                    "description": "The port number to inspect."
+                    "description": "The port number to inspect.",
                 }
             },
-            "required": ["port"]
-        }
+            "required": ["port"],
+        },
     },
     {
         "name": "kill_port",
@@ -80,23 +82,23 @@ TOOLS = [
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 65535,
-                    "description": "The port number to free up."
+                    "description": "The port number to free up.",
                 },
                 "force": {
                     "type": "boolean",
                     "default": True,
-                    "description": "Whether to force-kill (SIGKILL/fuser fallback) the process if graceful SIGTERM fails."
+                    "description": "Whether to force-kill (SIGKILL/fuser fallback) the process if graceful SIGTERM fails.",
                 },
                 "docker_action": {
                     "type": "string",
                     "enum": ["stop", "restart", "rm"],
                     "default": "stop",
-                    "description": "The action to perform if the port belongs to a Docker container (stop, restart, or remove container)."
-                }
+                    "description": "The action to perform if the port belongs to a Docker container (stop, restart, or remove container).",
+                },
             },
-            "required": ["port"]
-        }
-    }
+            "required": ["port"],
+        },
+    },
 ]
 
 
@@ -107,29 +109,30 @@ def handle_list_ports(inspector) -> Dict[str, Any]:
 
     local_list = []
     for b in local_bindings:
-        local_list.append({
-            "port": b.port,
-            "pid": b.pid,
-            "process_name": b.process_name,
-            "state": b.state,
-            "address": b.laddr
-        })
+        local_list.append(
+            {
+                "port": b.port,
+                "pid": b.pid,
+                "process_name": b.process_name,
+                "state": b.state,
+                "address": b.laddr,
+            }
+        )
 
     docker_list = []
     for d in docker_maps:
-        docker_list.append({
-            "port": d.host_port,
-            "container_name": d.container_name,
-            "image": d.image,
-            "status": d.status,
-            "container_port": d.container_port,
-            "protocol": d.proto
-        })
+        docker_list.append(
+            {
+                "port": d.host_port,
+                "container_name": d.container_name,
+                "image": d.image,
+                "status": d.status,
+                "container_port": d.container_port,
+                "protocol": d.proto,
+            }
+        )
 
-    return {
-        "local_processes": local_list,
-        "docker_containers": docker_list
-    }
+    return {"local_processes": local_list, "docker_containers": docker_list}
 
 
 def handle_inspect_port(inspector, port: int) -> Dict[str, Any]:
@@ -157,7 +160,9 @@ def handle_inspect_port(inspector, port: int) -> Dict[str, Any]:
     if not pids:
         if local_bindings:
             response["type"] = "local-unknown"
-            response["message"] = "Port in use, but owning PID is not visible (needs administrative privileges)"
+            response["message"] = (
+                "Port in use, but owning PID is not visible (needs administrative privileges)"
+            )
         else:
             response["type"] = "free"
     else:
@@ -166,13 +171,15 @@ def handle_inspect_port(inspector, port: int) -> Dict[str, Any]:
         for pid in pids:
             info = inspector.get_process_info(pid)
             if info:
-                proc_list.append({
-                    "pid": pid,
-                    "name": info.name,
-                    "exe": info.exe,
-                    "cmdline": info.cmdline,
-                    "user": info.user
-                })
+                proc_list.append(
+                    {
+                        "pid": pid,
+                        "name": info.name,
+                        "exe": info.exe,
+                        "cmdline": info.cmdline,
+                        "user": info.user,
+                    }
+                )
             else:
                 proc_list.append({"pid": pid, "message": "process details unavailable"})
         response["processes"] = proc_list
@@ -180,7 +187,9 @@ def handle_inspect_port(inspector, port: int) -> Dict[str, Any]:
     return response
 
 
-def handle_kill_port(inspector, port: int, force: bool = True, docker_action: str = "stop") -> Dict[str, Any]:
+def handle_kill_port(
+    inspector, port: int, force: bool = True, docker_action: str = "stop"
+) -> Dict[str, Any]:
     """Execute kill_port tool request under safety shield validations."""
     if not (1 <= port <= 65535):
         raise ValueError(f"Port {port} is out of bounds (1-65535)")
@@ -194,7 +203,7 @@ def handle_kill_port(inspector, port: int, force: bool = True, docker_action: st
     protected_ports = set(PROTECTED_PORTS)
     config_ports = cfg.get("protected_ports")
     if isinstance(config_ports, list):
-        protected_ports.update(config_ports)   # additive union
+        protected_ports.update(config_ports)  # additive union
 
     protected_procs = set(PROTECTED_PROCESS_NAMES)
     config_procs = cfg.get("protected_processes")
@@ -205,7 +214,7 @@ def handle_kill_port(inspector, port: int, force: bool = True, docker_action: st
     if port in protected_ports:
         return {
             "success": False,
-            "message": f"Security Shield Active: Port {port} is a critical system/database socket. AI is prevented from terminating it."
+            "message": f"Security Shield Active: Port {port} is a critical system/database socket. AI is prevented from terminating it.",
         }
 
     inspector = get_inspector()
@@ -221,15 +230,17 @@ def handle_kill_port(inspector, port: int, force: bool = True, docker_action: st
                 "type": "docker",
                 "container_name": m.container_name,
                 "action": docker_action,
-                "message": "Removing a Docker container is irreversible and requires force parameter to be explicitly set to True."
+                "message": "Removing a Docker container is irreversible and requires force parameter to be explicitly set to True.",
             }
-        ok, msg = docker_action_on_container(m.container_id, docker_action, dry_run=False)
+        ok, msg = docker_action_on_container(
+            m.container_id, docker_action, dry_run=False
+        )
         return {
             "success": ok,
             "type": "docker",
             "container_name": m.container_name,
             "action": docker_action,
-            "message": msg
+            "message": msg,
         }
 
     # 4. No PIDs path
@@ -239,12 +250,9 @@ def handle_kill_port(inspector, port: int, force: bool = True, docker_action: st
             return {
                 "success": False,
                 "type": "local-unknown",
-                "message": "Port is active but owning PID is not visible. Start the MCP server with elevated privileges (admin/sudo)."
+                "message": "Port is active but owning PID is not visible. Start the MCP server with elevated privileges (admin/sudo).",
             }
-        return {
-            "success": True,
-            "message": f"Port {port} is already free."
-        }
+        return {"success": True, "message": f"Port {port} is already free."}
 
     # 5. Critical process name shield check
     for pid in pids:
@@ -255,17 +263,19 @@ def handle_kill_port(inspector, port: int, force: bool = True, docker_action: st
         if base_name in protected_procs:
             return {
                 "success": False,
-                "message": f"Security Shield Active: PID {pid} runs critical system process '{info.name}'. Termination aborted."
+                "message": f"Security Shield Active: PID {pid} runs critical system process '{info.name}'. Termination aborted.",
             }
 
     # 6. Local process escalated kill
-    ok, msg = inspector.kill_port(port, graceful_timeout=3.0, force=force, dry_run=False, debug=True, assume_yes=True)
-    return {
-        "success": ok,
-        "type": "local",
-        "pids_targeted": pids,
-        "message": msg
-    }
+    ok, msg = inspector.kill_port(
+        port,
+        graceful_timeout=3.0,
+        force=force,
+        dry_run=False,
+        debug=True,
+        assume_yes=True,
+    )
+    return {"success": ok, "type": "local", "pids_targeted": pids, "message": msg}
 
 
 def run_mcp_server() -> None:
@@ -293,26 +303,15 @@ def run_mcp_server() -> None:
                     "id": req_id,
                     "result": {
                         "protocolVersion": "2024-11-05",
-                        "capabilities": {
-                            "tools": {}
-                        },
-                        "serverInfo": {
-                            "name": "kport",
-                            "version": __version__
-                        }
-                    }
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": "kport", "version": __version__},
+                    },
                 }
                 sys.stdout.write(json.dumps(resp) + "\n")
                 sys.stdout.flush()
 
             elif method == "tools/list":
-                resp = {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "tools": TOOLS
-                    }
-                }
+                resp = {"jsonrpc": "2.0", "id": req_id, "result": {"tools": TOOLS}}
                 sys.stdout.write(json.dumps(resp) + "\n")
                 sys.stdout.flush()
 
@@ -330,7 +329,9 @@ def run_mcp_server() -> None:
                         target_port = int(arguments.get("port"))
                         force_flag = bool(arguments.get("force", True))
                         docker_act = str(arguments.get("docker_action", "stop"))
-                        result_data = handle_kill_port(inspector, target_port, force_flag, docker_act)
+                        result_data = handle_kill_port(
+                            inspector, target_port, force_flag, docker_act
+                        )
                     else:
                         raise ValueError(f"Unknown tool: {tool_name}")
 
@@ -341,11 +342,13 @@ def run_mcp_server() -> None:
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": json.dumps(result_data, indent=2)
+                                    "text": json.dumps(result_data, indent=2),
                                 }
                             ],
-                            "isError": not result_data.get("success", True) if "success" in result_data else False
-                        }
+                            "isError": not result_data.get("success", True)
+                            if "success" in result_data
+                            else False,
+                        },
                     }
                 except Exception as ex:
                     log(f"Tool execution failed: {traceback.format_exc()}")
@@ -356,11 +359,11 @@ def run_mcp_server() -> None:
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": f"Error executing tool '{tool_name}': {str(ex)}"
+                                    "text": f"Error executing tool '{tool_name}': {str(ex)}",
                                 }
                             ],
-                            "isError": True
-                        }
+                            "isError": True,
+                        },
                     }
                 sys.stdout.write(json.dumps(resp) + "\n")
                 sys.stdout.flush()
@@ -376,8 +379,8 @@ def run_mcp_server() -> None:
                         "id": req_id,
                         "error": {
                             "code": -32601,
-                            "message": f"Method not found: {method}"
-                        }
+                            "message": f"Method not found: {method}",
+                        },
                     }
                     sys.stdout.write(json.dumps(resp) + "\n")
                     sys.stdout.flush()

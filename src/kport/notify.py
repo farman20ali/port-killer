@@ -65,9 +65,7 @@ def _notify_macos(title: str, message: str) -> None:
     safe_title = title.replace('"', '\\"')
     safe_msg = message.replace('"', '\\"')
     script = (
-        f'display notification "{safe_msg}" '
-        f'with title "{safe_title}" '
-        f'subtitle "kport"'
+        f'display notification "{safe_msg}" with title "{safe_title}" subtitle "kport"'
     )
     subprocess.Popen(
         ["osascript", "-e", script],
@@ -105,8 +103,17 @@ def _notify_windows(title: str, message: str) -> None:
     ).format(title=safe_title, msg=safe_msg)
 
     subprocess.Popen(
-        [ps, "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden",
-         "-ExecutionPolicy", "Bypass", "-Command", script],
+        [
+            ps,
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )

@@ -9,79 +9,134 @@ from .base import BaseInspector, PortBinding, ProcessInfo
 
 import psutil  # Safe to import because this implementation is dynamically loaded only when psutil is active.
 
+
 class PsutilInspector(BaseInspector):
-    def list_listening(self) -> List[PortBinding]:
-        # R6 fix: key on (port, family, pid, state) so distinct processes/families
-        # on the same port are preserved, not silently dropped.
+    def list_listening(self, proto: str = "tcp") -> List[PortBinding]:
         bindings: Dict[Tuple, PortBinding] = {}
-        for conn in psutil.net_connections(kind='inet'):
-            if not conn.laddr:
+        kinds = (
+            ["tcp"]
+            if proto == "tcp"
+            else (["udp"] if proto == "udp" else ["tcp", "udp"])
+        )
+        for kind in kinds:
+            try:
+                conns = psutil.net_connections(kind=kind)
+            except Exception:
                 continue
-            laddr = f"{conn.laddr.ip}:{conn.laddr.port}" if hasattr(conn.laddr, 'ip') else f"{conn.laddr[0]}:{conn.laddr[1]}"
-            port = conn.laddr.port if hasattr(conn.laddr, 'port') else conn.laddr[1]
-            family = 'IPv6' if conn.family.name == 'AF_INET6' else 'IPv4'
-            state = conn.status
-            pid = conn.pid
-            proc_name = None
-            if pid:
-                try:
-                    p = psutil.Process(pid)
-                    proc_name = p.name()
-                except Exception:
-                    proc_name = None
-            key = (port, family, pid, state)
-            if key not in bindings:
-                bindings[key] = PortBinding(
-                    port=port,
-                    family=family,
-                    laddr=laddr,
-                    pid=pid,
-                    process_name=proc_name,
-                    state=state
+            for conn in conns:
+                if not conn.laddr:
+                    continue
+                if kind == "tcp" and conn.status != psutil.CONN_LISTEN:
+                    continue
+                laddr = (
+                    f"{conn.laddr.ip}:{conn.laddr.port}"
+                    if hasattr(conn.laddr, "ip")
+                    else f"{conn.laddr[0]}:{conn.laddr[1]}"
                 )
+                port = conn.laddr.port if hasattr(conn.laddr, "port") else conn.laddr[1]
+                family = "IPv6" if conn.family.name == "AF_INET6" else "IPv4"
+                state = conn.status
+                pid = conn.pid
+                proc_name = None
+                if pid:
+                    try:
+                        p = psutil.Process(pid)
+                        proc_name = p.name()
+                    except Exception:
+                        proc_name = None
+                key = (port, family, pid, state)
+                if key not in bindings:
+                    bindings[key] = PortBinding(
+                        port=port,
+                        family=family,
+                        laddr=laddr,
+                        pid=pid,
+                        process_name=proc_name,
+                        state=state,
+                        proto="tcp" if kind == "tcp" else "udp",
+                    )
         return sorted(bindings.values(), key=lambda b: b.port)
 
-    def find_pids_on_port(self, port: int) -> List[int]:
+    def find_pids_on_port(self, port: int, proto: str = "tcp") -> List[int]:
         pids = set()
-        for conn in psutil.net_connections(kind='inet'):
-            if not conn.laddr:
-                continue
+        kinds = (
+            ["tcp"]
+            if proto == "tcp"
+            else (["udp"] if proto == "udp" else ["tcp", "udp"])
+        )
+        for kind in kinds:
             try:
-                conn_port = conn.laddr.port if hasattr(conn.laddr, 'port') else conn.laddr[1]
+                conns = psutil.net_connections(kind=kind)
             except Exception:
                 continue
-            if conn_port == port and conn.pid:
-                pids.add(conn.pid)
+            for conn in conns:
+                if not conn.laddr:
+                    continue
+                if kind == "tcp" and conn.status != psutil.CONN_LISTEN:
+                    continue
+                try:
+                    conn_port = (
+                        conn.laddr.port
+                        if hasattr(conn.laddr, "port")
+                        else conn.laddr[1]
+                    )
+                except Exception:
+                    continue
+                if conn_port == port and conn.pid:
+                    pids.add(conn.pid)
         return sorted(pids)
 
-    def find_bindings_on_port(self, port: int) -> List[PortBinding]:
+    def find_bindings_on_port(self, port: int, proto: str = "tcp") -> List[PortBinding]:
         bindings: List[PortBinding] = []
-        for conn in psutil.net_connections(kind='inet'):
-            if not conn.laddr:
-                continue
+        kinds = (
+            ["tcp"]
+            if proto == "tcp"
+            else (["udp"] if proto == "udp" else ["tcp", "udp"])
+        )
+        for kind in kinds:
             try:
-                conn_port = conn.laddr.port if hasattr(conn.laddr, 'port') else conn.laddr[1]
+                conns = psutil.net_connections(kind=kind)
             except Exception:
                 continue
-            if conn_port != port:
-                continue
-            laddr = f"{conn.laddr.ip}:{conn.laddr.port}" if hasattr(conn.laddr, 'ip') else f"{conn.laddr[0]}:{conn.laddr[1]}"
-            family = 'IPv6' if conn.family.name == 'AF_INET6' else 'IPv4'
-            pid = conn.pid
-            proc_name = None
-            if pid:
+            for conn in conns:
+                if not conn.laddr:
+                    continue
+                if kind == "tcp" and conn.status != psutil.CONN_LISTEN:
+                    continue
                 try:
-                    proc_name = psutil.Process(pid).name()
+                    conn_port = (
+                        conn.laddr.port
+                        if hasattr(conn.laddr, "port")
+                        else conn.laddr[1]
+                    )
                 except Exception:
-                    proc_name = None
-            bindings.append(PortBinding(
-                port=conn_port,
-                family=family,
-                laddr=laddr,
-                pid=pid,
-                process_name=proc_name,
-                state=conn.status,
-            ))
+                    continue
+                if conn_port != port:
+                    continue
+                laddr = (
+                    f"{conn.laddr.ip}:{conn.laddr.port}"
+                    if hasattr(conn.laddr, "ip")
+                    else f"{conn.laddr[0]}:{conn.laddr[1]}"
+                )
+                family = "IPv6" if conn.family.name == "AF_INET6" else "IPv4"
+                pid = conn.pid
+                proc_name = None
+                if pid:
+                    try:
+                        proc_name = psutil.Process(pid).name()
+                    except Exception:
+                        proc_name = None
+                bindings.append(
+                    PortBinding(
+                        port=conn_port,
+                        family=family,
+                        laddr=laddr,
+                        pid=pid,
+                        process_name=proc_name,
+                        state=conn.status,
+                        proto="tcp" if kind == "tcp" else "udp",
+                    )
+                )
         return sorted(bindings, key=lambda b: b.port)
 
     def get_process_info(self, pid: int) -> Optional[ProcessInfo]:
@@ -100,7 +155,7 @@ class PsutilInspector(BaseInspector):
                 pass
             user = None
             try:
-                user = p.username() if hasattr(p, 'username') else None
+                user = p.username() if hasattr(p, "username") else None
             except Exception:
                 pass
             return ProcessInfo(
@@ -116,44 +171,81 @@ class PsutilInspector(BaseInspector):
     def find_pids_by_name(self, name: str, exact: bool = False) -> List[int]:
         out = []
         name_lower = name.lower()
-        for p in psutil.process_iter(['pid', 'name', 'cmdline']):
+        for p in psutil.process_iter(["pid", "name", "cmdline"]):
             try:
-                pname = p.info['name'] or ''
+                pname = p.info["name"] or ""
                 compare = pname.lower()
-                match = (compare == name_lower) if exact else (name_lower in compare or any(name_lower in (c or '').lower() for c in (p.info.get('cmdline') or [])))
+                match = (
+                    (compare == name_lower)
+                    if exact
+                    else (
+                        name_lower in compare
+                        or any(
+                            name_lower in (c or "").lower()
+                            for c in (p.info.get("cmdline") or [])
+                        )
+                    )
+                )
                 if match:
-                    out.append(p.info['pid'])
+                    out.append(p.info["pid"])
             except Exception:
                 continue
         return sorted(set(out))
 
-    def find_ports_by_process_name(self, name: str, exact: bool = False) -> List[PortBinding]:
+    def find_ports_by_process_name(
+        self, name: str, exact: bool = False, proto: str = "tcp"
+    ) -> List[PortBinding]:
         results: List[PortBinding] = []
         name_lower = name.lower()
-        for conn in psutil.net_connections(kind='inet'):
-            if not conn.laddr:
-                continue
-            pid = conn.pid
-            if not pid:
-                continue
+        kinds = (
+            ["tcp"]
+            if proto == "tcp"
+            else (["udp"] if proto == "udp" else ["tcp", "udp"])
+        )
+        for kind in kinds:
             try:
-                p = psutil.Process(pid)
-                pname = (p.name() or '').lower()
-                cmdline = ' '.join(p.cmdline() or []).lower()
-                matched = (pname == name_lower) if exact else (name_lower in pname or name_lower in cmdline)
-                if matched:
-                    laddr = f"{conn.laddr.ip}:{conn.laddr.port}" if hasattr(conn.laddr, 'ip') else f"{conn.laddr[0]}:{conn.laddr[1]}"
-                    family = 'IPv6' if conn.family.name == 'AF_INET6' else 'IPv4'
-                    results.append(PortBinding(
-                        port=conn.laddr.port if hasattr(conn.laddr, 'port') else conn.laddr[1],
-                        family=family,
-                        laddr=laddr,
-                        pid=pid,
-                        process_name=p.name(),
-                        state=conn.status
-                    ))
+                conns = psutil.net_connections(kind=kind)
             except Exception:
                 continue
+            for conn in conns:
+                if not conn.laddr:
+                    continue
+                if kind == "tcp" and conn.status != psutil.CONN_LISTEN:
+                    continue
+                pid = conn.pid
+                if not pid:
+                    continue
+                try:
+                    p = psutil.Process(pid)
+                    pname = (p.name() or "").lower()
+                    cmdline = " ".join(p.cmdline() or []).lower()
+                    matched = (
+                        (pname == name_lower)
+                        if exact
+                        else (name_lower in pname or name_lower in cmdline)
+                    )
+                    if matched:
+                        laddr = (
+                            f"{conn.laddr.ip}:{conn.laddr.port}"
+                            if hasattr(conn.laddr, "ip")
+                            else f"{conn.laddr[0]}:{conn.laddr[1]}"
+                        )
+                        family = "IPv6" if conn.family.name == "AF_INET6" else "IPv4"
+                        results.append(
+                            PortBinding(
+                                port=conn.laddr.port
+                                if hasattr(conn.laddr, "port")
+                                else conn.laddr[1],
+                                family=family,
+                                laddr=laddr,
+                                pid=pid,
+                                process_name=p.name(),
+                                state=conn.status,
+                                proto="tcp" if kind == "tcp" else "udp",
+                            )
+                        )
+                except Exception:
+                    continue
         return sorted(results, key=lambda b: (b.pid or 0, b.port))
 
     def send_signal(self, pid: int, sig: int) -> bool:

@@ -11,15 +11,15 @@ from dataclasses import asdict
 
 
 class Colors:
-    RED = '\033[91m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    BLUE = '\033[94m'
-    MAGENTA = '\033[95m'
-    CYAN = '\033[96m'
-    WHITE = '\033[97m'
-    BOLD = '\033[1m'
-    RESET = '\033[0m'
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    BLUE = "\033[94m"
+    MAGENTA = "\033[95m"
+    CYAN = "\033[96m"
+    WHITE = "\033[97m"
+    BOLD = "\033[1m"
+    RESET = "\033[0m"
 
 
 # R13 fix: set up ANSI once at import time, not on every colorize() call.
@@ -34,6 +34,7 @@ def _enable_ansi_once() -> None:
         return
     try:
         import ctypes
+
         kernel32 = ctypes.windll.kernel32
         handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
         mode = ctypes.c_ulong()
@@ -56,12 +57,15 @@ def colorize(text: str, color: str) -> str:
 # Table helpers
 # ---------------------------------------------------------------------------
 
+
 def _trunc(s: str, n: int) -> str:
     """Truncate string to n chars with ellipsis if needed."""
-    return s if len(s) <= n else s[:n - 1] + "…"
+    return s if len(s) <= n else s[: n - 1] + "…"
 
 
-def _col_widths(rows: List[List[str]], headers: List[str], max_width: int = 40) -> List[int]:
+def _col_widths(
+    rows: List[List[str]], headers: List[str], max_width: int = 40
+) -> List[int]:
     """Compute column widths as max(header, data) capped at max_width."""
     widths = [len(h) for h in headers]
     for row in rows:
@@ -122,7 +126,12 @@ def choose_docker_action(assume_yes: bool) -> Optional[str]:
     """Interactive Docker action selector."""
     if assume_yes:
         return "stop"
-    print(colorize("\nChoose action:\n1) Stop container\n2) Restart container\n3) Remove container (irreversible!)\n4) Cancel", Colors.CYAN))
+    print(
+        colorize(
+            "\nChoose action:\n1) Stop container\n2) Restart container\n3) Remove container (irreversible!)\n4) Cancel",
+            Colors.CYAN,
+        )
+    )
     try:
         resp = input(colorize("Select (1-4): ", Colors.MAGENTA)).strip()
     except KeyboardInterrupt:
@@ -139,10 +148,7 @@ def print_table_docker(mappings: List[Any]) -> None:
         return
 
     headers = ["PORT", "CONTAINER", "IMAGE", "STATUS"]
-    rows = [
-        [str(m.host_port), m.container_name, m.image, m.status]
-        for m in mappings
-    ]
+    rows = [[str(m.host_port), m.container_name, m.image, m.status] for m in mappings]
     # P5 fix: dynamic column widths for long image / container names
     widths = _col_widths(rows, headers)
     header_line = "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers))
