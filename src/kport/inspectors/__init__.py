@@ -52,7 +52,10 @@ __all__ = [
 
 import importlib.util as _ilu
 
-USING_PSUTIL = _ilu.find_spec("psutil") is not None
+try:
+    USING_PSUTIL = _ilu.find_spec("psutil") is not None
+except (ImportError, ValueError):
+    USING_PSUTIL = False
 
 
 def _psutil_accessible() -> bool:
