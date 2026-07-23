@@ -32,7 +32,8 @@ psutil = ["psutil>=5.9.0"]
 mcp = ["mcp>=0.1.0"]
 packaging = [
     "pyinstaller>=6.0.0",
-    "build>=1.0.0"
+    "build>=1.0.0",
+    "twine>=4.0.0"
 ]
 dev = [
     "pytest>=7.0.0",
