@@ -20,6 +20,7 @@ from kport.mcp_server import run_mcp_server, TOOLS, PROTECTED_PORTS
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _send_messages(*messages: dict) -> list[dict]:
     """
     Feed a sequence of JSON-RPC messages to the MCP server and collect responses.
@@ -32,7 +33,7 @@ def _send_messages(*messages: dict) -> list[dict]:
 
     with patch("sys.stdin", StringIO(stdin_data)):
         with patch("sys.stdout", captured_stdout):
-            with patch("sys.stderr", StringIO()):   # suppress MCP debug logs
+            with patch("sys.stderr", StringIO()):  # suppress MCP debug logs
                 run_mcp_server()
 
     raw = captured_stdout.getvalue()
@@ -47,6 +48,7 @@ def _send_messages(*messages: dict) -> list[dict]:
 # ---------------------------------------------------------------------------
 # initialize
 # ---------------------------------------------------------------------------
+
 
 def test_initialize_returns_protocol_version():
     """initialize must echo back protocolVersion 2024-11-05 and server name."""
@@ -72,6 +74,7 @@ def test_initialize_returns_protocol_version():
 # tools/list
 # ---------------------------------------------------------------------------
 
+
 def test_tools_list_returns_all_tools():
     """tools/list must return all three registered tools."""
     responses = _send_messages(
@@ -93,6 +96,7 @@ def test_tools_have_required_schema_fields():
 # ---------------------------------------------------------------------------
 # tools/call – list_ports
 # ---------------------------------------------------------------------------
+
 
 def test_list_ports_returns_dict_with_lists():
     """list_ports must return a dict with local_processes and docker_containers keys."""
@@ -122,6 +126,7 @@ def test_list_ports_returns_dict_with_lists():
 # ---------------------------------------------------------------------------
 # tools/call – inspect_port
 # ---------------------------------------------------------------------------
+
 
 def test_inspect_port_free():
     """inspect_port on a port with no listeners must return type=free."""
@@ -162,6 +167,7 @@ def test_inspect_port_out_of_bounds_raises():
 # ---------------------------------------------------------------------------
 # tools/call – kill_port (safety shield tests)
 # ---------------------------------------------------------------------------
+
 
 def test_kill_port_protected_port_is_blocked():
     """kill_port on a protected port must return success=False without executing kill."""
@@ -209,6 +215,7 @@ def test_kill_port_free_port_succeeds():
 # Notification – no response expected
 # ---------------------------------------------------------------------------
 
+
 def test_initialized_notification_produces_no_response():
     """notifications/initialized is a one-way message and must produce no response."""
     responses = _send_messages(
@@ -220,6 +227,7 @@ def test_initialized_notification_produces_no_response():
 # ---------------------------------------------------------------------------
 # Unknown method
 # ---------------------------------------------------------------------------
+
 
 def test_unknown_method_returns_method_not_found():
     """An unknown method with an id must return error code -32601."""

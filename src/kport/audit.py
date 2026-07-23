@@ -29,7 +29,7 @@ from typing import Any
 
 from . import __version__
 
-_LOG_DIR  = Path.home() / ".kport"
+_LOG_DIR = Path.home() / ".kport"
 _LOG_FILE = _LOG_DIR / "audit.log"
 
 # Maximum audit log size before rotation (10 MiB)
@@ -73,18 +73,19 @@ def _write(record: dict[str, Any]) -> None:
 
 def _base(dry_run: bool, success: bool, message: str) -> dict[str, Any]:
     return {
-        "ts":       datetime.now(timezone.utc).isoformat(),
-        "version":  __version__,
-        "user":     _get_user(),
-        "dry_run":  dry_run,
-        "success":  success,
-        "message":  message,
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "version": __version__,
+        "user": _get_user(),
+        "dry_run": dry_run,
+        "success": success,
+        "message": message,
     }
 
 
 # ---------------------------------------------------------------------------
 # Public audit helpers — called from cli.py / inspector
 # ---------------------------------------------------------------------------
+
 
 def log_kill_port(
     port: int,
@@ -129,8 +130,8 @@ def log_docker_action(
     record = _base(dry_run=dry_run, success=success, message=message)
     record["action"] = "docker_action"
     record["target"] = {
-        "container_id":   container_id,
+        "container_id": container_id,
         "container_name": container_name,
-        "docker_action":  action,
+        "docker_action": action,
     }
     _write(record)

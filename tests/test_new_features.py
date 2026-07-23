@@ -6,6 +6,7 @@ from kport.notify import notify as _desktop_notify
 from kport.cli import handle_product_command
 from kport.mcp_server import handle_kill_port
 from kport.inspectors import get_inspector
+
 # pyrefly: ignore [missing-import]
 from tests.test_commands import FakeInspector, _args
 
@@ -40,11 +41,7 @@ def test_desktop_notify_success(mock_dispatch):
 
 # 3. CLI --profile support
 def test_cli_inspect_with_profile(capsys):
-    config = {
-        "profiles": {
-            "web": [8080]
-        }
-    }
+    config = {"profiles": {"web": [8080]}}
     inspector = FakeInspector()
     args = _args(command="inspect", profile="web", json=True)
     with patch("kport.cli.load_config", return_value=config):
@@ -103,15 +100,15 @@ def test_get_inspector_psutil():
 # 6. Child PID Fetching Tests
 def test_psutil_inspector_get_child_pids():
     from kport.inspectors.psutil_impl import PsutilInspector
-    
+
     mock_child1 = MagicMock()
     mock_child1.pid = 5678
     mock_child2 = MagicMock()
     mock_child2.pid = 9012
-    
+
     mock_process = MagicMock()
     mock_process.children.return_value = [mock_child1, mock_child2]
-    
+
     with patch("psutil.Process", return_value=mock_process):
         inspector = PsutilInspector()
         children = inspector.get_child_pids(1234)
@@ -123,16 +120,28 @@ def test_psutil_inspector_get_child_pids():
 def test_wait_for_exit_success(capsys):
     from kport.cli import handle_product_command
     from kport.inspectors.base import PortBinding
-    
+
     polled = []
+
     class DynamicFakeInspector(FakeInspector):
         def find_pids_on_port(self, port: int, proto: str = "tcp"):
             return [1234]
+
         def find_bindings_on_port(self, port: int, proto: str = "tcp"):
             polled.append(1)
             if len(polled) == 1:
-                return [PortBinding(port=port, family="inet", laddr=f"0.0.0.0:{port}", pid=1234, process_name="node", state="LISTEN")]
+                return [
+                    PortBinding(
+                        port=port,
+                        family="inet",
+                        laddr=f"0.0.0.0:{port}",
+                        pid=1234,
+                        process_name="node",
+                        state="LISTEN",
+                    )
+                ]
             return []
+
         def kill_port(self, port, **kwargs):
             return True, "freed"
 
@@ -140,7 +149,7 @@ def test_wait_for_exit_success(capsys):
     args = _args(command="kill", port=8080, json=True, wait_for_exit=1.0)
     with patch("kport.cli.docker_mappings_for_host_port", return_value=[]):
         rc = handle_product_command(args, inspector)
-    
+
     assert rc == 0
     envelope = json.loads(capsys.readouterr().out)
     assert envelope["schema_version"] == 1
@@ -153,12 +162,23 @@ def test_wait_for_exit_success(capsys):
 def test_wait_for_exit_timeout(capsys):
     from kport.cli import handle_product_command
     from kport.inspectors.base import PortBinding
-    
+
     class TimeoutFakeInspector(FakeInspector):
         def find_pids_on_port(self, port: int, proto: str = "tcp"):
             return [1234]
+
         def find_bindings_on_port(self, port: int, proto: str = "tcp"):
-            return [PortBinding(port=port, family="inet", laddr=f"0.0.0.0:{port}", pid=1234, process_name="node", state="LISTEN")]
+            return [
+                PortBinding(
+                    port=port,
+                    family="inet",
+                    laddr=f"0.0.0.0:{port}",
+                    pid=1234,
+                    process_name="node",
+                    state="LISTEN",
+                )
+            ]
+
         def kill_port(self, port, **kwargs):
             return True, "freed"
 
@@ -166,47 +186,47 @@ def test_wait_for_exit_timeout(capsys):
     args = _args(command="kill", port=8080, json=True, wait_for_exit=0.1)
     with patch("kport.cli.docker_mappings_for_host_port", return_value=[]):
         rc = handle_product_command(args, inspector)
-    
+
     assert rc == 1  # EXIT_GENERAL_ERROR on wait timeout
     envelope = json.loads(capsys.readouterr().out)
     assert envelope["data"]["success"] is True
     assert envelope["data"]["wait_for_exit_ok"] is False
 
+
 def test_get_child_pids_unix():
     from kport.inspectors.system_impl import FallbackInspector
+
     inspector = FallbackInspector()
-    
+
     # Mock self.system and self._run_subprocess
     inspector.system = "Linux"
-    
+
     mock_ps_output = (
-        " PPID   PID\n"
-        "    1   100\n"
-        "  100   101\n"
-        "  101   102\n"
-        "  100   103\n"
-        "    2   200\n"
+        " PPID   PID\n    1   100\n  100   101\n  101   102\n  100   103\n    2   200\n"
     )
-    
+
     class FakeProc:
         returncode = 0
         stdout = mock_ps_output
         stderr = ""
-        
+
     with patch.object(inspector, "_run_subprocess", return_value=FakeProc()):
         children = inspector.get_child_pids(100)
         # Should recursively get 101, 102, 103
         assert sorted(children) == [101, 102, 103]
 
+
 def test_kill_process_tree_logic():
     from kport.inspectors.system_impl import FallbackInspector
+
     inspector = FallbackInspector()
-    
+
     killed_pids = []
+
     def mock_kill_pid(pid, **kwargs):
         killed_pids.append(pid)
         return True, "killed"
-        
+
     with patch.object(inspector, "get_child_pids", return_value=[101, 102]):
         with patch.object(inspector, "kill_pid", side_effect=mock_kill_pid):
             ok, msg = inspector.kill_process_tree(100)
@@ -214,23 +234,26 @@ def test_kill_process_tree_logic():
             # Depth-first order: [101, 102, 100]
             assert killed_pids == [101, 102, 100]
 
+
 def test_cli_kill_tree_option(capsys):
     from kport.cli import handle_product_command
-    
+
     called_kill_tree = []
+
     class TreeFakeInspector(FakeInspector):
         def find_pids_on_port(self, port: int, proto: str = "tcp"):
             return [500]
+
         def kill_port(self, port, **kwargs):
             if kwargs.get("kill_tree"):
                 called_kill_tree.append(port)
             return True, "Port freed"
-            
+
     inspector = TreeFakeInspector()
     args = _args(command="kill", port=8080, json=True, kill_tree=True)
     with patch("kport.cli.docker_mappings_for_host_port", return_value=[]):
         rc = handle_product_command(args, inspector)
-        
+
     assert rc == 0
     assert called_kill_tree == [8080]
 
@@ -239,17 +262,35 @@ def test_cli_kill_tree_option(capsys):
 # 8. UDP Support Tests (Phase 1.2)
 # ---------------------------------------------------------------------------
 
+
 # 8.1 PortBinding.proto field defaults to "tcp"
 def test_port_binding_proto_default():
     from kport.inspectors.base import PortBinding
-    b = PortBinding(port=5353, family="inet", laddr="0.0.0.0:5353", pid=42, process_name="mdnsd", state="LISTEN")
+
+    b = PortBinding(
+        port=5353,
+        family="inet",
+        laddr="0.0.0.0:5353",
+        pid=42,
+        process_name="mdnsd",
+        state="LISTEN",
+    )
     assert b.proto == "tcp"
 
 
 # 8.2 PortBinding.proto can be set to "udp"
 def test_port_binding_proto_udp():
     from kport.inspectors.base import PortBinding
-    b = PortBinding(port=5353, family="inet", laddr="0.0.0.0:5353", pid=42, process_name="mdnsd", state="UDP", proto="udp")
+
+    b = PortBinding(
+        port=5353,
+        family="inet",
+        laddr="0.0.0.0:5353",
+        pid=42,
+        process_name="mdnsd",
+        state="UDP",
+        proto="udp",
+    )
     assert b.proto == "udp"
 
 
@@ -271,7 +312,7 @@ def test_psutil_list_listening_tcp_only():
 
     inspector = PsutilInspector()
 
-    with patch("psutil.net_connections", return_value=[tcp_conn]) as mock_nc:
+    with patch("psutil.net_connections", return_value=[tcp_conn]):
         with patch("psutil.Process") as mock_proc:
             mock_proc.return_value.name.return_value = "node"
             result = inspector.list_listening(proto="tcp")
@@ -368,10 +409,29 @@ def test_fallback_list_listening_filters_proto():
     inspector = FallbackInspector()
     inspector.system = "Linux"
 
-    tcp_binding = PortBinding(port=8080, family="inet", laddr="0.0.0.0:8080", pid=1, process_name="node", state="LISTEN", proto="tcp")
-    udp_binding = PortBinding(port=5353, family="inet", laddr="0.0.0.0:5353", pid=2, process_name="mdnsd", state="UDP", proto="udp")
+    tcp_binding = PortBinding(
+        port=8080,
+        family="inet",
+        laddr="0.0.0.0:8080",
+        pid=1,
+        process_name="node",
+        state="LISTEN",
+        proto="tcp",
+    )
+    udp_binding = PortBinding(
+        port=5353,
+        family="inet",
+        laddr="0.0.0.0:5353",
+        pid=2,
+        process_name="mdnsd",
+        state="UDP",
+        proto="udp",
+    )
 
-    with patch("kport.inspectors.system_impl._list_listening_linux_native", return_value=[tcp_binding, udp_binding]):
+    with patch(
+        "kport.inspectors.system_impl._list_listening_linux_native",
+        return_value=[tcp_binding, udp_binding],
+    ):
         tcp_only = inspector.list_listening(proto="tcp")
         udp_only = inspector.list_listening(proto="udp")
         both = inspector.list_listening(proto="both")
@@ -391,8 +451,17 @@ def test_cli_list_command_proto_udp(capsys):
         def list_listening(self, proto: str = "tcp"):
             received_proto.append(proto)
             if proto in ("udp", "both"):
-                return [PortBinding(port=5353, family="inet", laddr="0.0.0.0:5353",
-                                    pid=10, process_name="mdnsd", state="UDP", proto="udp")]
+                return [
+                    PortBinding(
+                        port=5353,
+                        family="inet",
+                        laddr="0.0.0.0:5353",
+                        pid=10,
+                        process_name="mdnsd",
+                        state="UDP",
+                        proto="udp",
+                    )
+                ]
             return []
 
     inspector = UDPFakeInspector()
@@ -419,9 +488,26 @@ def test_cli_inspect_command_proto_both(capsys):
             # Return bindings with no visible PID mapping (triggers local-unknown path)
             # which exposes the 'bindings' field in JSON output.
             return [
-                PortBinding(port=port, family="inet", laddr=f"0.0.0.0:{port}", pid=None, process_name=None, state="LISTEN", proto="tcp"),
-                PortBinding(port=port, family="inet", laddr=f"0.0.0.0:{port}", pid=None, process_name=None, state="UDP", proto="udp"),
+                PortBinding(
+                    port=port,
+                    family="inet",
+                    laddr=f"0.0.0.0:{port}",
+                    pid=None,
+                    process_name=None,
+                    state="LISTEN",
+                    proto="tcp",
+                ),
+                PortBinding(
+                    port=port,
+                    family="inet",
+                    laddr=f"0.0.0.0:{port}",
+                    pid=None,
+                    process_name=None,
+                    state="UDP",
+                    proto="udp",
+                ),
             ]
+
         def find_pids_on_port(self, port: int, proto: str = "tcp"):
             return []  # No visible PIDs → triggers local-unknown branch with bindings in JSON
 
@@ -455,11 +541,22 @@ def test_cli_kill_command_proto_udp(capsys):
             if proto == "udp":
                 return [777]
             return []
+
         def find_bindings_on_port(self, port: int, proto: str = "tcp"):
             if proto == "udp":
-                return [PortBinding(port=port, family="inet", laddr=f"0.0.0.0:{port}",
-                                    pid=777, process_name="dnsmasq", state="UDP", proto="udp")]
+                return [
+                    PortBinding(
+                        port=port,
+                        family="inet",
+                        laddr=f"0.0.0.0:{port}",
+                        pid=777,
+                        process_name="dnsmasq",
+                        state="UDP",
+                        proto="udp",
+                    )
+                ]
             return []
+
         def kill_port(self, port, **kwargs):
             killed.append((port, kwargs.get("proto", "tcp")))
             return True, "killed"
@@ -478,9 +575,11 @@ def test_cli_kill_command_proto_udp(capsys):
 # 9. Process Manager Awareness Tests (Phase 3.1)
 # ---------------------------------------------------------------------------
 
+
 # 9.1 Invalid PID returns None
 def test_detect_process_manager_invalid_pid():
     from kport.process_manager import detect_process_manager
+
     assert detect_process_manager(0) is None
     assert detect_process_manager(-1) is None
 
@@ -505,7 +604,8 @@ def test_detect_process_manager_systemd():
 
 # 9.3 PM2 app detection via /proc/<pid>/environ
 def test_detect_process_manager_pm2():
-    from kport.process_manager import detect_process_manager, _detect_pm2_app
+    from kport.process_manager import _detect_pm2_app
+
     env = {"PM2_HOME": "/home/user/.pm2", "name": "api-server"}
     res = _detect_pm2_app(5678, env)
     assert res == "api-server"
@@ -514,13 +614,16 @@ def test_detect_process_manager_pm2():
 # 9.4 Supervisor app detection via supervisorctl
 def test_detect_process_manager_supervisor():
     from kport.process_manager import detect_process_manager
+
     mock_proc = MagicMock()
     mock_proc.returncode = 0
     mock_proc.stdout = "worker_01   RUNNING   pid 4321, uptime 0:05:00\n"
 
     with patch("shutil.which", return_value="/usr/bin/supervisorctl"):
         with patch("subprocess.run", return_value=mock_proc):
-            with patch("kport.process_manager._get_cgroup_systemd_unit", return_value=None):
+            with patch(
+                "kport.process_manager._get_cgroup_systemd_unit", return_value=None
+            ):
                 res = detect_process_manager(4321)
 
     assert res is not None
@@ -531,13 +634,16 @@ def test_detect_process_manager_supervisor():
 
 # 9.5 CLI explain command includes managed_by in JSON envelope
 def test_cli_explain_managed_by_json(capsys):
-    from kport.inspectors.base import PortBinding, ProcessInfo
+    from kport.inspectors.base import ProcessInfo
 
     class ManagedFakeInspector(FakeInspector):
         def find_pids_on_port(self, port: int, proto: str = "tcp"):
             return [999]
+
         def get_process_info(self, pid: int):
-            return ProcessInfo(pid=999, name="nginx", exe="/usr/sbin/nginx", cmdline=["nginx"])
+            return ProcessInfo(
+                pid=999, name="nginx", exe="/usr/sbin/nginx", cmdline=["nginx"]
+            )
 
     inspector = ManagedFakeInspector()
     args = _args(command="explain", port=80, json=True)
@@ -546,7 +652,7 @@ def test_cli_explain_managed_by_json(capsys):
         "manager": "systemd",
         "name": "nginx.service",
         "managed_by": "systemd:nginx.service",
-        "warning": "Managed by systemd"
+        "warning": "Managed by systemd",
     }
 
     with patch("kport.cli.docker_mappings_for_host_port", return_value=[]):
@@ -563,6 +669,7 @@ def test_cli_explain_managed_by_json(capsys):
 # 10. Watch Mode --until & --timeout Tests (Phase 3.3)
 # ---------------------------------------------------------------------------
 
+
 # 10.1 watch --until free satisfied immediately if port is free
 def test_cli_watch_until_free_initial():
     inspector = FakeInspector()
@@ -575,8 +682,22 @@ def test_cli_watch_until_free_initial():
 # 10.2 watch --until occupied satisfied immediately if port is occupied
 def test_cli_watch_until_occupied_initial():
     from kport.inspectors.base import PortBinding
-    inspector = FakeInspector(bindings_on_port={8080: [PortBinding(port=8080, family="inet", laddr="0.0.0.0:8080", pid=10, process_name="node", state="LISTEN")]},
-                              pids_on_port={8080: [10]})
+
+    inspector = FakeInspector(
+        bindings_on_port={
+            8080: [
+                PortBinding(
+                    port=8080,
+                    family="inet",
+                    laddr="0.0.0.0:8080",
+                    pid=10,
+                    process_name="node",
+                    state="LISTEN",
+                )
+            ]
+        },
+        pids_on_port={8080: [10]},
+    )
     args = _args(command="watch", port=8080, until="occupied", interval=0.01)
     with patch("kport.cli.docker_mappings_for_host_port", return_value=[]):
         rc = handle_product_command(args, inspector)
@@ -586,6 +707,7 @@ def test_cli_watch_until_occupied_initial():
 # 10.3 watch --until free transitions from occupied to free
 def test_cli_watch_until_free_transitions():
     from kport.inspectors.base import PortBinding
+
     polls = [0]
 
     class TransitionFakeInspector(FakeInspector):
@@ -594,9 +716,19 @@ def test_cli_watch_until_free_transitions():
             if polls[0] == 1:
                 return [100]
             return []
+
         def find_bindings_on_port(self, port: int, proto: str = "tcp"):
             if polls[0] == 1:
-                return [PortBinding(port=port, family="inet", laddr=f"0.0.0.0:{port}", pid=100, process_name="node", state="LISTEN")]
+                return [
+                    PortBinding(
+                        port=port,
+                        family="inet",
+                        laddr=f"0.0.0.0:{port}",
+                        pid=100,
+                        process_name="node",
+                        state="LISTEN",
+                    )
+                ]
             return []
 
     inspector = TransitionFakeInspector()
@@ -611,14 +743,30 @@ def test_cli_watch_until_free_transitions():
 # 10.4 watch --until free times out if condition not met
 def test_cli_watch_until_timeout(capsys):
     from kport.inspectors.base import PortBinding
-    inspector = FakeInspector(bindings_on_port={8080: [PortBinding(port=8080, family="inet", laddr="0.0.0.0:8080", pid=10, process_name="node", state="LISTEN")]},
-                              pids_on_port={8080: [10]})
-    args = _args(command="watch", port=8080, until="free", timeout=0.02, interval=0.01, json=True)
+
+    inspector = FakeInspector(
+        bindings_on_port={
+            8080: [
+                PortBinding(
+                    port=8080,
+                    family="inet",
+                    laddr="0.0.0.0:8080",
+                    pid=10,
+                    process_name="node",
+                    state="LISTEN",
+                )
+            ]
+        },
+        pids_on_port={8080: [10]},
+    )
+    args = _args(
+        command="watch", port=8080, until="free", timeout=0.02, interval=0.01, json=True
+    )
     with patch("kport.cli.docker_mappings_for_host_port", return_value=[]):
         rc = handle_product_command(args, inspector)
 
     assert rc == 1
-    lines = [l.strip() for l in capsys.readouterr().out.splitlines() if l.strip()]
+    lines = [line.strip() for line in capsys.readouterr().out.splitlines() if line.strip()]
     # Last line is the timeout JSON output
     out = json.loads(lines[-1])
     assert out["event"] == "timeout"
@@ -629,13 +777,23 @@ def test_cli_watch_until_timeout(capsys):
 # 11. Interactive Picker Tests (Phase 3.2)
 # ---------------------------------------------------------------------------
 
+
 # 11.1 _fetch_interactive_rows gathers local and docker rows
 def test_fetch_interactive_rows():
     from kport.interactive import _fetch_interactive_rows
     from kport.inspectors.base import PortBinding
 
     inspector = FakeInspector(
-        listening=[PortBinding(port=8080, family="inet", laddr="0.0.0.0:8080", pid=123, process_name="python", state="LISTEN")]
+        listening=[
+            PortBinding(
+                port=8080,
+                family="inet",
+                laddr="0.0.0.0:8080",
+                pid=123,
+                process_name="python",
+                state="LISTEN",
+            )
+        ]
     )
 
     with patch("kport.interactive.list_docker_mappings", return_value=[]):
@@ -653,9 +811,20 @@ def test_fallback_numbered_menu_selection():
     from kport.inspectors.base import PortBinding
 
     killed_ports = []
+
     class CustomInspector(FakeInspector):
         def list_listening(self, proto: str = "tcp"):
-            return [PortBinding(port=3000, family="inet", laddr="0.0.0.0:3000", pid=55, process_name="vite", state="LISTEN")]
+            return [
+                PortBinding(
+                    port=3000,
+                    family="inet",
+                    laddr="0.0.0.0:3000",
+                    pid=55,
+                    process_name="vite",
+                    state="LISTEN",
+                )
+            ]
+
         def kill_port(self, port, **kwargs):
             killed_ports.append(port)
             return True, "killed"
@@ -674,6 +843,7 @@ def test_fallback_numbered_menu_selection():
 # 11.3 run_interactive_picker degrades gracefully in non-TTY mode
 def test_run_interactive_picker_non_tty():
     from kport.interactive import run_interactive_picker
+
     inspector = FakeInspector()
     args = _args(command="interactive")
 
@@ -682,6 +852,3 @@ def test_run_interactive_picker_non_tty():
             rc = run_interactive_picker(inspector, args)
 
     assert rc == 0
-
-
-

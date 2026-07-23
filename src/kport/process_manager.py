@@ -9,8 +9,8 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 from typing import Dict, Optional, Any
+
 
 def _get_cgroup_systemd_unit(pid: int) -> Optional[str]:
     """Extract systemd service unit name from /proc/<pid>/cgroup on Linux."""
@@ -39,6 +39,7 @@ def _get_cgroup_systemd_unit(pid: int) -> Optional[str]:
         pass
     return None
 
+
 def _get_proc_environ(pid: int) -> Dict[str, str]:
     """Read environment variables for PID on Linux from /proc/<pid>/environ."""
     env_path = f"/proc/{pid}/environ"
@@ -51,10 +52,13 @@ def _get_proc_environ(pid: int) -> Dict[str, str]:
         for item in content.split(b"\x00"):
             if b"=" in item:
                 k, v = item.split(b"=", 1)
-                env_dict[k.decode("utf-8", errors="ignore")] = v.decode("utf-8", errors="ignore")
+                env_dict[k.decode("utf-8", errors="ignore")] = v.decode(
+                    "utf-8", errors="ignore"
+                )
     except Exception:
         pass
     return env_dict
+
 
 def _detect_pm2_app(pid: int, env: Dict[str, str]) -> Optional[str]:
     """Detect if PID is managed by PM2."""
@@ -68,9 +72,12 @@ def _detect_pm2_app(pid: int, env: Dict[str, str]) -> Optional[str]:
     # 2. Try pm2 jlist if pm2 binary exists on PATH
     if shutil.which("pm2"):
         try:
-            res = subprocess.run(["pm2", "jlist"], capture_output=True, text=True, timeout=3)
+            res = subprocess.run(
+                ["pm2", "jlist"], capture_output=True, text=True, timeout=3
+            )
             if res.returncode == 0 and res.stdout:
                 import json
+
                 data = json.loads(res.stdout)
                 if isinstance(data, list):
                     for app in data:
@@ -79,7 +86,10 @@ def _detect_pm2_app(pid: int, env: Dict[str, str]) -> Optional[str]:
                             pm2_env = app.get("pm2_env", {})
                             if app_pid == pid:
                                 return app.get("name") or f"app#{app.get('pm_id')}"
-                            if isinstance(pm2_env, dict) and pm2_env.get("pm_id") is not None:
+                            if (
+                                isinstance(pm2_env, dict)
+                                and pm2_env.get("pm_id") is not None
+                            ):
                                 if app.get("pid") == pid:
                                     return app.get("name")
         except Exception:
@@ -87,11 +97,14 @@ def _detect_pm2_app(pid: int, env: Dict[str, str]) -> Optional[str]:
 
     return None
 
+
 def _detect_supervisor_app(pid: int) -> Optional[str]:
     """Detect if PID is managed by supervisord."""
     if shutil.which("supervisorctl"):
         try:
-            res = subprocess.run(["supervisorctl", "status"], capture_output=True, text=True, timeout=3)
+            res = subprocess.run(
+                ["supervisorctl", "status"], capture_output=True, text=True, timeout=3
+            )
             if res.returncode == 0 and res.stdout:
                 for line in res.stdout.splitlines():
                     # Format: myprog:myprog_01  RUNNING  pid 1234, uptime 0:01:00
@@ -102,7 +115,10 @@ def _detect_supervisor_app(pid: int) -> Optional[str]:
             pass
     return None
 
-def detect_process_manager(pid: int, process_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
+
+def detect_process_manager(
+    pid: int, process_name: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
     """
     Detect if PID is managed by a process manager (systemd, pm2, supervisord).
     Returns dict:
@@ -129,13 +145,13 @@ def detect_process_manager(pid: int, process_name: Optional[str] = None) -> Opti
                     "manager": "pm2",
                     "name": pm2_name,
                     "managed_by": f"pm2:{pm2_name}",
-                    "warning": f"Managed by PM2 '{pm2_name}'. Killing PID triggers auto-restart. Stop via 'pm2 stop {pm2_name}'."
+                    "warning": f"Managed by PM2 '{pm2_name}'. Killing PID triggers auto-restart. Stop via 'pm2 stop {pm2_name}'.",
                 }
         return {
             "manager": "systemd",
             "name": unit,
             "managed_by": f"systemd:{unit}",
-            "warning": f"Managed by systemd service '{unit}'. Killing PID triggers auto-restart. Stop via 'systemctl stop {unit}'."
+            "warning": f"Managed by systemd service '{unit}'. Killing PID triggers auto-restart. Stop via 'systemctl stop {unit}'.",
         }
 
     # Check PM2 environment
@@ -146,7 +162,7 @@ def detect_process_manager(pid: int, process_name: Optional[str] = None) -> Opti
             "manager": "pm2",
             "name": pm2_name,
             "managed_by": f"pm2:{pm2_name}",
-            "warning": f"Managed by PM2 '{pm2_name}'. Killing PID triggers auto-restart. Stop via 'pm2 stop {pm2_name}'."
+            "warning": f"Managed by PM2 '{pm2_name}'. Killing PID triggers auto-restart. Stop via 'pm2 stop {pm2_name}'.",
         }
 
     # Check supervisord
@@ -156,7 +172,7 @@ def detect_process_manager(pid: int, process_name: Optional[str] = None) -> Opti
             "manager": "supervisor",
             "name": sup_name,
             "managed_by": f"supervisor:{sup_name}",
-            "warning": f"Managed by supervisord '{sup_name}'. Killing PID triggers auto-restart. Stop via 'supervisorctl stop {sup_name}'."
+            "warning": f"Managed by supervisord '{sup_name}'. Killing PID triggers auto-restart. Stop via 'supervisorctl stop {sup_name}'.",
         }
 
     return None
