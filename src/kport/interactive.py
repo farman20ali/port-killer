@@ -11,7 +11,7 @@ from typing import List, Dict, Any
 from .inspectors import BaseInspector
 from .docker_engine import list_docker_mappings, docker_action_on_container
 from .process_manager import detect_process_manager
-from .formatter import Colors, colorize
+from .formatter import Colors, colorize, confirm_prompt
 
 
 def _fetch_interactive_rows(inspector: BaseInspector) -> List[Dict[str, Any]]:
@@ -121,6 +121,29 @@ def _execute_kills(
     if not selected_rows:
         return 0
 
+    # Confirmation gate unless yes/assume_yes is specified
+    assume_yes = getattr(args, "yes", False)
+    if not assume_yes:
+        print(colorize("\nWarning: You are about to terminate the following active port(s)/process(es):", Colors.YELLOW + Colors.BOLD))
+        print(colorize(f"{'Type':<10} {'Port':<8} {'PID/ID':<12} {'Process/Container':<25} {'Managed By / State'}", Colors.BOLD))
+        print("-" * 75)
+        for r in selected_rows:
+            pid_str = str(r["pid"]) if r["pid"] else "hidden"
+            mb_str = r["managed_by"] or r["state"]
+            type_str = r["type"].capitalize()
+            proc_str = r["process"]
+            if len(proc_str) > 24:
+                proc_str = proc_str[:21] + "..."
+            print(f"{type_str:<10} {r['port']:<8} {pid_str:<12} {proc_str:<25} {mb_str}")
+        
+        try:
+            if not confirm_prompt("\nAre you sure you want to proceed with terminating these target(s)?", assume_yes=False):
+                print(colorize("Cancelled.", Colors.RED))
+                return 0
+        except (KeyboardInterrupt, EOFError):
+            print(colorize("\nCancelled.", Colors.RED))
+            return 0
+
     print(
         colorize(
             f"\nProceeding to terminate {len(selected_rows)} selected target(s)...",
@@ -195,8 +218,8 @@ def run_interactive_picker(inspector: BaseInspector, args: Any) -> int:
         rows = _fetch_interactive_rows(inspector)
         if not rows:
             return None
-
         current_idx = 0
+        start_idx = 0
         search_query = ""
 
         while True:
@@ -215,26 +238,38 @@ def run_interactive_picker(inspector: BaseInspector, args: Any) -> int:
             stdscr.clear()
             max_y, max_x = stdscr.getmaxyx()
 
+            visible_count = max_y - 4
+
+            # Maintain scrolling window offset
+            if current_idx < start_idx:
+                start_idx = current_idx
+            elif current_idx >= start_idx + visible_count:
+                start_idx = current_idx - visible_count + 1
+
+            if start_idx >= len(filtered_rows):
+                start_idx = max(0, len(filtered_rows) - visible_count)
+
+            # Curses search is active by default; show cursor
+            try:
+                curses.curs_set(1)
+            except Exception:
+                pass
+
             # Header
-            header = " kport Interactive Picker | [/] Filter  [Space] Select  [Enter] Confirm Kill  [Esc/q] Quit"
+            header = " kport Interactive Picker | Type to filter  [Space] Select  [Ctrl-r] Refresh  [Enter] Kill  [Esc] Quit"
             stdscr.addstr(
                 0, 0, header[: max_x - 1], curses.A_BOLD | curses.color_pair(1)
             )
 
-            filter_line = (
-                f" Filter: {search_query}_"
-                if search_query
-                else " (Type to filter ports/processes)"
-            )
+            filter_line = f" Filter: {search_query}_"
             stdscr.addstr(1, 0, filter_line[: max_x - 1])
 
             col_header = f" {'Sel':<4} {'Port':<7} {'PID/ID':<12} {'Process':<18} {'Proto':<6} {'Managed By / State'}"
             stdscr.addstr(2, 0, col_header[: max_x - 1], curses.A_UNDERLINE)
 
             # Draw rows
-            visible_count = max_y - 4
-            for i in range(min(visible_count, len(filtered_rows))):
-                r = filtered_rows[i]
+            for i in range(min(visible_count, len(filtered_rows) - start_idx)):
+                r = filtered_rows[start_idx + i]
                 sel_char = "[x]" if r["selected"] else "[ ]"
                 pid_str = str(r["pid"]) if r["pid"] else "hidden"
                 mb_str = r["managed_by"] or r["state"]
@@ -242,7 +277,7 @@ def run_interactive_picker(inspector: BaseInspector, args: Any) -> int:
                 line = f" {sel_char:<4} {r['port']:<7} {pid_str:<12} {r['process']:<18} {r['proto']:<6} {mb_str}"
                 line = line[: max_x - 1]
 
-                if i == current_idx:
+                if (start_idx + i) == current_idx:
                     stdscr.addstr(3 + i, 0, line, curses.A_REVERSE)
                 else:
                     stdscr.addstr(3 + i, 0, line)
@@ -254,32 +289,68 @@ def run_interactive_picker(inspector: BaseInspector, args: Any) -> int:
             except KeyboardInterrupt:
                 return None
 
-            if ch in (27, ord("q"), ord("Q")):  # Esc or Q
-                return None
-            elif ch in (curses.KEY_UP, ord("k")):
+            # Handle navigation keys
+            if ch in (curses.KEY_UP,):
                 current_idx = max(0, current_idx - 1)
-            elif ch in (curses.KEY_DOWN, ord("j")):
+            elif ch in (curses.KEY_DOWN,):
                 current_idx = (
                     min(len(filtered_rows) - 1, current_idx + 1) if filtered_rows else 0
                 )
-            elif ch == ord(" "):  # Space toggle select
+            
+            # Handle selection toggle
+            elif ch == ord(" "):
                 if filtered_rows and current_idx < len(filtered_rows):
                     filtered_rows[current_idx]["selected"] = not filtered_rows[
                         current_idx
                     ]["selected"]
-            elif ch in (10, 13):  # Enter key
-                # Collect selected items (or item under cursor if none selected)
+
+            # Handle reload/refresh hotkey (Ctrl-r is code 18)
+            elif ch == 18:
+                selected_keys = {(r["type"], r["port"], r["pid"]) for r in rows if r["selected"]}
+                rows = _fetch_interactive_rows(inspector)
+                for r in rows:
+                    if (r["type"], r["port"], r["pid"]) in selected_keys:
+                        r["selected"] = True
+                current_idx = 0
+                start_idx = 0
+
+            # Handle backspace
+            elif ch in (curses.KEY_BACKSPACE, 127, 8):
+                if search_query:
+                    search_query = search_query[:-1]
+
+            # Handle exit / escape
+            elif ch == 27:
+                if search_query:
+                    search_query = ""
+                else:
+                    return None
+
+            # Handle execution / Enter key
+            elif ch in (10, 13):
                 selected = [r for r in rows if r["selected"]]
                 if not selected and filtered_rows:
                     selected = [filtered_rows[current_idx]]
                 return selected
-            elif ch in (curses.KEY_BACKSPACE, 127, 8):
-                if search_query:
-                    search_query = search_query[:-1]
-            elif (
-                32 <= ch <= 126 and chr(ch) != " "
-            ):  # Printable chars for filter search
+
+            # Handle other printable keys for default search
+            elif 32 < ch <= 126:
                 search_query += chr(ch)
+                # Check for /q (quit)
+                if search_query.endswith("/q"):
+                    return None
+                # Check for /r (refresh)
+                elif search_query.endswith("/r"):
+                    # Strip /r
+                    search_query = search_query[:-2]
+                    # Refresh selection & rows
+                    selected_keys = {(r["type"], r["port"], r["pid"]) for r in rows if r["selected"]}
+                    rows = _fetch_interactive_rows(inspector)
+                    for r in rows:
+                        if (r["type"], r["port"], r["pid"]) in selected_keys:
+                            r["selected"] = True
+                    current_idx = 0
+                    start_idx = 0
 
     try:
         selected_targets = curses.wrapper(_curses_main)

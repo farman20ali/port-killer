@@ -19,10 +19,13 @@ This release represents a significant milestone, shipping an interactive TUI pic
 ### 🖥️ Interactive TUI Picker (`kport -I` / `kport interactive`)
 You can now list, filter, select, and terminate processes using a visual text-user interface directly in your terminal:
 - **Interactive TUI Mode**: Launch with `kport -I` or `kport interactive`.
-- **Fuzzy Search & Filtering**: Type characters at any time to narrow down the active port list by Port, PID, Process Name, or Process Manager.
+- **Search-by-Default**: Start typing characters immediately to filter active ports (no prefix needed).
+- **Navigation & Scrolling**: Use arrow keys to navigate the list, which dynamically scrolls viewports for lists longer than the terminal screen.
 - **Multi-Select**: Press `[Space]` to check/uncheck multiple ports.
-- **Batch Kill**: Press `[Enter]` to terminate all selected targets at once.
+- **Dynamic Refresh**: Press `[Ctrl-r]` or type `/r` to reload active ports, preserving current selections and scrolling back to the top.
+- **Safety Confirmation Prompt**: Hitting `[Enter]` exits curses and displays a clear target summary, requiring confirmation (`y/N`) before terminating processes. Bypassed via `-y`/`--yes`.
 - **Fallback Mode**: Gracefully degrades to a clean, non-interactive numbered menu on non-TTY environments or terminals lacking curses support.
+- **Quit Shortcuts**: Type `/q`, press `[Esc]` (clears search query first, then exits on next `[Esc]`), or use `[Ctrl-c]` to cancel and exit.
 
 ### ⚙️ Process Manager Awareness (`systemd`, `PM2`, `Supervisord`)
 Tired of killing a port only to have the process instantly restart? `kport explain` is now smart enough to detect process managers:

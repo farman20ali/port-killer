@@ -852,3 +852,117 @@ def test_run_interactive_picker_non_tty():
             rc = run_interactive_picker(inspector, args)
 
     assert rc == 0
+
+
+# 11.4 _execute_kills confirmation yes
+def test_execute_kills_confirmation_yes():
+    from kport.interactive import _execute_kills
+
+    inspector = FakeInspector()
+    killed_ports = []
+    inspector.kill_port = lambda port, **kwargs: (killed_ports.append(port) or True, "killed")
+
+    args = _args(command="interactive", yes=False)
+    selected_rows = [
+        {"type": "local", "port": 8080, "pid": 123, "process": "node", "proto": "tcp", "state": "LISTEN", "managed_by": ""}
+    ]
+
+    with patch("kport.interactive.confirm_prompt", return_value=True) as mock_confirm:
+        rc = _execute_kills(inspector, selected_rows, args)
+
+    assert rc == 0
+    assert killed_ports == [8080]
+    mock_confirm.assert_called_once()
+
+
+# 11.5 _execute_kills confirmation no
+def test_execute_kills_confirmation_no():
+    from kport.interactive import _execute_kills
+
+    inspector = FakeInspector()
+    killed_ports = []
+    inspector.kill_port = lambda port, **kwargs: (killed_ports.append(port) or True, "killed")
+
+    args = _args(command="interactive", yes=False)
+    selected_rows = [
+        {"type": "local", "port": 8080, "pid": 123, "process": "node", "proto": "tcp", "state": "LISTEN", "managed_by": ""}
+    ]
+
+    with patch("kport.interactive.confirm_prompt", return_value=False) as mock_confirm:
+        rc = _execute_kills(inspector, selected_rows, args)
+
+    assert rc == 0
+    assert killed_ports == []
+    mock_confirm.assert_called_once()
+
+
+# 11.6 _curses_main key handling (search, quit /q, reload /r, Ctrl-r, Esc)
+def test_curses_main_key_handling():
+    from kport.interactive import run_interactive_picker
+    from unittest.mock import MagicMock, patch
+    from kport.inspectors.base import PortBinding
+
+    # Mock inspector listening ports
+    inspector = FakeInspector(
+        listening=[
+            PortBinding(
+                port=8080,
+                family="inet",
+                laddr="0.0.0.0:8080",
+                pid=123,
+                process_name="node",
+                state="LISTEN",
+            )
+        ]
+    )
+    args = _args(command="interactive", yes=True) # skip final prompt
+
+    # Mock stdscr
+    mock_stdscr = MagicMock()
+    mock_stdscr.getmaxyx.return_value = (24, 80)
+
+    # Scenario: User types 'n', then Esc (27) to clear, then types '/' then 'q' to quit
+    keys = [ord('n'), 27, ord('/'), ord('q')]
+    mock_stdscr.getch.side_effect = keys
+
+    with patch("sys.stdin.isatty", return_value=True), \
+         patch("sys.stdout.isatty", return_value=True), \
+         patch("kport.interactive.list_docker_mappings", return_value=[]), \
+         patch("curses.wrapper", side_effect=lambda func: func(mock_stdscr)), \
+         patch("curses.curs_set"), \
+         patch("curses.start_color"), \
+         patch("curses.use_default_colors"), \
+         patch("curses.init_pair"), \
+         patch("curses.color_pair"):
+             
+        rc = run_interactive_picker(inspector, args)
+        assert rc == 0
+
+
+# 11.7 _curses_main reload key handling (Ctrl-r and /r)
+def test_curses_main_reload_handling():
+    from kport.interactive import run_interactive_picker
+    from unittest.mock import MagicMock, patch
+
+    inspector = FakeInspector()
+    args = _args(command="interactive", yes=True)
+
+    mock_stdscr = MagicMock()
+    mock_stdscr.getmaxyx.return_value = (24, 80)
+
+    # Scenario: Ctrl-r (18) then /r (ord('/'), ord('r')) then Esc (27) to quit
+    keys = [18, ord('/'), ord('r'), 27]
+    mock_stdscr.getch.side_effect = keys
+
+    with patch("sys.stdin.isatty", return_value=True), \
+         patch("sys.stdout.isatty", return_value=True), \
+         patch("kport.interactive.list_docker_mappings", return_value=[]), \
+         patch("curses.wrapper", side_effect=lambda func: func(mock_stdscr)), \
+         patch("curses.curs_set"), \
+         patch("curses.start_color"), \
+         patch("curses.use_default_colors"), \
+         patch("curses.init_pair"), \
+         patch("curses.color_pair"):
+             
+        rc = run_interactive_picker(inspector, args)
+        assert rc == 0

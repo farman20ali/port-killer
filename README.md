@@ -949,6 +949,19 @@ options:
   --timeout TIMEOUT     Maximum time in seconds to wait when using --until
 ```
 
+### `kport interactive` Usage & Controls
+
+Launch the interactive TUI picker with `kport -I` or `kport interactive`.
+
+- **Search-by-Default**: Start typing characters immediately to filter the active port list by Port, PID, Process Name, or Process Manager.
+- **Navigation**: Use the `[Up]/[Down]` arrow keys to scroll the list (automatically handles viewport scrolling for long lists).
+- **Multi-Select**: Press `[Space]` to toggle selection on the highlighted item.
+- **Refresh/Reload**: Press `[Ctrl-r]` or type `/r` to reload the active port list, preserving current selections and scrolling back to the top.
+- **Batch Kill & Safety Prompt**: Press `[Enter]` to proceed. `kport` will exit the curses TUI, display a summary of selected ports/processes, and request confirmation:
+  `Are you sure you want to proceed with terminating these target(s)? (y/N)`
+  - Use the CLI option `-y` or `--yes` to bypass this prompt.
+- **Quit**: Type `/q`, press `[Esc]` (clears search query first, then exits on next `[Esc]`), or use `[Ctrl-c]` to cancel and exit.
+
 ### `kport interactive --help`
 
 ```
