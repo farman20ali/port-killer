@@ -1,4 +1,5 @@
 import json
+import pytest
 from unittest.mock import MagicMock, patch
 
 from kport.profile import load_profiles, resolve_profile
@@ -898,6 +899,7 @@ def test_execute_kills_confirmation_no():
 
 # 11.6 _curses_main key handling (search, quit /q, reload /r, Ctrl-r, Esc)
 def test_curses_main_key_handling():
+    pytest.importorskip("_curses")
     from kport.interactive import run_interactive_picker
     from unittest.mock import MagicMock, patch
     from kport.inspectors.base import PortBinding
@@ -941,6 +943,7 @@ def test_curses_main_key_handling():
 
 # 11.7 _curses_main reload key handling (Ctrl-r and /r)
 def test_curses_main_reload_handling():
+    pytest.importorskip("_curses")
     from kport.interactive import run_interactive_picker
     from unittest.mock import MagicMock, patch
 
