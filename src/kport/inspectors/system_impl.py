@@ -1247,7 +1247,7 @@ class FallbackInspector(BaseInspector):
                 return sorted(set(pids))
 
     def find_ports_by_process_name(
-        self, name: str, exact: bool = False
+        self, name: str, exact: bool = False, proto: str = "tcp"
     ) -> List[PortBinding]:
         """
         Find all port bindings for processes matching `name`.

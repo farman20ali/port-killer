@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kport"
-version = "4.0.0"
+version = "4.0.3"
 description = "A cross-platform command-line tool to inspect and kill processes using specific ports"
 readme = "README.md"
 authors = [

@@ -2,7 +2,7 @@
 kport: Cross-platform port inspector and killer package.
 """
 
-__version__ = "4.0.0"
+__version__ = "4.0.3"
 
 from .inspectors import get_inspector, BaseInspector, PortBinding, ProcessInfo
 from .exceptions import (

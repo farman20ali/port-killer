@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.0.3] - 2026-07-31
+
+### Fixed
+- **Chocolatey uninstall**: Added `Uninstall-BinFile -Name "kport"` to `chocolateyuninstall.ps1` to clean up the shim created by `Install-BinFile`, resolving Chocolatey community reviewer rejection.
+- **Windows elevation hint**: Improved elevation hint messages in CLI to show Windows-specific guidance (`Run as Administrator`) rather than Linux-only `sudo` instructions.
+- **FallbackInspector proto parameter**: Added missing `proto: str = "tcp"` parameter to `FallbackInspector.find_ports_by_process_name()`, aligning the signature with `BaseInspector` and `PsutilInspector`.
+
+### Changed
+- **CI**: Bumped `actions/setup-python` from `v6` to `v7` across all GitHub Actions workflows, incorporating the Dependabot PR #17 upgrade.
+- **Code quality**: Removed unused imports (`sys`, `USING_PSUTIL`) from `benchmarks/bench_list.py` and replaced the unused `import pytest` with `importlib.util.find_spec` in `manage.py`, resolving all Ruff F401 violations.
+
+---
+
 ## [4.0.0] - 2026-07-21
 
 ### Added

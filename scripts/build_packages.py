@@ -234,19 +234,146 @@ def build_snap(version: str, check: bool, dry_run: bool) -> bool:
     return ok_result
 
 
+def _choco_resolve_checksum_interactive(version: str) -> list[str]:
+    """
+    Prompt the user to choose how to resolve the SHA-256 checksum for the
+    Chocolatey installer.  Returns extra args to pass to build_choco.py.
+    Called only when stdin is a TTY (interactive session).
+    """
+    import hashlib
+    import urllib.request
+
+    github_url = (
+        f"https://github.com/farman20ali/port-killer/releases/download/"
+        f"v{version}/kport-{version}-setup.exe"
+    )
+
+    print()
+    print("─" * 50)
+    print("  --- Chocolatey Installer Checksum Resolution ---")
+    print("  Select an option to resolve the SHA-256 checksum:")
+    print("    [1] Calculate from local installer file (default)")
+    print("    [2] Download and calculate from GitHub release URL")
+    print("    [3] Enter checksum manually (64-char hex)")
+    print("    [4] Read/calculate checksum from a custom file")
+    print("─" * 50)
+
+    try:
+        raw = input("  Enter choice [1-4] (default 1): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        warn("No input — defaulting to option [1] (local installer file)")
+        raw = "1"
+
+    choice = raw if raw in ("1", "2", "3", "4") else "1"
+
+    if choice == "1":
+        # ── Find a local installer in dist/win/ ──────────────────────────────
+        dist_win = REPO_ROOT / "dist" / "win"
+        matches = sorted(dist_win.glob(f"kport-{version}-setup.exe"))
+        if not matches:
+            matches = sorted(dist_win.glob("kport-*-setup.exe"))
+        if matches:
+            installer = matches[-1]
+            info(f"Found installer: {installer.name}")
+            return ["--installer", str(installer)]
+        else:
+            warn(f"No local installer found in {dist_win}")
+            warn("Build the Windows installer first: python build_packages.py --win")
+            warn("Or use option [2] to download from GitHub, or [3] for manual entry.")
+            return ["--build"]   # let build_choco.py show its own error
+
+    elif choice == "2":
+        # ── Download from GitHub and hash ────────────────────────────────────
+        info(f"Downloading: {github_url}")
+        try:
+            digest = hashlib.sha256()
+            req = urllib.request.Request(
+                github_url,
+                headers={"User-Agent": "kport-build-script/1.0"},
+            )
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                total = int(resp.headers.get("Content-Length", 0))
+                downloaded = 0
+                while True:
+                    chunk = resp.read(1024 * 256)
+                    if not chunk:
+                        break
+                    digest.update(chunk)
+                    downloaded += len(chunk)
+                    if total:
+                        pct = downloaded * 100 // total
+                        print(f"\r  Downloading … {pct:3d}%", end="", flush=True)
+            print()
+            checksum = digest.hexdigest().upper()
+            ok(f"SHA-256: {checksum}")
+            return ["--checksum", checksum]
+        except Exception as exc:
+            err(f"Download failed: {exc}")
+            warn("The GitHub release asset may not be published yet.")
+            warn("Build and upload the Windows installer first, then retry.")
+            return []   # signal failure
+
+    elif choice == "3":
+        # ── Manual checksum entry ────────────────────────────────────────────
+        try:
+            checksum = input("  Enter SHA-256 (64 hex chars): ").strip().upper()
+        except (EOFError, KeyboardInterrupt):
+            checksum = ""
+        if len(checksum) == 64 and all(c in "0123456789ABCDEF" for c in checksum):
+            ok(f"Using checksum: {checksum}")
+            return ["--checksum", checksum]
+        else:
+            err("Invalid checksum — must be exactly 64 hex characters.")
+            return []
+
+    else:   # choice == "4"
+        # ── Custom file ──────────────────────────────────────────────────────
+        try:
+            path_str = input("  Enter path to installer/file: ").strip().strip('"')
+        except (EOFError, KeyboardInterrupt):
+            path_str = ""
+        custom = Path(path_str)
+        if custom.exists():
+            return ["--installer", str(custom)]
+        else:
+            err(f"File not found: {custom}")
+            return []
+
+
 def build_choco(version: str, check: bool, dry_run: bool) -> bool:
     target("Chocolatey →  dist/choco/kport.<v>.nupkg")
     if sys.platform != "win32" and not check and not dry_run:
         warn("Chocolatey packaging requires Windows — skipping on non-Windows host.")
         return True
 
-    args = ["--check"] if check else ["--build"]
-    ok_result = _run_script("build_choco.py", args, dry_run)
-    if ok_result and not check and not dry_run:
+    if check:
+        return _run_script("build_choco.py", ["--check"], dry_run=False)
+
+    print()
+    print(_c("─── Building Chocolatey Package ───", "96;1"))
+
+    # Interactive checksum resolution when running in a real terminal
+    if sys.stdin.isatty() and not dry_run:
+        extra = _choco_resolve_checksum_interactive(version)
+        if extra is None or extra == []:
+            # User chose option that failed or produced no args
+            err("Checksum resolution failed — cannot build Chocolatey package.")
+            return False
+        args = ["--build"] + extra
+    else:
+        # Non-interactive / CI: auto-find local installer or dry-run
+        args = ["--build"]
+        if dry_run:
+            args.append("--dry-run")
+
+    ok_result = _run_script("build_choco.py", args, dry_run=False)
+    if ok_result and not dry_run:
         matches = list((REPO_ROOT / "dist" / "choco").glob("*.nupkg"))
         if matches:
             ok(f"Chocolatey pkg    → {matches[-1].name}")
     return ok_result
+
 
 
 def build_pypi(version: str, check: bool, dry_run: bool) -> bool:

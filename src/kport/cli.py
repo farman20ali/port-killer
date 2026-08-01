@@ -2134,13 +2134,20 @@ Examples:
                     if pids:
                         pids_str = ", ".join(map(str, pids))
                         if not _is_elevated():
-                            print(
-                                colorize(
+                            if sys.platform == "win32":
+                                _elev_hint = (
+                                    f"Warning: Found process(es) (PID(s): {pids_str}) but could not "
+                                    f"read their port bindings. "
+                                    f"Try running as Administrator: Right-click your terminal → 'Run as administrator'"
+                                )
+                            else:
+                                _elev_hint = (
                                     f"Warning: Found process(es) (PID(s): {pids_str}) but could not "
                                     f"read their port bindings. Common inside containers/snap. "
-                                    f"Try: sudo kport -ip '{pname}'",
-                                    Colors.YELLOW,
-                                ),
+                                    f"Try: sudo kport -ip '{pname}'"
+                                )
+                            print(
+                                colorize(_elev_hint, Colors.YELLOW),
                                 file=sys.stderr,
                             )
                         else:
@@ -2164,16 +2171,22 @@ Examples:
                     if pids:
                         pids_str = ", ".join(map(str, pids))
                         if not _is_elevated():
-                            # Process visible, ports not resolvable — likely snap/container namespace.
-                            print(
-                                colorize(
+                            # Process visible, ports not resolvable — needs elevated privileges.
+                            if sys.platform == "win32":
+                                _elev_msg = (
+                                    f"\u26a0  Process '{pname}' found (PID(s): {pids_str}) "
+                                    f"but its port bindings are not accessible without elevated privileges.\n"
+                                    f"   Try: Run your terminal as Administrator "
+                                    f"(Right-click → 'Run as administrator') and retry."
+                                )
+                            else:
+                                _elev_msg = (
                                     f"\u26a0  Process '{pname}' found (PID(s): {pids_str}) "
                                     f"but its port bindings are not accessible without elevated privileges.\n"
                                     f"   This is common for snap-packaged apps or system services.\n"
-                                    f"   Try: sudo kport -ip '{pname}'",
-                                    Colors.YELLOW,
+                                    f"   Try: sudo kport -ip '{pname}'"
                                 )
-                            )
+                            print(colorize(_elev_msg, Colors.YELLOW))
                         else:
                             # Elevated and genuinely no listening ports — correct result, not an error.
                             print(
