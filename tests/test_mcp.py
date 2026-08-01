@@ -13,8 +13,7 @@ import json
 from io import StringIO
 from unittest.mock import MagicMock, patch
 
-
-from kport.mcp_server import run_mcp_server, TOOLS, PROTECTED_PORTS
+from kport.mcp_server import PROTECTED_PORTS, TOOLS, run_mcp_server
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -31,10 +30,8 @@ def _send_messages(*messages: dict) -> list[dict]:
 
     captured_stdout = StringIO()
 
-    with patch("sys.stdin", StringIO(stdin_data)):
-        with patch("sys.stdout", captured_stdout):
-            with patch("sys.stderr", StringIO()):  # suppress MCP debug logs
-                run_mcp_server()
+    with patch("sys.stdin", StringIO(stdin_data)), patch("sys.stdout", captured_stdout), patch("sys.stderr", StringIO()):  # suppress MCP debug logs
+        run_mcp_server()
 
     raw = captured_stdout.getvalue()
     responses = []
@@ -103,9 +100,8 @@ def test_list_ports_returns_dict_with_lists():
     mock_inspector = MagicMock()
     mock_inspector.list_listening.return_value = []
 
-    with patch("kport.mcp_server.get_inspector", return_value=mock_inspector):
-        with patch("kport.mcp_server.list_docker_mappings", return_value=[]):
-            responses = _send_messages(
+    with patch("kport.mcp_server.get_inspector", return_value=mock_inspector), patch("kport.mcp_server.list_docker_mappings", return_value=[]):
+        responses = _send_messages(
                 {
                     "jsonrpc": "2.0",
                     "id": 3,
@@ -134,9 +130,8 @@ def test_inspect_port_free():
     mock_inspector.find_bindings_on_port.return_value = []
     mock_inspector.find_pids_on_port.return_value = []
 
-    with patch("kport.mcp_server.get_inspector", return_value=mock_inspector):
-        with patch("kport.mcp_server.docker_mappings_for_host_port", return_value=[]):
-            responses = _send_messages(
+    with patch("kport.mcp_server.get_inspector", return_value=mock_inspector), patch("kport.mcp_server.docker_mappings_for_host_port", return_value=[]):
+        responses = _send_messages(
                 {
                     "jsonrpc": "2.0",
                     "id": 4,
@@ -193,9 +188,8 @@ def test_kill_port_free_port_succeeds():
     mock_inspector.find_pids_on_port.return_value = []
     mock_inspector.find_bindings_on_port.return_value = []
 
-    with patch("kport.mcp_server.get_inspector", return_value=mock_inspector):
-        with patch("kport.mcp_server.docker_mappings_for_host_port", return_value=[]):
-            responses = _send_messages(
+    with patch("kport.mcp_server.get_inspector", return_value=mock_inspector), patch("kport.mcp_server.docker_mappings_for_host_port", return_value=[]):
+        responses = _send_messages(
                 {
                     "jsonrpc": "2.0",
                     "id": 7,

@@ -35,7 +35,7 @@ if sys.platform == "win32":
         if hasattr(stream, "reconfigure"):
             try:
                 stream.reconfigure(encoding="utf-8")
-            except Exception:
+            except OSError:
                 pass
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -71,7 +71,7 @@ def run_cmd(cmd: list[str], description: str, check: bool = True) -> int:
     print(f"{'='*60}")
     print("$", " ".join(cmd), "\n")
 
-    result = subprocess.run(cmd, cwd=str(REPO_ROOT))
+    result = subprocess.run(cmd, cwd=str(REPO_ROOT), check=False)
 
     if check and result.returncode != 0:
         err(f"Failed: {description}")
@@ -104,7 +104,7 @@ def find_nupkg_file() -> Path | None:
     if not nupkgs:
         return None
 
-    return sorted(nupkgs, key=lambda p: p.stat().st_mtime, reverse=True)[0]
+    return max(nupkgs, key=lambda p: p.stat().st_mtime)
 
 
 def get_nupkg_version(nupkg_file: Path) -> str:

@@ -20,7 +20,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -49,7 +48,7 @@ def print_warning(msg: str) -> None: print(f"{Colors.YELLOW}⚠️  {msg}{Colors
 def run_command(cmd: list[str], description: str, check: bool = True) -> subprocess.CompletedProcess:
     print_step(description)
     print(f"$ {' '.join(cmd)}")
-    result = subprocess.run(cmd, cwd=str(REPO_ROOT))
+    result = subprocess.run(cmd, cwd=str(REPO_ROOT), check=False)
     if check and result.returncode != 0:
         print_error(f"Failed: {description}")
         sys.exit(result.returncode)
@@ -78,7 +77,7 @@ def read_version() -> str | None:
 def check_git_clean() -> bool:
     result = subprocess.run(
         ["git", "status", "--porcelain"],
-        cwd=str(REPO_ROOT), capture_output=True, text=True,
+        cwd=str(REPO_ROOT), capture_output=True, text=True, check=False,
     )
     return len(result.stdout.strip()) == 0
 
@@ -86,7 +85,7 @@ def check_git_clean() -> bool:
 def check_tag_exists(tag: str) -> bool:
     result = subprocess.run(
         ["git", "tag", "-l", tag],
-        cwd=str(REPO_ROOT), capture_output=True, text=True,
+        cwd=str(REPO_ROOT), capture_output=True, text=True, check=False,
     )
     return len(result.stdout.strip()) > 0
 
@@ -109,6 +108,7 @@ def build_pypi(dry_run: bool = False) -> bool:
         cwd=str(REPO_ROOT),
         input="1\n",
         text=True,
+        check=False,
     )
 
     if result.returncode != 0:
@@ -224,7 +224,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n\n👋 Cancelled")
         sys.exit(1)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print_error(f"Unexpected error: {e}")
         import traceback
         traceback.print_exc()

@@ -3,26 +3,28 @@ Model Context Protocol (MCP) server implementation for kport.
 Implements standard stdio-based tool calls with zero dependencies.
 Incorporates a strict safety shield to prevent AI agents from killing critical system ports.
 """
+from __future__ import annotations
 
+import json
 import os
 import sys
-import json
 import traceback
-from typing import Dict, Any
+from typing import Any
 
-from .inspectors import get_inspector
-from .docker_engine import (
-    list_docker_mappings,
-    docker_mappings_for_host_port,
-    docker_action_on_container,
-)
 from . import __version__
-from .constants import PROTECTED_PORTS, PROTECTED_PROCESS_NAMES
+from .constants import (
+    PROTECTED_PORTS,
+    PROTECTED_PROCESS_NAMES,
+)
+from .docker_engine import (
+    docker_action_on_container,
+    docker_mappings_for_host_port,
+    list_docker_mappings,
+)
+from .inspectors import get_inspector
 
 # R10 fix: use shared constants from kport.constants (single source of truth).
 # MCP and CLI now share identical default protection lists.
-PROTECTED_PORTS = PROTECTED_PORTS  # re-export for backward compat
-PROTECTED_PROCESS_NAMES = PROTECTED_PROCESS_NAMES  # re-export for backward compat
 
 
 def load_mcp_config() -> dict:
@@ -40,8 +42,9 @@ def load_mcp_config() -> dict:
                     data = json.load(f)
                 if isinstance(data, dict):
                     return data
-            except Exception:
-                pass
+            except (OSError, json.JSONDecodeError) as ex:
+                # Non-fatal: config read/parse failed; continue with defaults.
+                log(f"Failed to load MCP config from {p}: {ex!s}")
     return {}
 
 
@@ -102,7 +105,7 @@ TOOLS = [
 ]
 
 
-def handle_list_ports(inspector) -> Dict[str, Any]:
+def handle_list_ports(inspector) -> dict[str, Any]:
     """Execute list_ports tool request."""
     local_bindings = inspector.list_listening()
     docker_maps = list_docker_mappings()
@@ -135,7 +138,7 @@ def handle_list_ports(inspector) -> Dict[str, Any]:
     return {"local_processes": local_list, "docker_containers": docker_list}
 
 
-def handle_inspect_port(inspector, port: int) -> Dict[str, Any]:
+def handle_inspect_port(inspector, port: int) -> dict[str, Any]:
     """Execute inspect_port tool request."""
     if not (1 <= port <= 65535):
         raise ValueError(f"Port {port} is out of bounds (1-65535)")
@@ -189,7 +192,7 @@ def handle_inspect_port(inspector, port: int) -> Dict[str, Any]:
 
 def handle_kill_port(
     inspector, port: int, force: bool = True, docker_action: str = "stop"
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Execute kill_port tool request under safety shield validations."""
     if not (1 <= port <= 65535):
         raise ValueError(f"Port {port} is out of bounds (1-65535)")
@@ -350,7 +353,7 @@ def run_mcp_server() -> None:
                             else False,
                         },
                     }
-                except Exception as ex:
+                except Exception as ex:  # noqa: BLE001 - top-level tool execution handler (intentional)
                     log(f"Tool execution failed: {traceback.format_exc()}")
                     resp = {
                         "jsonrpc": "2.0",
@@ -359,7 +362,7 @@ def run_mcp_server() -> None:
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": f"Error executing tool '{tool_name}': {str(ex)}",
+                                    "text": f"Error executing tool '{tool_name}': {ex!s}",
                                 }
                             ],
                             "isError": True,
@@ -385,5 +388,5 @@ def run_mcp_server() -> None:
                     sys.stdout.write(json.dumps(resp) + "\n")
                     sys.stdout.flush()
 
-        except Exception:
+        except Exception:  # noqa: BLE001 - top-level RPC framing (must not crash the server)
             log(f"RPC framing error: {traceback.format_exc()}")

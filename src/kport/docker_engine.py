@@ -2,12 +2,12 @@
 Docker integration module for kport.
 Optimized to gather all container mappings in a single, high-performance O(1) query.
 """
+from __future__ import annotations
 
 import re
 import shutil
 import subprocess
 import sys
-from typing import List, Optional, Tuple
 from dataclasses import dataclass
 
 
@@ -17,17 +17,17 @@ class DockerPortMapping:
     container_name: str
     image: str
     status: str
-    host_ip: Optional[str]
+    host_ip: str | None
     host_port: int
     container_port: int
     proto: str
 
 
-def _run_docker(args: List[str], debug: bool = False) -> subprocess.CompletedProcess:
+def _run_docker(args: list[str], debug: bool = False) -> subprocess.CompletedProcess:
     """Helper to run a safe subprocess Docker command."""
     if debug:
         print(f"[debug] docker {' '.join(args)}", file=sys.stderr)
-    return subprocess.run(["docker", *args], capture_output=True, text=True)
+    return subprocess.run(["docker", *args], capture_output=True, text=True, check=False)
 
 
 def docker_available() -> bool:
@@ -35,7 +35,7 @@ def docker_available() -> bool:
     return shutil.which("docker") is not None
 
 
-def list_docker_mappings(debug: bool = False) -> List[DockerPortMapping]:
+def list_docker_mappings(debug: bool = False) -> list[DockerPortMapping]:
     """
     Return host-port mappings for running containers.
     Optimized to run exactly one docker ps query and parse published ports and labels in Python.
@@ -66,7 +66,7 @@ def list_docker_mappings(debug: bool = False) -> List[DockerPortMapping]:
                 print(f"[debug] docker ps failed: {err}", file=sys.stderr)
         return []
 
-    mappings: List[DockerPortMapping] = []
+    mappings: list[DockerPortMapping] = []
     for line in (ps.stdout or "").splitlines():
         if not line.strip():
             continue
@@ -141,7 +141,7 @@ def list_docker_mappings(debug: bool = False) -> List[DockerPortMapping]:
 
     # Deduplicate (Docker often returns both IPv4 and IPv6 lines for same port mapping)
     seen = set()
-    uniq: List[DockerPortMapping] = []
+    uniq: list[DockerPortMapping] = []
     for m in mappings:
         key = (m.container_id, m.host_port, m.container_port, m.proto)
         if key in seen:
@@ -154,14 +154,14 @@ def list_docker_mappings(debug: bool = False) -> List[DockerPortMapping]:
 
 def docker_mappings_for_host_port(
     port: int, debug: bool = False
-) -> List[DockerPortMapping]:
+) -> list[DockerPortMapping]:
     """Retrieve Docker port mappings matching a specific host port."""
     return [m for m in list_docker_mappings(debug=debug) if m.host_port == port]
 
 
 def docker_action_on_container(
     container_id: str, action: str, dry_run: bool, debug: bool = False
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """
     Apply action (stop, restart, rm) on a Docker container.
 

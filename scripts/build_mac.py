@@ -37,7 +37,7 @@ if sys.platform == "win32":
         if hasattr(stream, "reconfigure"):
             try:
                 stream.reconfigure(encoding="utf-8")
-            except Exception:
+            except OSError:
                 pass
 
 REPO_ROOT    = Path(__file__).resolve().parents[1]
@@ -69,7 +69,7 @@ def run(cmd: list[str], description: str, dry_run: bool = False,
     if dry_run:
         warn("DRY RUN — skipping")
         return True
-    result = subprocess.run(cmd, cwd=str(cwd or REPO_ROOT))
+    result = subprocess.run(cmd, cwd=str(cwd or REPO_ROOT), check=False)
     if result.returncode != 0:
         err(f"Failed: {description}")
         return False
@@ -107,7 +107,7 @@ def check_prerequisites() -> dict[str, bool]:
             capture_output=True, check=True,
         )
         checks["pyinstaller"] = True
-    except Exception:
+    except Exception:  # noqa: BLE001
         checks["pyinstaller"] = False
 
     checks["pkgbuild"]     = command_exists("pkgbuild")
@@ -261,13 +261,11 @@ def interactive_menu(version: str) -> None:
         print_check_results(checks)
         return
 
-    if choice in ("2", "3"):
-        if not build_pyinstaller():
-            sys.exit(1)
+    if choice in ("2", "3") and not build_pyinstaller():
+        sys.exit(1)
 
-    if choice in ("3", "4"):
-        if not build_pkg(version):
-            sys.exit(1)
+    if choice in ("3", "4") and not build_pkg(version):
+        sys.exit(1)
 
     if choice not in ("0", "1", "2", "3", "4"):
         err("Invalid choice")
@@ -298,9 +296,8 @@ def main() -> None:
         ok_all = print_check_results(checks)
         sys.exit(0 if ok_all else 1)
 
-    if args.pyinstaller or args.build:
-        if not build_pyinstaller(args.dry_run):
-            sys.exit(1)
+    if (args.pyinstaller or args.build) and not build_pyinstaller(args.dry_run):
+        sys.exit(1)
 
     if args.pkg or args.build:
         path = build_pkg(version, args.dry_run)

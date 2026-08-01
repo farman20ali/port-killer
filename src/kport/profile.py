@@ -20,10 +20,8 @@ Config schema (in .kport.json)::
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
 
-
-def load_profiles(config: dict) -> Dict[str, List[int]]:
+def load_profiles(config: dict) -> dict[str, list[int]]:
     """Parse the ``profiles`` key from a loaded kport config dict.
 
     Returns a dict mapping profile name -> list of port ints.
@@ -34,7 +32,7 @@ def load_profiles(config: dict) -> Dict[str, List[int]]:
     if not isinstance(raw, dict):
         return {}
 
-    profiles: Dict[str, List[int]] = {}
+    profiles: dict[str, list[int]] = {}
     for name, value in raw.items():
         if not isinstance(value, list):
             continue
@@ -51,7 +49,7 @@ def load_profiles(config: dict) -> Dict[str, List[int]]:
     return profiles
 
 
-def resolve_profile(name: str, profiles: Dict[str, List[int]]) -> Optional[List[int]]:
+def resolve_profile(name: str, profiles: dict[str, list[int]]) -> list[int] | None:
     """Return the port list for *name*, or None if the profile doesn't exist.
 
     Lookup is case-insensitive so ``backend-Dev`` matches ``backend-dev``.

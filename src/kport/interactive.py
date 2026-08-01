@@ -5,16 +5,18 @@ Provides a terminal user interface (curses-based with fallback) for listing acti
 filtering, multi-selecting, and terminating processes.
 """
 
+from __future__ import annotations
+
 import sys
-from typing import List, Dict, Any
+from typing import Any
 
-from .inspectors import BaseInspector
-from .docker_engine import list_docker_mappings, docker_action_on_container
-from .process_manager import detect_process_manager
+from .docker_engine import docker_action_on_container, list_docker_mappings
 from .formatter import Colors, colorize, confirm_prompt
+from .inspectors import BaseInspector
+from .process_manager import detect_process_manager
 
 
-def _fetch_interactive_rows(inspector: BaseInspector) -> List[Dict[str, Any]]:
+def _fetch_interactive_rows(inspector: BaseInspector) -> list[dict[str, Any]]:
     """Gather all local and docker port entries for the picker."""
     rows = []
 
@@ -115,7 +117,7 @@ def _fallback_numbered_menu(inspector: BaseInspector, args: Any) -> int:
 
 
 def _execute_kills(
-    inspector: BaseInspector, selected_rows: List[Dict[str, Any]], args: Any
+    inspector: BaseInspector, selected_rows: list[dict[str, Any]], args: Any
 ) -> int:
     """Execute kill action on all user-selected items."""
     if not selected_rows:
@@ -206,7 +208,7 @@ def run_interactive_picker(inspector: BaseInspector, args: Any) -> int:
     def _curses_main(stdscr):
         try:
             curses.curs_set(0)
-        except Exception:
+        except curses.error:
             pass
 
         curses.start_color()
@@ -252,7 +254,7 @@ def run_interactive_picker(inspector: BaseInspector, args: Any) -> int:
             # Curses search is active by default; show cursor
             try:
                 curses.curs_set(1)
-            except Exception:
+            except curses.error:
                 pass
 
             # Header
@@ -358,6 +360,6 @@ def run_interactive_picker(inspector: BaseInspector, args: Any) -> int:
             print("Cancelled.")
             return 0
         return _execute_kills(inspector, selected_targets, args)
-    except Exception:
+    except Exception:  # noqa: BLE001 - fallback to text menu on any curses exception
         # If curses initialization fails (e.g. TERM missing or unsupported terminal)
         return _fallback_numbered_menu(inspector, args)

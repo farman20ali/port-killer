@@ -44,10 +44,10 @@ To verify both paths are exercised, mock ``_psutil_accessible`` to return
 from .base import BaseInspector, PortBinding, ProcessInfo
 
 __all__ = [
-    "get_inspector",
     "BaseInspector",
     "PortBinding",
     "ProcessInfo",
+    "get_inspector",
 ]
 
 import importlib.util as _ilu
@@ -77,14 +77,14 @@ def _psutil_accessible() -> bool:
         return True
     except PermissionError:
         return False
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - catch arbitrary exceptions during connection query
         # psutil.AccessDenied is NOT a subclass of PermissionError; catch it too.
         try:
             import psutil as _p2
 
             if isinstance(exc, _p2.AccessDenied):
                 return False
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
         # Any other unexpected psutil failure → be safe and fall back.
         return False

@@ -2,16 +2,18 @@
 OS system commands fallback inspector implementation for kport.
 Leverages platform binaries (lsof, ss, netstat, tasklist, powershell) to inspect states.
 """
+from __future__ import annotations
 
-import platform
-import subprocess
-import shutil
-import re
 import json
 import os
+import platform
+import re
+import shutil
 import socket
 import struct
-from typing import List, Dict, Optional, Tuple, Any
+import subprocess
+from typing import Any
+
 from .base import BaseInspector, PortBinding, ProcessInfo
 
 # --- Linux-native /proc parsing helpers ---
@@ -31,7 +33,7 @@ def parse_ipv6(hex_str: str) -> str:
     return socket.inet_ntop(socket.AF_INET6, packed)
 
 
-def _parse_proc_net_file(filename: str, family: str) -> List[Tuple[str, int, int]]:
+def _parse_proc_net_file(filename: str, family: str) -> list[tuple[str, int, int]]:
     """Parse socket information from /proc/net/tcp* or /proc/net/udp*."""
     sockets = []
     if not os.path.exists(filename):
@@ -63,14 +65,14 @@ def _parse_proc_net_file(filename: str, family: str) -> List[Tuple[str, int, int
                 else:
                     ip = parse_ipv6(ip_hex)
                 sockets.append((ip, port, inode))
-            except Exception:
+            except (ValueError, IndexError):
                 continue
-    except Exception:
+    except OSError:
         pass
     return sockets
 
 
-def _get_linux_inode_to_pid_map() -> Dict[int, int]:
+def _get_linux_inode_to_pid_map() -> dict[int, int]:
     """Map socket inodes to owning process PIDs on Linux."""
     inode_to_pid = {}
     try:
@@ -90,12 +92,12 @@ def _get_linux_inode_to_pid_map() -> Dict[int, int]:
                         continue
             except OSError:
                 continue
-    except Exception:
+    except OSError:
         pass
     return inode_to_pid
 
 
-def _get_linux_process_info(pid: int) -> Optional[ProcessInfo]:
+def _get_linux_process_info(pid: int) -> ProcessInfo | None:
     """Retrieve process information natively on Linux from /proc."""
     try:
         stat_info = os.stat(f"/proc/{pid}")
@@ -104,13 +106,13 @@ def _get_linux_process_info(pid: int) -> Optional[ProcessInfo]:
             import pwd
 
             user = pwd.getpwuid(uid).pw_name
-        except Exception:
+        except (KeyError, ImportError):
             user = str(uid)
 
         try:
             with open(f"/proc/{pid}/comm", "r", errors="ignore") as f:
                 name = f.read().strip()
-        except Exception:
+        except OSError:
             name = ""
 
         cmdline = None
@@ -119,18 +121,18 @@ def _get_linux_process_info(pid: int) -> Optional[ProcessInfo]:
                 content = f.read()
                 if content:
                     cmdline = [arg for arg in content.split("\x00") if arg]
-        except Exception:
+        except OSError:
             pass
 
         if not name and cmdline:
             name = os.path.basename(cmdline[0])
 
         return ProcessInfo(pid=pid, name=name, cmdline=cmdline, user=user)
-    except Exception:
+    except OSError:
         return None
 
 
-def _list_listening_linux_native() -> Optional[List[PortBinding]]:
+def _list_listening_linux_native() -> list[PortBinding] | None:
     """Get active listening sockets natively on Linux via /proc/net."""
     if platform.system() != "Linux":
         return None
@@ -140,7 +142,7 @@ def _list_listening_linux_native() -> Optional[List[PortBinding]]:
     # C3 fix: build a pid→info map once instead of calling _get_linux_process_info
     # once per socket (which would be 4× redundant for each PID binding on TCP4/6 + UDP4/6).
     unique_pids = {pid for pid in inode_to_pid.values() if pid}
-    pid_to_info: Dict[int, Optional[ProcessInfo]] = {
+    pid_to_info: dict[int, ProcessInfo | None] = {
         pid: _get_linux_process_info(pid) for pid in unique_pids
     }
 
@@ -175,7 +177,7 @@ def _list_listening_linux_native() -> Optional[List[PortBinding]]:
     return bindings
 
 
-def _list_listening_proc_pid_net(pid: int) -> List[PortBinding]:
+def _list_listening_proc_pid_net(pid: int) -> list[PortBinding]:
     """
     Read port bindings from /proc/<pid>/net/tcp and /proc/<pid>/net/tcp6.
 
@@ -188,7 +190,7 @@ def _list_listening_proc_pid_net(pid: int) -> List[PortBinding]:
     if platform.system() != "Linux":
         return []
 
-    bindings: List[PortBinding] = []
+    bindings: list[PortBinding] = []
     for filename, family in [
         (f"/proc/{pid}/net/tcp", "IPv4"),
         (f"/proc/{pid}/net/tcp6", "IPv6"),
@@ -206,7 +208,7 @@ def _list_listening_proc_pid_net(pid: int) -> List[PortBinding]:
                         state="LISTEN",
                     )
                 )
-        except Exception:
+        except (OSError, ValueError, IndexError):
             pass
     return bindings
 
@@ -261,7 +263,7 @@ if platform.system() == "Windows":
         ]
 
 
-def _get_extended_tcp_table_ipv4() -> List[PortBinding]:
+def _get_extended_tcp_table_ipv4() -> list[PortBinding]:
     bindings = []
     if platform.system() != "Windows":
         return bindings
@@ -327,7 +329,7 @@ def _get_extended_tcp_table_ipv4() -> List[PortBinding]:
     return bindings
 
 
-def _get_extended_tcp_table_ipv6() -> List[PortBinding]:
+def _get_extended_tcp_table_ipv6() -> list[PortBinding]:
     bindings = []
     if platform.system() != "Windows":
         return bindings
@@ -393,7 +395,7 @@ def _get_extended_tcp_table_ipv6() -> List[PortBinding]:
     return bindings
 
 
-def _get_extended_udp_table_ipv4() -> List[PortBinding]:
+def _get_extended_udp_table_ipv4() -> list[PortBinding]:
     bindings = []
     if platform.system() != "Windows":
         return bindings
@@ -440,7 +442,7 @@ def _get_extended_udp_table_ipv4() -> List[PortBinding]:
     return bindings
 
 
-def _get_extended_udp_table_ipv6() -> List[PortBinding]:
+def _get_extended_udp_table_ipv6() -> list[PortBinding]:
     bindings = []
     if platform.system() != "Windows":
         return bindings
@@ -487,24 +489,24 @@ def _get_extended_udp_table_ipv6() -> List[PortBinding]:
     return bindings
 
 
-def _windows_listening_native() -> List[PortBinding]:
+def _windows_listening_native() -> list[PortBinding]:
     """Retrieve all Windows listening sockets natively using ctypes."""
     bindings = []
     try:
         bindings.extend(_get_extended_tcp_table_ipv4())
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 - ignore native call failure
         pass
     try:
         bindings.extend(_get_extended_tcp_table_ipv6())
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 - ignore native call failure
         pass
     try:
         bindings.extend(_get_extended_udp_table_ipv4())
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 - ignore native call failure
         pass
     try:
         bindings.extend(_get_extended_udp_table_ipv6())
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 - ignore native call failure
         pass
 
     for b in bindings:
@@ -515,7 +517,7 @@ def _windows_listening_native() -> List[PortBinding]:
     return bindings
 
 
-def _get_windows_process_info_native(pid: int) -> Optional[ProcessInfo]:
+def _get_windows_process_info_native(pid: int) -> ProcessInfo | None:
     """Retrieve process name/executable path natively on Windows using ctypes."""
     if platform.system() != "Windows":
         return None
@@ -533,7 +535,7 @@ def _get_windows_process_info_native(pid: int) -> Optional[ProcessInfo]:
                 return ProcessInfo(pid=pid, name=name, exe=exe_path)
         finally:
             kernel32.CloseHandle(h_proc)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 - ignore native call failure
         pass
     return None
 
@@ -545,8 +547,8 @@ class FallbackInspector(BaseInspector):
     def __init__(self):
         self.system = platform.system()
         self._ps_exe = None
-        self._process_info_cache: Dict[int, Optional[ProcessInfo]] = {}
-        self._tasklist_cache: Optional[Dict[int, str]] = None
+        self._process_info_cache: dict[int, ProcessInfo | None] = {}
+        self._tasklist_cache: dict[int, str] | None = None
         if self.system == "Windows":
             self._ps_exe = shutil.which("powershell") or shutil.which("pwsh")
 
@@ -561,17 +563,17 @@ class FallbackInspector(BaseInspector):
         self._process_info_cache.clear()
         self._tasklist_cache = None  # Force tasklist re-query on Windows
 
-    def _powershell(self) -> Optional[str]:
+    def _powershell(self) -> str | None:
         return self._ps_exe
 
     def _run_subprocess(
-        self, cmd: List[str], timeout: int = _SUBPROCESS_TIMEOUT
+        self, cmd: list[str], timeout: int = _SUBPROCESS_TIMEOUT
     ) -> subprocess.CompletedProcess:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
 
     def _run_powershell_json(
         self, script: str, timeout: int = _SUBPROCESS_TIMEOUT
-    ) -> Optional[Any]:
+    ) -> Any | None:
         ps = self._powershell()
         if not ps:
             return None
@@ -592,11 +594,11 @@ class FallbackInspector(BaseInspector):
             if not out:
                 return None
             return json.loads(out)
-        except (subprocess.TimeoutExpired, Exception):
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError, OSError, json.JSONDecodeError, ValueError):
             return None
 
-    def _parse_tasklist_csv(self, out: str) -> Dict[int, str]:
-        names: Dict[int, str] = {}
+    def _parse_tasklist_csv(self, out: str) -> dict[int, str]:
+        names: dict[int, str] = {}
         for line in out.splitlines():
             parts = [
                 p.strip().strip('"')
@@ -609,31 +611,31 @@ class FallbackInspector(BaseInspector):
                     continue
         return names
 
-    def _ensure_tasklist_cache(self) -> Dict[int, str]:
+    def _ensure_tasklist_cache(self) -> dict[int, str]:
         if self._tasklist_cache is not None:
             return self._tasklist_cache
         self._tasklist_cache = {}
         try:
             proc = self._run_subprocess(["tasklist", "/FO", "CSV", "/NH"])
             self._tasklist_cache = self._parse_tasklist_csv(proc.stdout or "")
-        except Exception:
+        except (subprocess.SubprocessError, OSError):
             pass
         return self._tasklist_cache
 
-    def _process_name_for_pid(self, pid: int) -> Optional[str]:
+    def _process_name_for_pid(self, pid: int) -> str | None:
         return self._ensure_tasklist_cache().get(pid)
 
     def _binding_from_windows_conn(
-        self, item: Dict[str, Any], proto: str = "tcp"
-    ) -> Optional[PortBinding]:
+        self, item: dict[str, Any], proto: str = "tcp"
+    ) -> PortBinding | None:
         try:
             port = int(item.get("LocalPort"))
-        except Exception:
+        except (ValueError, TypeError, AttributeError):
             return None
         pid = None
         try:
             pid = int(item.get("OwningProcess"))
-        except Exception:
+        except (ValueError, TypeError, AttributeError):
             pid = None
         laddr = f"{item.get('LocalAddress')}:{port}"
         state = item.get("State")
@@ -648,13 +650,13 @@ class FallbackInspector(BaseInspector):
             proto=proto,
         )
 
-    def list_listening(self, proto: str = "tcp") -> List[PortBinding]:
+    def list_listening(self, proto: str = "tcp") -> list[PortBinding]:
         self._clear_cache()  # C1: always fresh snapshot
         if self.system == "Windows":
-            bindings: List[PortBinding] = []
+            bindings: list[PortBinding] = []
             try:
                 bindings = _windows_listening_native()
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 - fallback if native windows call fails
                 pass
             if not bindings:
                 bindings = self._windows_listening(proto=proto)
@@ -668,7 +670,7 @@ class FallbackInspector(BaseInspector):
             bindings = []
             try:
                 bindings = _list_listening_linux_native() or []
-            except Exception:
+            except (OSError, ValueError, IndexError):
                 bindings = []
             if not bindings:
                 bindings = self._unix_listening(proto=proto)
@@ -679,7 +681,7 @@ class FallbackInspector(BaseInspector):
                     bindings = [b for b in bindings if b.proto == "udp"]
             return bindings
 
-    def find_bindings_on_port(self, port: int, proto: str = "tcp") -> List[PortBinding]:
+    def find_bindings_on_port(self, port: int, proto: str = "tcp") -> list[PortBinding]:
         self._clear_cache()  # C1
         if self.system == "Windows":
             try:
@@ -691,7 +693,7 @@ class FallbackInspector(BaseInspector):
                     elif proto == "udp":
                         return [b for b in filtered if b.proto == "udp"]
                     return filtered
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 - fallback if native windows API fails
                 pass
             return self._windows_bindings_on_port(port, proto=proto)
         else:
@@ -704,14 +706,14 @@ class FallbackInspector(BaseInspector):
                     elif proto == "udp":
                         return [b for b in filtered if b.proto == "udp"]
                     return filtered
-            except Exception:
+            except (OSError, ValueError, IndexError):
                 pass
             return [b for b in self._unix_listening(proto=proto) if b.port == port]
 
     def _windows_bindings_on_port(
         self, port: int, proto: str = "tcp"
-    ) -> List[PortBinding]:
-        bindings: List[PortBinding] = []
+    ) -> list[PortBinding]:
+        bindings: list[PortBinding] = []
         self._ensure_tasklist_cache()
 
         def _from_ps(data, bp):
@@ -774,7 +776,7 @@ class FallbackInspector(BaseInspector):
                     pid = None
                     try:
                         pid = int(parts[-1])
-                    except Exception:
+                    except ValueError:
                         pid = None
                     pname = self._process_name_for_pid(pid) if pid else None
                     bindings.append(
@@ -788,12 +790,12 @@ class FallbackInspector(BaseInspector):
                             proto=line_proto,
                         )
                     )
-        except Exception:
+        except (subprocess.SubprocessError, OSError, ValueError, IndexError):
             pass
         return sorted(bindings, key=lambda b: b.port)
 
-    def _windows_listening(self, proto: str = "tcp") -> List[PortBinding]:
-        bindings: List[PortBinding] = []
+    def _windows_listening(self, proto: str = "tcp") -> list[PortBinding]:
+        bindings: list[PortBinding] = []
         self._ensure_tasklist_cache()
 
         def _from_ps(data, bp):
@@ -849,7 +851,7 @@ class FallbackInspector(BaseInspector):
                     pid = None
                     try:
                         pid = int(parts[-1])
-                    except Exception:
+                    except ValueError:
                         pid = None
                     if ":" in local_addr:
                         port_str = local_addr.rsplit(":", 1)[-1]
@@ -869,12 +871,12 @@ class FallbackInspector(BaseInspector):
                                 proto=line_proto,
                             )
                         )
-        except Exception:
+        except (OSError, subprocess.SubprocessError, ValueError, IndexError):
             pass
         return sorted(bindings, key=lambda b: b.port)
 
-    def _unix_listening(self, proto: str = "tcp") -> List[PortBinding]:
-        bindings: List[PortBinding] = []
+    def _unix_listening(self, proto: str = "tcp") -> list[PortBinding]:
+        bindings: list[PortBinding] = []
         if shutil.which("lsof"):
             try:
                 proc = self._run_subprocess(["lsof", "-i", "-P", "-n"])
@@ -906,7 +908,7 @@ class FallbackInspector(BaseInspector):
                     pid = None
                     try:
                         pid = int(parts[1])
-                    except Exception:
+                    except ValueError:
                         pid = None
                     name_field = parts[8]
                     if ":" in name_field:
@@ -915,7 +917,7 @@ class FallbackInspector(BaseInspector):
                             # Strip trailing "(LISTEN)" if present
                             raw_port = raw_port.split("(")[0].strip()
                             port = int(raw_port)
-                        except Exception:
+                        except ValueError:
                             continue
                         family = "IPv6" if "6" in node_type else "IPv4"
                         state = "LISTEN" if line_proto == "tcp" else "UDP"
@@ -930,7 +932,7 @@ class FallbackInspector(BaseInspector):
                                 proto=line_proto,
                             )
                         )
-            except Exception:
+            except (OSError, subprocess.SubprocessError, ValueError, IndexError):
                 pass
         else:
             if shutil.which("ss"):
@@ -982,13 +984,13 @@ class FallbackInspector(BaseInspector):
                                         )
                                     )
                                     break
-                                except Exception:
+                                except ValueError:
                                     continue
-                except Exception:
+                except (OSError, subprocess.SubprocessError, ValueError, IndexError):
                     pass
         return sorted(bindings, key=lambda b: b.port)
 
-    def find_pids_on_port(self, port: int, proto: str = "tcp") -> List[int]:
+    def find_pids_on_port(self, port: int, proto: str = "tcp") -> list[int]:
         self._clear_cache()  # C1
         if self.system == "Windows":
             try:
@@ -1011,7 +1013,7 @@ class FallbackInspector(BaseInspector):
                             }
                         )
                     return sorted({b.pid for b in bindings if b.port == port and b.pid})
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 - fallback if native windows API fails
                 pass
             return self._windows_pids_on_port(port, proto=proto)
         else:
@@ -1035,11 +1037,11 @@ class FallbackInspector(BaseInspector):
                             }
                         )
                     return sorted({b.pid for b in bindings if b.port == port and b.pid})
-            except Exception:
+            except (OSError, ValueError, IndexError):
                 pass
             return self._unix_pids_on_port(port, proto=proto)
 
-    def _windows_pids_on_port(self, port: int, proto: str = "tcp") -> List[int]:
+    def _windows_pids_on_port(self, port: int, proto: str = "tcp") -> list[int]:
         pids = set()
 
         def _collect(data):
@@ -1047,12 +1049,12 @@ class FallbackInspector(BaseInspector):
                 for v in data:
                     try:
                         pids.add(int(v))
-                    except Exception:
+                    except ValueError:
                         pass
             elif data is not None:
                 try:
                     pids.add(int(data))
-                except Exception:
+                except ValueError:
                     pass
 
         ps_tcp = None
@@ -1091,11 +1093,11 @@ class FallbackInspector(BaseInspector):
                     try:
                         pid = int(parts[-1])
                         pids.add(pid)
-                    except Exception:
+                    except ValueError:
                         continue
         return sorted(pids)
 
-    def _unix_pids_on_port(self, port: int, proto: str = "tcp") -> List[int]:
+    def _unix_pids_on_port(self, port: int, proto: str = "tcp") -> list[int]:
         pids = set()
         if shutil.which("lsof"):
             # Use lsof's protocol-specific filter: TCP:port, UDP:port, or :port for both
@@ -1109,7 +1111,7 @@ class FallbackInspector(BaseInspector):
             for line in proc.stdout.splitlines():
                 try:
                     pids.add(int(line.strip()))
-                except Exception:
+                except ValueError:
                     continue
         else:
             if shutil.which("ss"):
@@ -1126,25 +1128,25 @@ class FallbackInspector(BaseInspector):
                         if m:
                             try:
                                 pids.add(int(m.group(1)))
-                            except Exception:
+                            except ValueError:
                                 continue
         return sorted(pids)
 
-    def get_process_info(self, pid: int) -> Optional[ProcessInfo]:
+    def get_process_info(self, pid: int) -> ProcessInfo | None:
         if pid in self._process_info_cache:
             return self._process_info_cache[pid]
         info = self._fetch_process_info(pid)
         self._process_info_cache[pid] = info
         return info
 
-    def _fetch_process_info(self, pid: int) -> Optional[ProcessInfo]:
+    def _fetch_process_info(self, pid: int) -> ProcessInfo | None:
         try:
             if self.system == "Windows":
                 try:
                     info = _get_windows_process_info_native(pid)
                     if info:
                         return info
-                except Exception:
+                except Exception:  # noqa: BLE001, S110 - fallback if native windows call fails
                     pass
                 name = self._process_name_for_pid(pid)
                 if name:
@@ -1167,7 +1169,7 @@ class FallbackInspector(BaseInspector):
                     info = _get_linux_process_info(pid)
                     if info:
                         return info
-                except Exception:
+                except (OSError, ValueError, IndexError, AttributeError):
                     pass
                 proc = self._run_subprocess(
                     ["ps", "-p", str(pid), "-o", "pid=,comm=,user=,args="]
@@ -1180,11 +1182,11 @@ class FallbackInspector(BaseInspector):
                     name = parts[1]
                     user = parts[2].split()[0] if len(parts) >= 3 else None
                     return ProcessInfo(pid=pid, name=name, user=user)
-        except Exception:
+        except Exception:  # noqa: BLE001 - robust wrapper for process info retrieval
             return None
         return None
 
-    def find_pids_by_name(self, name: str, exact: bool = False) -> List[int]:
+    def find_pids_by_name(self, name: str, exact: bool = False) -> list[int]:
         self._clear_cache()  # C1
         self_pid = os.getpid()  # R5: never return kport's own PID
         if self.system == "Windows":
@@ -1202,7 +1204,7 @@ class FallbackInspector(BaseInspector):
                     pid_s = parts[1]
                     try:
                         pid = int(pid_s)
-                    except Exception:
+                    except ValueError:
                         continue
                     if pid == self_pid:
                         continue  # R5: skip self
@@ -1227,7 +1229,7 @@ class FallbackInspector(BaseInspector):
                         pid = int(line.strip())
                         if pid != self_pid:
                             pids.append(pid)
-                    except Exception:
+                    except ValueError:
                         continue
                 return sorted(pids)
             else:
@@ -1242,13 +1244,13 @@ class FallbackInspector(BaseInspector):
                                 pid = int(parts[1])
                                 if pid != self_pid:
                                     pids.append(pid)
-                            except Exception:
+                            except ValueError:
                                 continue
                 return sorted(set(pids))
 
     def find_ports_by_process_name(
         self, name: str, exact: bool = False, proto: str = "tcp"
-    ) -> List[PortBinding]:
+    ) -> list[PortBinding]:
         """
         Find all port bindings for processes matching `name`.
 
@@ -1270,7 +1272,7 @@ class FallbackInspector(BaseInspector):
           - Standard lsof / ss parsing for macOS and Linux without /proc support.
         """
         self._clear_cache()  # C1
-        results: List[PortBinding] = []
+        results: list[PortBinding] = []
         name_lower = name.lower()
 
         # ------------------------------------------------------------------ #
@@ -1285,7 +1287,7 @@ class FallbackInspector(BaseInspector):
             # Step 2: get all listening bindings via native IPHLPAPI (no elevation)
             try:
                 all_bindings = _windows_listening_native()
-            except Exception:
+            except Exception:  # noqa: BLE001 - fallback if native windows API call fails
                 all_bindings = []
 
             if not all_bindings:
@@ -1325,14 +1327,14 @@ class FallbackInspector(BaseInspector):
                     pid_s = parts[1]
                     try:
                         pid = int(pid_s)
-                    except Exception:
+                    except ValueError:
                         pid = None
                     addr = parts[8]
                     if ":" not in addr:
                         continue
                     try:
                         port = int(addr.rsplit(":", 1)[-1])
-                    except Exception:
+                    except ValueError:
                         continue
                     results.append(
                         PortBinding(
@@ -1344,7 +1346,7 @@ class FallbackInspector(BaseInspector):
                             state="LISTEN" if "LISTEN" in line else None,
                         )
                     )
-            except Exception:
+            except (OSError, subprocess.SubprocessError, ValueError, IndexError):
                 pass
 
             # If lsof returned results, we're done
@@ -1367,7 +1369,7 @@ class FallbackInspector(BaseInspector):
                                 info = self.get_process_info(b.pid)
                                 b.process_name = info.name if info else name
                             results.append(b)
-                except Exception:
+                except (OSError, ValueError, IndexError):
                     pass
 
                 # Layer 2: per-process network namespace (/proc/<pid>/net/tcp)
@@ -1400,7 +1402,7 @@ class FallbackInspector(BaseInspector):
                         continue
                     try:
                         pid = int(m_pid.group(1))
-                    except Exception:
+                    except ValueError:
                         continue
                     if pid not in pids_by_name:
                         continue
@@ -1421,9 +1423,9 @@ class FallbackInspector(BaseInspector):
                                     )
                                 )
                                 break
-                            except Exception:
+                            except ValueError:
                                 continue
-            except Exception:
+            except (subprocess.SubprocessError, OSError):
                 pass
 
         return sorted(results, key=lambda b: (b.pid or 0, b.port))
@@ -1450,7 +1452,7 @@ class FallbackInspector(BaseInspector):
                 raise ProcessLookupError()
             except PermissionError:
                 raise PermissionError()
-            except Exception as e:
+            except OSError as e:
                 raise RuntimeError(str(e))
 
     def is_process_alive(self, pid: int) -> bool:
@@ -1466,7 +1468,7 @@ class FallbackInspector(BaseInspector):
             except (ProcessLookupError, PermissionError) as e:
                 return isinstance(e, PermissionError)
 
-    def get_child_pids(self, pid: int) -> List[int]:
+    def get_child_pids(self, pid: int) -> list[int]:
         if self.system == "Windows":
             ps = self._powershell()
             if ps:
@@ -1492,7 +1494,7 @@ class FallbackInspector(BaseInspector):
                             all_pids.append(child)
                             all_pids.extend(self.get_child_pids(child))
                         return sorted(set(all_pids))
-                except Exception:
+                except (subprocess.SubprocessError, OSError, ValueError):
                     pass
             try:
                 proc = self._run_subprocess(
@@ -1516,7 +1518,7 @@ class FallbackInspector(BaseInspector):
                         all_pids.append(child)
                         all_pids.extend(self.get_child_pids(child))
                     return sorted(set(all_pids))
-            except Exception:
+            except (subprocess.SubprocessError, OSError, ValueError):
                 pass
             return []
         else:
@@ -1542,6 +1544,6 @@ class FallbackInspector(BaseInspector):
 
                     gather(pid)
                     return sorted(set(descendants))
-            except Exception:
+            except (subprocess.SubprocessError, OSError, ValueError, RecursionError):
                 pass
             return []

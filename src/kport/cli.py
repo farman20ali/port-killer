@@ -8,34 +8,34 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
-from typing import List, Dict, Optional, Any, Tuple
 from dataclasses import asdict
+from typing import Any
 
-from .exceptions import KPortError, InvalidPortError, PermissionDeniedError
-from . import __version__
-from .inspectors import get_inspector, BaseInspector
+from . import __version__, audit
 from .constants import PROTECTED_PORTS, PROTECTED_PROCESS_NAMES
 from .docker_engine import (
-    list_docker_mappings,
-    docker_mappings_for_host_port,
     docker_action_on_container,
+    docker_mappings_for_host_port,
+    list_docker_mappings,
 )
+from .exceptions import InvalidPortError, KPortError, PermissionDeniedError
 from .formatter import (
     Colors,
-    colorize,
-    print_table_listen,
-    jsonify_bindings,
-    confirm_prompt,
     choose_docker_action,
+    colorize,
+    confirm_prompt,
+    jsonify_bindings,
     print_table_docker,
     print_table_list_product,
+    print_table_listen,
 )
-from .profile import load_profiles, resolve_profile
+from .inspectors import BaseInspector, get_inspector
 from .notify import notify as _desktop_notify
 from .process_manager import detect_process_manager
-from . import audit
+from .profile import load_profiles, resolve_profile
 
 # Exit codes
 EXIT_OK = 0
@@ -60,7 +60,7 @@ def _configure_stdio() -> None:
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8")
-        except Exception:
+        except (AttributeError, ValueError, OSError):
             pass
 
 
@@ -71,11 +71,11 @@ DEFAULT_PROTECTED_PROCESS_NAMES = PROTECTED_PROCESS_NAMES
 
 
 def check_safety_policy(
-    port: Optional[int],
-    pids: List[int],
+    port: int | None,
+    pids: list[int],
     args: argparse.Namespace,
     inspector: BaseInspector,
-) -> Tuple[bool, str]:
+) -> tuple[bool, str]:
     """
     Check if a port or any associated PIDs are protected by safety policies.
     Returns (True, "") if safety policy permits, or (False, error_msg) if blocked.
@@ -123,7 +123,7 @@ def check_safety_policy(
                         False,
                         f"Security Shield Active: PID {pid} runs critical process '{info.name}' which is protected. Action aborted. Use --bypass-safety to override.",
                     )
-        except Exception:
+        except (OSError, AttributeError, ValueError, IndexError):
             pass
 
     return True, ""
@@ -140,8 +140,8 @@ def confirm_docker_rm(
     assume_yes: bool,
     force: bool,
     image: str = "",
-    host_port: Optional[int] = None,
-    container_port: Optional[int] = None,
+    host_port: int | None = None,
+    container_port: int | None = None,
 ) -> bool:
     """
     Confirmation gate for docker rm.
@@ -210,7 +210,7 @@ def _is_elevated() -> bool:
             import ctypes
 
             return ctypes.windll.shell32.IsUserAnAdmin() != 0
-        except Exception:
+        except (AttributeError, OSError):
             return False
     return (os.geteuid() == 0) if hasattr(os, "geteuid") else False
 
@@ -226,19 +226,19 @@ def _poll_until_free(
     while time.time() - start_time < timeout:
         try:
             bindings = inspector.find_bindings_on_port(port)
-        except Exception:
+        except (OSError, ValueError, IndexError, subprocess.SubprocessError):
             bindings = []
         if not bindings:
             return True
         time.sleep(interval)
     try:
         bindings = inspector.find_bindings_on_port(port)
-    except Exception:
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
         bindings = []
     return len(bindings) == 0
 
 
-def _default_config_paths() -> List[str]:
+def _default_config_paths() -> list[str]:
     home = os.path.expanduser("~")
     return [
         os.path.join(os.getcwd(), ".kport.json"),
@@ -247,7 +247,7 @@ def _default_config_paths() -> List[str]:
     ]
 
 
-def load_config(config_path: Optional[str], debug: bool = False) -> Dict[str, Any]:
+def load_config(config_path: str | None, debug: bool = False) -> dict[str, Any]:
     """Load optional JSON configuration defaults."""
     candidate_paths = [config_path] if config_path else _default_config_paths()
 
@@ -270,7 +270,7 @@ def load_config(config_path: Optional[str], debug: bool = False) -> Dict[str, An
                 file=sys.stderr,
             )
             sys.exit(EXIT_INVALID_INPUT)
-        except Exception as e:
+        except OSError as e:
             print(
                 colorize(f"Error: failed to read config file {path}: {e}", Colors.RED),
                 file=sys.stderr,
@@ -279,7 +279,7 @@ def load_config(config_path: Optional[str], debug: bool = False) -> Dict[str, An
     return {}
 
 
-def apply_config_defaults(args: argparse.Namespace, cfg: Dict[str, Any]) -> None:
+def apply_config_defaults(args: argparse.Namespace, cfg: dict[str, Any]) -> None:
     """Apply configuration options as fallback defaults to argparse Namespace."""
 
     def _set_bool(name: str, key: str) -> None:
@@ -298,7 +298,7 @@ def apply_config_defaults(args: argparse.Namespace, cfg: Dict[str, Any]) -> None
                 current = getattr(args, name)
                 if name == "graceful_timeout" and current is None:
                     setattr(args, name, float(cfg[key]))
-            except Exception:
+            except (ValueError, TypeError):
                 pass
 
     _set_bool("yes", "yes")
@@ -310,13 +310,13 @@ def apply_config_defaults(args: argparse.Namespace, cfg: Dict[str, Any]) -> None
     _set_num("graceful_timeout", "graceful_timeout")
 
     # Custom safety lists from config
-    setattr(args, "protected_ports", cfg.get("protected_ports"))
-    setattr(args, "protected_processes", cfg.get("protected_processes"))
+    args.protected_ports = cfg.get("protected_ports")
+    args.protected_processes = cfg.get("protected_processes")
 
     if hasattr(args, "docker_action") and getattr(args, "docker_action", None) is None:
         v = cfg.get("docker_action")
         if v in ("stop", "restart", "rm"):
-            setattr(args, "docker_action", v)
+            args.docker_action = v
 
 
 def _resolve_timeout(args: argparse.Namespace) -> float:
@@ -331,7 +331,7 @@ def validate_port(port: int) -> None:
         raise InvalidPortError(f"Port {port} is not valid. Must be 1-65535.")
 
 
-def parse_port_range(port_range: str, max_ports: int = 1000) -> List[int]:
+def parse_port_range(port_range: str, max_ports: int = 1000) -> list[int]:
     """Parse port range strings (e.g. 8080 or 3000-3010)."""
     try:
         if "-" in port_range:
@@ -372,7 +372,7 @@ def _json_out(command: str, data: dict) -> str:
     )
 
 
-def _resolve_ports_for_args(args: argparse.Namespace) -> List[int]:
+def _resolve_ports_for_args(args: argparse.Namespace) -> list[int]:
     """Helper to resolve a list of ports for the command, supporting --profile."""
     profile_name = getattr(args, "profile", None)
     if profile_name:
@@ -398,8 +398,8 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
     if args.command == "docker":
         extra = getattr(args, "extra", []) or []
         # Separate numeric args (port filters) from non-numeric (unknown subcommands).
-        port_filters: List[int] = []
-        unknown_args: List[str] = []
+        port_filters: list[int] = []
+        unknown_args: list[str] = []
         for token in extra:
             try:
                 port_filters.append(int(token))
@@ -631,7 +631,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                                 break
                         if _raw_occupied:
                             break
-                except Exception:
+                except (OSError, ValueError, IndexError):
                     pass
 
             if _raw_occupied:
@@ -941,8 +941,10 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                     exit_codes.append(EXIT_GENERAL_ERROR)
                     continue
 
-                if action == "rm" and not args.dry_run:
-                    if not confirm_docker_rm(
+                if (
+                    action == "rm"
+                    and not args.dry_run
+                    and not confirm_docker_rm(
                         m.container_name,
                         m.container_id,
                         assume_yes=args.yes,
@@ -950,7 +952,8 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                         image=getattr(m, "image", ""),
                         host_port=getattr(m, "host_port", port),
                         container_port=getattr(m, "container_port", None),
-                    ):
+                    )
+                ):
                         if args.json:
                             results.append(
                                 {
@@ -1224,7 +1227,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
         return EXIT_OK
 
     if args.command == "watch":
-        ports_to_watch: List[int] = []
+        ports_to_watch: list[int] = []
         # Support both single port (positional) and --ports / --range
         single = getattr(args, "port", None)
         multi = getattr(args, "ports", None)
@@ -1251,12 +1254,12 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
         do_notify = getattr(args, "notify", False)
 
         import time
-        from datetime import datetime
+        from datetime import datetime, timezone
 
         # Per-port state tracking
-        states: Dict[int, Dict[str, Any]] = {}
+        states: dict[int, dict[str, Any]] = {}
 
-        def get_port_state(port: int) -> Dict[str, Any]:
+        def get_port_state(port: int) -> dict[str, Any]:
             local_bindings = inspector.find_bindings_on_port(port)
             docker_hits = docker_mappings_for_host_port(port, debug=debug)
             pids = inspector.find_pids_on_port(port)
@@ -1282,7 +1285,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
             else:
                 return {"type": "free"}
 
-        def describe_state(port: int, state: Dict[str, Any]) -> str:
+        def describe_state(port: int, state: dict[str, Any]) -> str:
             stype = state["type"]
             if stype == "free":
                 return f"port {port}: FREE"
@@ -1301,7 +1304,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                 return f"port {port}: LOCAL (PID hidden)"
             return f"port {port}: UNKNOWN"
 
-        def _states_differ(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
+        def _states_differ(a: dict[str, Any], b: dict[str, Any]) -> bool:
             """P6 fix: compare full state including process names, not just PIDs."""
             if a["type"] != b["type"]:
                 return True
@@ -1319,7 +1322,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
         for port in ports_to_watch:
             st = get_port_state(port)
             states[port] = st
-            ts = datetime.now()
+            ts = datetime.now(timezone.utc)
             if args.json:
                 # Streaming JSON: flat object per event, consistent with change events.
                 # "event": "initial" allows consumers to skip or process separately.
@@ -1341,7 +1344,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
         until_mode = getattr(args, "until", None)
         timeout_sec = getattr(args, "timeout", None)
 
-        def _is_until_satisfied(current_states: Dict[int, Dict[str, Any]]) -> bool:
+        def _is_until_satisfied(current_states: dict[int, dict[str, Any]]) -> bool:
             if not until_mode:
                 return False
             if until_mode == "free":
@@ -1405,7 +1408,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                     last = states[port]
 
                     if _states_differ(current, last):
-                        ts = datetime.now()
+                        ts = datetime.now(timezone.utc)
                         states[port] = current
                         desc = describe_state(port, current)
 
@@ -1466,7 +1469,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                 file=sys.stderr,
             )
             return EXIT_GENERAL_ERROR
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - top-level MCP server error handler
             print(colorize(f"MCP server error: {e}", Colors.RED), file=sys.stderr)
             return EXIT_GENERAL_ERROR
 
@@ -1572,7 +1575,7 @@ Register-ArgumentCompleter -Native -CommandName kport -ScriptBlock {
         print(f"Error: unsupported shell '{shell}'", file=sys.stderr)
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     _configure_stdio()
     parser = _QuietParser(
         description="kport - Cross-platform port inspector and killer",
@@ -1863,7 +1866,7 @@ Examples:
                 file=sys.stderr,
             )
             return EXIT_GENERAL_ERROR
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - top-level MCP server error handler
             print(colorize(f"MCP server error: {e}", Colors.RED), file=sys.stderr)
             return EXIT_GENERAL_ERROR
 
@@ -2062,7 +2065,7 @@ Examples:
                     for r in results:
                         pname = r["process"]["name"] if r["process"] else "-"
                         print(
-                            f"{colorize(str(r['port']), Colors.CYAN):<8} {str(r['pid']):<8} {pname:<30}"
+                            f"{colorize(str(r['port']), Colors.CYAN):<8} {r['pid']!s:<8} {pname:<30}"
                         )
                     print(
                         colorize(
@@ -2109,7 +2112,7 @@ Examples:
                     for r in results:
                         pname = r["process"]["name"] if r["process"] else "-"
                         print(
-                            f"{colorize(str(r['port']), Colors.CYAN):<8} {str(r['pid']):<8} {pname:<30}"
+                            f"{colorize(str(r['port']), Colors.CYAN):<8} {r['pid']!s:<8} {pname:<30}"
                         )
                     print(
                         colorize(
@@ -2204,7 +2207,7 @@ Examples:
                             )
                         )
                 else:
-                    pid_groups: Dict[int, list] = {}
+                    pid_groups: dict[int, list] = {}
                     for b in bindings:
                         pid_groups.setdefault(b.pid or 0, []).append(b)
                     print(
@@ -2436,13 +2439,16 @@ Examples:
                                 )
                             )
                             action = choose_docker_action(assume_yes=args.yes)
-                        if action == "rm" and not args.dry_run:
-                            if not confirm_docker_rm(
+                        if (
+                            action == "rm"
+                            and not args.dry_run
+                            and not confirm_docker_rm(
                                 m.container_name,
                                 m.container_id,
                                 assume_yes=args.yes,
                                 force=args.force,
-                            ):
+                            )
+                        ):
                                 if args.json:
                                     print(
                                         json.dumps(
@@ -2731,7 +2737,7 @@ Examples:
                 else:
                     failed_ports = 0
                     total_ports = len(port_pid_map)
-                    for port in port_pid_map.keys():
+                    for port in port_pid_map:
                         ok, msg = inspector.kill_port(
                             port,
                             graceful_timeout=_resolve_timeout(args),
@@ -2848,7 +2854,7 @@ Examples:
                 else:
                     failed_ports = 0
                     total_ports = len(port_pid_map)
-                    for port in port_pid_map.keys():
+                    for port in port_pid_map:
                         ok, msg = inspector.kill_port(
                             port,
                             graceful_timeout=_resolve_timeout(args),
@@ -2943,7 +2949,7 @@ Examples:
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")
         return EXIT_GENERAL_ERROR
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - main entry point catch-all
         print(colorize(f"Unexpected error: {e}", Colors.RED), file=sys.stderr)
         return EXIT_GENERAL_ERROR
 

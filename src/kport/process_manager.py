@@ -5,14 +5,17 @@ Detects if a process (by PID) is managed by systemd, pm2, or supervisor.
 Returns structured info to explain why processes may automatically restart if killed.
 """
 
+from __future__ import annotations
+
+import json
 import os
 import re
 import shutil
 import subprocess
-from typing import Dict, Optional, Any
+from typing import Any
 
 
-def _get_cgroup_systemd_unit(pid: int) -> Optional[str]:
+def _get_cgroup_systemd_unit(pid: int) -> str | None:
     """Extract systemd service unit name from /proc/<pid>/cgroup on Linux."""
     cgroup_path = f"/proc/{pid}/cgroup"
     if not os.path.exists(cgroup_path):
@@ -35,12 +38,13 @@ def _get_cgroup_systemd_unit(pid: int) -> Optional[str]:
                         if segment.startswith("user@"):
                             continue
                         return segment
-    except Exception:
-        pass
+    except OSError:
+        # Could not read /proc/<pid>/cgroup (process may have exited)
+        return None
     return None
 
 
-def _get_proc_environ(pid: int) -> Dict[str, str]:
+def _get_proc_environ(pid: int) -> dict[str, str]:
     """Read environment variables for PID on Linux from /proc/<pid>/environ."""
     env_path = f"/proc/{pid}/environ"
     env_dict = {}
@@ -55,12 +59,13 @@ def _get_proc_environ(pid: int) -> Dict[str, str]:
                 env_dict[k.decode("utf-8", errors="ignore")] = v.decode(
                     "utf-8", errors="ignore"
                 )
-    except Exception:
-        pass
+    except OSError:
+        # Missing /proc/<pid>/environ (no access or process gone)
+        return env_dict
     return env_dict
 
 
-def _detect_pm2_app(pid: int, env: Dict[str, str]) -> Optional[str]:
+def _detect_pm2_app(pid: int, env: dict[str, str]) -> str | None:
     """Detect if PID is managed by PM2."""
     # 1. Check env vars set by PM2 worker processes
     if "pm_id" in env or "PM2_HOME" in env or "pm2_home" in env:
@@ -73,11 +78,9 @@ def _detect_pm2_app(pid: int, env: Dict[str, str]) -> Optional[str]:
     if shutil.which("pm2"):
         try:
             res = subprocess.run(
-                ["pm2", "jlist"], capture_output=True, text=True, timeout=3
+                ["pm2", "jlist"], capture_output=True, text=True, timeout=3, check=False
             )
             if res.returncode == 0 and res.stdout:
-                import json
-
                 data = json.loads(res.stdout)
                 if isinstance(data, list):
                     for app in data:
@@ -89,21 +92,21 @@ def _detect_pm2_app(pid: int, env: Dict[str, str]) -> Optional[str]:
                             if (
                                 isinstance(pm2_env, dict)
                                 and pm2_env.get("pm_id") is not None
-                            ):
-                                if app.get("pid") == pid:
-                                    return app.get("name")
-        except Exception:
-            pass
+                            ) and app.get("pid") == pid:
+                                return app.get("name")
+        except (subprocess.SubprocessError, OSError, json.JSONDecodeError, ValueError):
+            # pm2 not available or output unreadable
+            return None
 
     return None
 
 
-def _detect_supervisor_app(pid: int) -> Optional[str]:
+def _detect_supervisor_app(pid: int) -> str | None:
     """Detect if PID is managed by supervisord."""
     if shutil.which("supervisorctl"):
         try:
             res = subprocess.run(
-                ["supervisorctl", "status"], capture_output=True, text=True, timeout=3
+                ["supervisorctl", "status"], capture_output=True, text=True, timeout=3, check=False
             )
             if res.returncode == 0 and res.stdout:
                 for line in res.stdout.splitlines():
@@ -111,14 +114,14 @@ def _detect_supervisor_app(pid: int) -> Optional[str]:
                     m = re.search(r"^(\S+)\s+\S+\s+pid\s+(\d+)", line.strip())
                     if m and int(m.group(2)) == pid:
                         return m.group(1)
-        except Exception:
-            pass
+        except (subprocess.SubprocessError, OSError):
+            return None
     return None
 
 
 def detect_process_manager(
-    pid: int, process_name: Optional[str] = None
-) -> Optional[Dict[str, Any]]:
+    pid: int, process_name: str | None = None
+) -> dict[str, Any] | None:
     """
     Detect if PID is managed by a process manager (systemd, pm2, supervisord).
     Returns dict:

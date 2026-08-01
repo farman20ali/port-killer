@@ -36,7 +36,7 @@ if sys.platform == "win32":
         if hasattr(stream, "reconfigure"):
             try:
                 stream.reconfigure(encoding="utf-8")
-            except Exception:
+            except OSError:
                 pass
 
     # Dynamic path enhancement for Windows build tools
@@ -84,7 +84,7 @@ def run(cmd: list[str], description: str, dry_run: bool = False,
     if dry_run:
         warn("DRY RUN — skipping execution")
         return True
-    result = subprocess.run(cmd, cwd=str(cwd or REPO_ROOT))
+    result = subprocess.run(cmd, cwd=str(cwd or REPO_ROOT), check=False)
     if result.returncode != 0:
         err(f"Failed: {description}")
         return False
@@ -348,13 +348,11 @@ def main() -> None:
         ok_all = print_check_results(checks)
         sys.exit(0 if ok_all else 1)
 
-    if args.pyinstaller or args.build:
-        if not build_pyinstaller(args.dry_run):
-            sys.exit(1)
+    if (args.pyinstaller or args.build) and not build_pyinstaller(args.dry_run):
+        sys.exit(1)
 
-    if args.nsis or args.build:
-        if not build_nsis(version, args.dry_run):
-            sys.exit(1)
+    if (args.nsis or args.build) and not build_nsis(version, args.dry_run):
+        sys.exit(1)
 
     if any([args.check, args.build, args.pyinstaller, args.nsis]):
         return  # non-interactive done

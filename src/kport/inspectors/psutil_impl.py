@@ -3,16 +3,18 @@ Psutil-backed inspector implementation for kport.
 Leverages psutil to get robust, cross-platform networking and process information.
 """
 
+from __future__ import annotations
+
 import os
-from typing import List, Dict, Optional, Tuple
-from .base import BaseInspector, PortBinding, ProcessInfo
 
 import psutil  # Safe to import because this implementation is dynamically loaded only when psutil is active.
 
+from .base import BaseInspector, PortBinding, ProcessInfo
+
 
 class PsutilInspector(BaseInspector):
-    def list_listening(self, proto: str = "tcp") -> List[PortBinding]:
-        bindings: Dict[Tuple, PortBinding] = {}
+    def list_listening(self, proto: str = "tcp") -> list[PortBinding]:
+        bindings: dict[tuple, PortBinding] = {}
         kinds = (
             ["tcp"]
             if proto == "tcp"
@@ -21,7 +23,7 @@ class PsutilInspector(BaseInspector):
         for kind in kinds:
             try:
                 conns = psutil.net_connections(kind=kind)
-            except Exception:
+            except psutil.Error:
                 continue
             for conn in conns:
                 if not conn.laddr:
@@ -42,7 +44,7 @@ class PsutilInspector(BaseInspector):
                     try:
                         p = psutil.Process(pid)
                         proc_name = p.name()
-                    except Exception:
+                    except psutil.Error:
                         proc_name = None
                 key = (port, family, pid, state)
                 if key not in bindings:
@@ -57,7 +59,7 @@ class PsutilInspector(BaseInspector):
                     )
         return sorted(bindings.values(), key=lambda b: b.port)
 
-    def find_pids_on_port(self, port: int, proto: str = "tcp") -> List[int]:
+    def find_pids_on_port(self, port: int, proto: str = "tcp") -> list[int]:
         pids = set()
         kinds = (
             ["tcp"]
@@ -67,7 +69,7 @@ class PsutilInspector(BaseInspector):
         for kind in kinds:
             try:
                 conns = psutil.net_connections(kind=kind)
-            except Exception:
+            except psutil.Error:
                 continue
             for conn in conns:
                 if not conn.laddr:
@@ -80,14 +82,14 @@ class PsutilInspector(BaseInspector):
                         if hasattr(conn.laddr, "port")
                         else conn.laddr[1]
                     )
-                except Exception:
+                except (AttributeError, IndexError, TypeError):
                     continue
                 if conn_port == port and conn.pid:
                     pids.add(conn.pid)
         return sorted(pids)
 
-    def find_bindings_on_port(self, port: int, proto: str = "tcp") -> List[PortBinding]:
-        bindings: List[PortBinding] = []
+    def find_bindings_on_port(self, port: int, proto: str = "tcp") -> list[PortBinding]:
+        bindings: list[PortBinding] = []
         kinds = (
             ["tcp"]
             if proto == "tcp"
@@ -96,7 +98,7 @@ class PsutilInspector(BaseInspector):
         for kind in kinds:
             try:
                 conns = psutil.net_connections(kind=kind)
-            except Exception:
+            except psutil.Error:
                 continue
             for conn in conns:
                 if not conn.laddr:
@@ -109,7 +111,7 @@ class PsutilInspector(BaseInspector):
                         if hasattr(conn.laddr, "port")
                         else conn.laddr[1]
                     )
-                except Exception:
+                except (AttributeError, IndexError, TypeError):
                     continue
                 if conn_port != port:
                     continue
@@ -124,7 +126,7 @@ class PsutilInspector(BaseInspector):
                 if pid:
                     try:
                         proc_name = psutil.Process(pid).name()
-                    except Exception:
+                    except psutil.Error:
                         proc_name = None
                 bindings.append(
                     PortBinding(
@@ -139,24 +141,24 @@ class PsutilInspector(BaseInspector):
                 )
         return sorted(bindings, key=lambda b: b.port)
 
-    def get_process_info(self, pid: int) -> Optional[ProcessInfo]:
+    def get_process_info(self, pid: int) -> ProcessInfo | None:
         try:
             p = psutil.Process(pid)
             # R7 fix: store exe() result once — it triggers a syscall each time.
             exe = None
             try:
                 exe = p.exe() or None
-            except Exception:
+            except psutil.Error:
                 pass
             cmdline = None
             try:
                 cmdline = p.cmdline() or None
-            except Exception:
+            except psutil.Error:
                 pass
             user = None
             try:
                 user = p.username() if hasattr(p, "username") else None
-            except Exception:
+            except psutil.Error:
                 pass
             return ProcessInfo(
                 pid=pid,
@@ -165,10 +167,10 @@ class PsutilInspector(BaseInspector):
                 cmdline=cmdline,
                 user=user,
             )
-        except Exception:
+        except psutil.Error:
             return None
 
-    def find_pids_by_name(self, name: str, exact: bool = False) -> List[int]:
+    def find_pids_by_name(self, name: str, exact: bool = False) -> list[int]:
         out = []
         name_lower = name.lower()
         for p in psutil.process_iter(["pid", "name", "cmdline"]):
@@ -188,14 +190,14 @@ class PsutilInspector(BaseInspector):
                 )
                 if match:
                     out.append(p.info["pid"])
-            except Exception:
+            except psutil.Error:
                 continue
         return sorted(set(out))
 
     def find_ports_by_process_name(
         self, name: str, exact: bool = False, proto: str = "tcp"
-    ) -> List[PortBinding]:
-        results: List[PortBinding] = []
+    ) -> list[PortBinding]:
+        results: list[PortBinding] = []
         name_lower = name.lower()
         kinds = (
             ["tcp"]
@@ -205,7 +207,7 @@ class PsutilInspector(BaseInspector):
         for kind in kinds:
             try:
                 conns = psutil.net_connections(kind=kind)
-            except Exception:
+            except psutil.Error:
                 continue
             for conn in conns:
                 if not conn.laddr:
@@ -244,7 +246,7 @@ class PsutilInspector(BaseInspector):
                                 proto="tcp" if kind == "tcp" else "udp",
                             )
                         )
-                except Exception:
+                except psutil.Error:
                     continue
         return sorted(results, key=lambda b: (b.pid or 0, b.port))
 
@@ -256,7 +258,7 @@ class PsutilInspector(BaseInspector):
             raise ProcessLookupError()
         except PermissionError:
             raise PermissionError()
-        except Exception as e:
+        except OSError as e:
             raise RuntimeError(str(e))
 
     def is_process_alive(self, pid: int) -> bool:
@@ -266,7 +268,7 @@ class PsutilInspector(BaseInspector):
             return p.is_running() and p.status() != psutil.STATUS_ZOMBIE
         except psutil.NoSuchProcess:
             return False
-        except Exception:
+        except psutil.Error:
             try:
                 # Fallback to checking via os.kill(pid, 0)
                 os.kill(pid, 0)
@@ -274,9 +276,9 @@ class PsutilInspector(BaseInspector):
             except (ProcessLookupError, PermissionError):
                 return False
 
-    def get_child_pids(self, pid: int) -> List[int]:
+    def get_child_pids(self, pid: int) -> list[int]:
         try:
             p = psutil.Process(pid)
             return [c.pid for c in p.children(recursive=True)]
-        except Exception:
+        except psutil.Error:
             return []

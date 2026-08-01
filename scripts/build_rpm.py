@@ -34,7 +34,7 @@ if sys.platform == "win32":
         if hasattr(stream, "reconfigure"):
             try:
                 stream.reconfigure(encoding="utf-8")
-            except Exception:
+            except OSError:
                 pass
 
 REPO_ROOT     = Path(__file__).resolve().parents[1]
@@ -64,7 +64,7 @@ def run(cmd: list[str], description: str, dry_run: bool = False,
     if dry_run:
         warn("DRY RUN — skipping")
         return True
-    result = subprocess.run(cmd, cwd=str(cwd or REPO_ROOT))
+    result = subprocess.run(cmd, cwd=str(cwd or REPO_ROOT), check=False)
     if result.returncode != 0:
         err(f"Failed: {description}")
         return False
@@ -163,6 +163,7 @@ def build_rpm(version: str, dry_run: bool = False) -> Path | None:
                 str(spec_path),
             ],
             cwd=str(REPO_ROOT),
+            check=False,
         )
         if result.returncode != 0:
             err("rpmbuild failed")

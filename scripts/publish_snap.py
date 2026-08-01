@@ -31,7 +31,7 @@ if sys.platform == "win32":
         if hasattr(stream, "reconfigure"):
             try:
                 stream.reconfigure(encoding="utf-8")
-            except Exception:
+            except OSError:
                 pass
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -72,7 +72,7 @@ def run_cmd(cmd: str, description: str, check: bool = True) -> int:
     print(f"{'='*60}")
     print(f"$ {cmd}\n")
     
-    result = subprocess.run(cmd, shell=True)
+    result = subprocess.run(cmd, shell=True, check=False)
     
     if check and result.returncode != 0:
         err(f"Failed: {description}")
@@ -90,7 +90,8 @@ def check_snapcraft_installed() -> bool:
         "snapcraft --version",
         shell=True,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
+        stderr=subprocess.DEVNULL,
+        check=False,
     )
     return result.returncode == 0
 
@@ -101,9 +102,9 @@ def check_snapcraft_authenticated() -> bool:
     result = subprocess.run(
         "snapcraft whoami",
         shell=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if result.returncode == 0:
         return bool(result.stdout.strip())
@@ -121,7 +122,7 @@ def find_snap_file() -> Path | None:
         return None
     
     # Return the most recent snap file
-    return sorted(snap_files, key=lambda p: p.stat().st_mtime, reverse=True)[0]
+    return max(snap_files, key=lambda p: p.stat().st_mtime)
 
 
 def get_snap_version(snap_file: Path) -> str:

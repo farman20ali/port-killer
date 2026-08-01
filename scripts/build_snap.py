@@ -27,7 +27,7 @@ if sys.platform == "win32":
         if hasattr(stream, "reconfigure"):
             try:
                 stream.reconfigure(encoding="utf-8")
-            except Exception:
+            except OSError:
                 pass
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -148,7 +148,7 @@ def build_snap(version: str, dry_run: bool = False) -> Path | None:
             print("\nGenerated snapcraft.yaml:\n" + (build_root / "snapcraft.yaml").read_text())
             return None
 
-        result = subprocess.run(cmd, cwd=str(build_root))
+        result = subprocess.run(cmd, cwd=str(build_root), check=False)
         if result.returncode != 0:
             err("snapcraft pack failed")
             return None

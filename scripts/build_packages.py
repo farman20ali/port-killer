@@ -57,7 +57,7 @@ if sys.platform == "win32":
         if hasattr(stream, "reconfigure"):
             try:
                 stream.reconfigure(encoding="utf-8")
-            except Exception:
+            except OSError:
                 pass
 
     # Dynamic path enhancement for Windows build tools
@@ -124,7 +124,7 @@ def _run_script(script: str, extra_args: list[str], dry_run: bool) -> bool:
         cmd.append("--dry-run")
 
     print(f"$ {' '.join(str(c) for c in cmd)}")
-    result = subprocess.run(cmd, cwd=str(REPO_ROOT))
+    result = subprocess.run(cmd, cwd=str(REPO_ROOT), check=False)
     return result.returncode == 0
 
 # ── per-target builders ───────────────────────────────────────────────────────
@@ -179,6 +179,7 @@ def build_deb(version: str, check: bool, dry_run: bool) -> bool:
         result = subprocess.run(
             [sys.executable, str(script_path), "1"],
             cwd=str(REPO_ROOT),
+            check=False,
         )
         return result.returncode == 0
 
@@ -195,6 +196,7 @@ def build_deb(version: str, check: bool, dry_run: bool) -> bool:
     result = subprocess.run(
         [sys.executable, str(script_path), "3"],
         cwd=str(REPO_ROOT),
+        check=False,
     )
     if result.returncode == 0:
         matches = list((REPO_ROOT / "dist" / "deb").glob("*.deb"))
@@ -308,7 +310,7 @@ def _choco_resolve_checksum_interactive(version: str) -> list[str]:
             checksum = digest.hexdigest().upper()
             ok(f"SHA-256: {checksum}")
             return ["--checksum", checksum]
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             err(f"Download failed: {exc}")
             warn("The GitHub release asset may not be published yet.")
             warn("Build and upload the Windows installer first, then retry.")
@@ -406,6 +408,7 @@ def build_pypi(version: str, check: bool, dry_run: bool) -> bool:
     result = subprocess.run(
         [sys.executable, "-m", "build"],
         cwd=str(REPO_ROOT),
+        check=False,
     )
     if result.returncode == 0:
         matches = list((REPO_ROOT / "dist").glob("*.whl"))

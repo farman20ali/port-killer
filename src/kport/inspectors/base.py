@@ -7,26 +7,25 @@ from __future__ import annotations
 
 import os
 import platform
-import subprocess
 import shutil
 import signal
+import subprocess
 import sys
 import time
-from typing import List, Optional, Tuple
 from dataclasses import dataclass
+
+from kport.constants import RUNTIME_ENRICHMENT_NAMES
 
 # Top-level import — avoids circular import that existed when this was done
 # lazily inside kill_pid().
 from kport.formatter import confirm_prompt
-from kport.constants import RUNTIME_ENRICHMENT_NAMES
-
 
 # ---------------------------------------------------------------------------
 # Process name enrichment
 # ---------------------------------------------------------------------------
 
 
-def enrich_process_name(name: str, cmdline: Optional[List[str]]) -> str:
+def enrich_process_name(name: str, cmdline: list[str] | None) -> str:
     """
     Enrich generic runtime process names with their script / module / jar.
 
@@ -100,9 +99,9 @@ def enrich_process_name(name: str, cmdline: Optional[List[str]]) -> str:
 class ProcessInfo:
     pid: int
     name: str
-    exe: Optional[str] = None
-    cmdline: Optional[List[str]] = None
-    user: Optional[str] = None
+    exe: str | None = None
+    cmdline: list[str] | None = None
+    user: str | None = None
 
     def __post_init__(self) -> None:
         """Auto-enrich generic runtime names with their script/jar argument."""
@@ -114,9 +113,9 @@ class PortBinding:
     port: int
     family: str
     laddr: str
-    pid: Optional[int] = None
-    process_name: Optional[str] = None
-    state: Optional[str] = None
+    pid: int | None = None
+    process_name: str | None = None
+    state: str | None = None
     proto: str = "tcp"
 
 
@@ -155,9 +154,10 @@ def _escalate_kill_unix(
             capture_output=True,
             text=True,
             timeout=10,
+            check=False,
         )
         return result.returncode == 0
-    except Exception:
+    except (subprocess.SubprocessError, OSError):
         return False
 
 
@@ -170,9 +170,8 @@ def _escalate_kill_windows(pid: int, assume_yes: bool, debug: bool = False) -> b
         f"\nPID {pid} requires elevated privileges (Administrator) to terminate. "
         "Attempt UAC-elevated taskkill?"
     )
-    if not assume_yes:
-        if not confirm_prompt(prompt, assume_yes=False):
-            return False
+    if not assume_yes and not confirm_prompt(prompt, assume_yes=False):
+        return False
 
     ps = shutil.which("powershell") or shutil.which("pwsh")
     if not ps:
@@ -199,9 +198,10 @@ def _escalate_kill_windows(pid: int, assume_yes: bool, debug: bool = False) -> b
             capture_output=True,
             text=True,
             timeout=30,
+            check=False,
         )
         return result.returncode == 0
-    except Exception:
+    except (subprocess.SubprocessError, OSError):
         return False
 
 
@@ -211,33 +211,33 @@ def _escalate_kill_windows(pid: int, assume_yes: bool, debug: bool = False) -> b
 
 
 class BaseInspector:
-    def list_listening(self, proto: str = "tcp") -> List[PortBinding]:
+    def list_listening(self, proto: str = "tcp") -> list[PortBinding]:
         """List all active listening ports."""
         raise NotImplementedError()
 
-    def find_pids_on_port(self, port: int, proto: str = "tcp") -> List[int]:
+    def find_pids_on_port(self, port: int, proto: str = "tcp") -> list[int]:
         """Find PIDs currently bound to a port."""
         raise NotImplementedError()
 
-    def find_bindings_on_port(self, port: int, proto: str = "tcp") -> List[PortBinding]:
+    def find_bindings_on_port(self, port: int, proto: str = "tcp") -> list[PortBinding]:
         """Find listening bindings for a specific port."""
         return [b for b in self.list_listening(proto=proto) if b.port == port]
 
-    def get_process_info(self, pid: int) -> Optional[ProcessInfo]:
+    def get_process_info(self, pid: int) -> ProcessInfo | None:
         """Get details about a specific process PID."""
         raise NotImplementedError()
 
-    def find_pids_by_name(self, name: str, exact: bool = False) -> List[int]:
+    def find_pids_by_name(self, name: str, exact: bool = False) -> list[int]:
         """Find PIDs matching a process name."""
         raise NotImplementedError()
 
     def find_ports_by_process_name(
         self, name: str, exact: bool = False, proto: str = "tcp"
-    ) -> List[PortBinding]:
+    ) -> list[PortBinding]:
         """Find port bindings matching a process name."""
         raise NotImplementedError()
 
-    def get_child_pids(self, pid: int) -> List[int]:
+    def get_child_pids(self, pid: int) -> list[int]:
         """Return direct child PIDs of *pid* (best-effort, empty on failure).
 
         Subclasses should override this with a platform-native lookup
@@ -255,7 +255,7 @@ class BaseInspector:
         dry_run: bool = False,
         assume_yes: bool = False,
         debug: bool = False,
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """Terminate *pid* and all of its descendant processes.
 
         Kill order: depth-first (children before parent) to avoid orphaned
@@ -339,7 +339,7 @@ class BaseInspector:
         dry_run: bool = False,
         assume_yes: bool = False,
         debug: bool = False,
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """
         Attempt to terminate a process by PID.
 
@@ -370,7 +370,7 @@ class BaseInspector:
                 False,
                 "Permission denied — could not escalate. Try running with sudo/admin.",
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - catch arbitrary exceptions during signal dispatch
             return False, f"SIGTERM error: {e}"
 
         # Stage 2: Wait & Poll
@@ -398,7 +398,7 @@ class BaseInspector:
                         force = True
                 elif assume_yes:
                     force = True
-            except Exception:
+            except (EOFError, OSError, ValueError):
                 if assume_yes:
                     force = True
 
@@ -423,7 +423,7 @@ class BaseInspector:
             if self._try_escalate(pid, signal.SIGKILL, assume_yes, debug=debug):
                 return True, "Force-killed via privilege escalation"
             return False, "Permission denied on force kill — could not escalate."
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - catch arbitrary exceptions during signal dispatch
             return False, f"SIGKILL error: {e}"
 
     # ------------------------------------------------------------------
@@ -440,7 +440,7 @@ class BaseInspector:
         assume_yes: bool = False,
         kill_tree: bool = False,
         proto: str = "tcp",
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """
         Kill all processes using a specific port.
 
@@ -459,8 +459,8 @@ class BaseInspector:
             return True, "No process found on port"
 
         killed_count = 0
-        errors: List[str] = []
-        remaining_pids: List[int] = []
+        errors: list[str] = []
+        remaining_pids: list[int] = []
 
         for pid in pids:
             if kill_tree:
@@ -505,12 +505,13 @@ class BaseInspector:
                     capture_output=True,
                     text=True,
                     timeout=5,
+                    check=False,
                 )
                 time.sleep(0.5)
                 remaining_pids = [p for p in remaining_pids if self.is_process_alive(p)]
                 if not remaining_pids:
                     return True, f"Port {port} successfully freed via fuser fallback"
-            except Exception as e:
+            except (subprocess.SubprocessError, OSError) as e:
                 errors.append(f"fuser fallback failed: {e}")
 
         if not remaining_pids:

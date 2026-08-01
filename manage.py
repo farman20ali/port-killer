@@ -29,7 +29,7 @@ if sys.platform == "win32":
         if hasattr(stream, "reconfigure"):
             try:
                 stream.reconfigure(encoding="utf-8")
-            except Exception:
+            except OSError:
                 pass
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -79,7 +79,7 @@ def run_script(script_name: str, args: list[str], dry_run: bool = False) -> int:
         return 0
 
     print(f"$ {' '.join(cmd)}\n")
-    result = subprocess.run(cmd, cwd=str(REPO_ROOT))
+    result = subprocess.run(cmd, cwd=str(REPO_ROOT), check=False)
     return result.returncode
 
 
@@ -93,7 +93,7 @@ def cmd_setup() -> int:
     info("Installing package and development dependencies in editable mode...")
     pip_cmd = [sys.executable, "-m", "pip", "install", "--break-system-packages", "-e", ".[dev,mcp,packaging]"]
     print(f"$ {' '.join(pip_cmd)}")
-    res = subprocess.run(pip_cmd, cwd=str(REPO_ROOT))
+    res = subprocess.run(pip_cmd, cwd=str(REPO_ROOT), check=False)
     if res.returncode != 0:
         err("Failed to install dependencies via pip.")
         return res.returncode
@@ -233,7 +233,7 @@ def cmd_test() -> int:
         info("Found pytest installed. Running unit tests...")
         cmd = ["pytest"]
         print(f"$ {' '.join(cmd)}")
-        result = subprocess.run(cmd, cwd=str(REPO_ROOT))
+        result = subprocess.run(cmd, cwd=str(REPO_ROOT), check=False)
         return result.returncode
     else:
         warn("pytest is not installed. Falling back to the custom lightweight test runner...")

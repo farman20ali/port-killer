@@ -2,12 +2,12 @@
 Terminal formatting and output representation module for kport.
 Decouples UI and CLI layout generation from networking core logic.
 """
+from __future__ import annotations
 
 import json
 import platform
-
-from typing import List, Dict, Any, Optional
 from dataclasses import asdict
+from typing import Any
 
 
 class Colors:
@@ -40,7 +40,7 @@ def _enable_ansi_once() -> None:
         mode = ctypes.c_ulong()
         if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
             kernel32.SetConsoleMode(handle, mode.value | 0x0004)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 - ignore Windows console configuration errors
         pass
     _ansi_enabled = True
 
@@ -64,8 +64,8 @@ def _trunc(s: str, n: int) -> str:
 
 
 def _col_widths(
-    rows: List[List[str]], headers: List[str], max_width: int = 40
-) -> List[int]:
+    rows: list[list[str]], headers: list[str], max_width: int = 40
+) -> list[int]:
     """Compute column widths as max(header, data) capped at max_width."""
     widths = [len(h) for h in headers]
     for row in rows:
@@ -75,7 +75,7 @@ def _col_widths(
     return widths
 
 
-def print_table_listen(bindings: List[Any]) -> None:
+def print_table_listen(bindings: list[Any]) -> None:
     """Print standard tabular listing of local listening ports."""
     if not bindings:
         print(colorize("No listening ports found.", Colors.YELLOW))
@@ -103,7 +103,7 @@ def print_table_listen(bindings: List[Any]) -> None:
         print("  ".join(cells))
 
 
-def jsonify_bindings(bindings: List[Any]) -> str:
+def jsonify_bindings(bindings: list[Any]) -> str:
     """Render list of PortBindings as JSON string."""
     return json.dumps([asdict(b) for b in bindings], indent=2)
 
@@ -122,7 +122,7 @@ def confirm_prompt(prompt: str, assume_yes: bool = False) -> bool:
         raise
 
 
-def choose_docker_action(assume_yes: bool) -> Optional[str]:
+def choose_docker_action(assume_yes: bool) -> str | None:
     """Interactive Docker action selector."""
     if assume_yes:
         return "stop"
@@ -141,7 +141,7 @@ def choose_docker_action(assume_yes: bool) -> Optional[str]:
     return mapping.get(resp)
 
 
-def print_table_docker(mappings: List[Any]) -> None:
+def print_table_docker(mappings: list[Any]) -> None:
     """Print tabular details of Docker mapped ports."""
     if not mappings:
         print(colorize("No Docker-published ports found.", Colors.YELLOW))
@@ -160,9 +160,9 @@ def print_table_docker(mappings: List[Any]) -> None:
         print("  ".join(cells))
 
 
-def print_table_list_product(local_bindings: List[Any], docker_maps: List[Any]) -> None:
+def print_table_list_product(local_bindings: list[Any], docker_maps: list[Any]) -> None:
     """Print unified list output representing PORT, TYPE, and OWNER."""
-    rows: Dict[int, Dict[str, Any]] = {}
+    rows: dict[int, dict[str, Any]] = {}
     for b in local_bindings:
         rows.setdefault(b.port, {})
         rows[b.port]["local"] = b
@@ -199,6 +199,6 @@ def print_table_list_product(local_bindings: List[Any], docker_maps: List[Any]) 
         print("  ".join(cells))
 
 
-def jsonify_docker(mappings: List[Any]) -> str:
+def jsonify_docker(mappings: list[Any]) -> str:
     """Render list of Docker mappings as JSON string."""
     return json.dumps([asdict(m) for m in mappings], indent=2)
