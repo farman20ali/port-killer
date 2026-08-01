@@ -8,15 +8,15 @@ filtering, multi-selecting, and terminating processes.
 from __future__ import annotations
 
 import sys
-from typing import List, Dict, Any
+from typing import Any
 
-from .inspectors import BaseInspector
-from .docker_engine import list_docker_mappings, docker_action_on_container
-from .process_manager import detect_process_manager
+from .docker_engine import docker_action_on_container, list_docker_mappings
 from .formatter import Colors, colorize, confirm_prompt
+from .inspectors import BaseInspector
+from .process_manager import detect_process_manager
 
 
-def _fetch_interactive_rows(inspector: BaseInspector) -> List[Dict[str, Any]]:
+def _fetch_interactive_rows(inspector: BaseInspector) -> list[dict[str, Any]]:
     """Gather all local and docker port entries for the picker."""
     rows = []
 
@@ -117,7 +117,7 @@ def _fallback_numbered_menu(inspector: BaseInspector, args: Any) -> int:
 
 
 def _execute_kills(
-    inspector: BaseInspector, selected_rows: List[Dict[str, Any]], args: Any
+    inspector: BaseInspector, selected_rows: list[dict[str, Any]], args: Any
 ) -> int:
     """Execute kill action on all user-selected items."""
     if not selected_rows:

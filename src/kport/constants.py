@@ -3,12 +3,11 @@ Shared safety constants for kport.
 Single source-of-truth for protected ports and process names,
 used by both CLI and MCP server to keep policies in sync.
 """
-
-from typing import FrozenSet
+from __future__ import annotations
 
 # Ports that must never be killed by default.
 # These are critical infrastructure sockets (SSH, DNS, HTTP, HTTPS, databases, k8s).
-PROTECTED_PORTS: FrozenSet[int] = frozenset(
+PROTECTED_PORTS: frozenset[int] = frozenset(
     {
         22,  # SSH
         53,  # DNS
@@ -26,7 +25,7 @@ PROTECTED_PORTS: FrozenSet[int] = frozenset(
 
 # Critical system process names that must never be targeted.
 # Comparison is always case-insensitive.
-PROTECTED_PROCESS_NAMES: FrozenSet[str] = frozenset(
+PROTECTED_PROCESS_NAMES: frozenset[str] = frozenset(
     {
         "systemd",
         "init",
@@ -49,7 +48,7 @@ PROTECTED_PROCESS_NAMES: FrozenSet[str] = frozenset(
 
 # Generic runtime process names whose display can be enriched
 # by looking up their first meaningful CLI argument (script/jar/module name).
-RUNTIME_ENRICHMENT_NAMES: FrozenSet[str] = frozenset(
+RUNTIME_ENRICHMENT_NAMES: frozenset[str] = frozenset(
     {
         "node",
         "nodejs",

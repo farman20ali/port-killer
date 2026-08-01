@@ -97,12 +97,12 @@ def _notify_windows(title: str, message: str) -> None:
         "ContentType = WindowsRuntime] | Out-Null; "
         "$template = [Windows.UI.Notifications.ToastNotificationManager]"
         "::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02); "
-        "$template.SelectSingleNode('//text[@id=1]').InnerText = '{title}'; "
-        "$template.SelectSingleNode('//text[@id=2]').InnerText = '{msg}'; "
+        f"$template.SelectSingleNode('//text[@id=1]').InnerText = '{safe_title}'; "
+        f"$template.SelectSingleNode('//text[@id=2]').InnerText = '{safe_msg}'; "
         "$toast = [Windows.UI.Notifications.ToastNotification]::new($template); "
         "[Windows.UI.Notifications.ToastNotificationManager]"
         "::CreateToastNotifier('kport').Show($toast)"
-    ).format(title=safe_title, msg=safe_msg)
+    )
 
     subprocess.Popen(
         [

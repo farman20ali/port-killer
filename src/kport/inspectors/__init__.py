@@ -44,10 +44,10 @@ To verify both paths are exercised, mock ``_psutil_accessible`` to return
 from .base import BaseInspector, PortBinding, ProcessInfo
 
 __all__ = [
-    "get_inspector",
     "BaseInspector",
     "PortBinding",
     "ProcessInfo",
+    "get_inspector",
 ]
 
 import importlib.util as _ilu
