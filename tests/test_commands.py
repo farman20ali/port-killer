@@ -13,9 +13,8 @@ import argparse
 import json
 from unittest.mock import patch
 
-
-from kport.cli import handle_product_command, EXIT_OK, EXIT_PORT_FREE, EXIT_PERMISSION
-from kport.inspectors.base import BaseInspector, ProcessInfo, PortBinding
+from kport.cli import EXIT_OK, EXIT_PERMISSION, EXIT_PORT_FREE, handle_product_command
+from kport.inspectors.base import BaseInspector, PortBinding, ProcessInfo
 
 
 def _binding(port: int, pid: int = 1234, name: str = "node") -> PortBinding:
@@ -92,21 +91,21 @@ class FakeInspector(BaseInspector):
 
 
 def _args(**kwargs) -> argparse.Namespace:
-    defaults = dict(
-        json=False,
-        debug=False,
-        dry_run=False,
-        yes=True,
-        force=False,
-        graceful_timeout=None,
-        bypass_safety=False,
-        docker_action=None,
-        protected_ports=None,
-        protected_processes=None,
-        proto="tcp",
-        wait_for_exit=None,
-        kill_tree=False,
-    )
+    defaults = {
+        "json": False,
+        "debug": False,
+        "dry_run": False,
+        "yes": True,
+        "force": False,
+        "graceful_timeout": None,
+        "bypass_safety": False,
+        "docker_action": None,
+        "protected_ports": None,
+        "protected_processes": None,
+        "proto": "tcp",
+        "wait_for_exit": None,
+        "kill_tree": False,
+    }
     defaults.update(kwargs)
     return argparse.Namespace(**defaults)
 
@@ -360,7 +359,7 @@ def test_safety_config_additive_ports():
     args = _args(command="kill", port=22, json=True, bypass_safety=False)
     args.protected_ports = [9999]  # user adds 9999 — should not remove 22
     args.protected_processes = None
-    ok, msg = check_safety_policy(22, [], args, inspector)
+    ok, _msg = check_safety_policy(22, [], args, inspector)
     assert ok is False, "Port 22 must remain protected even with additive config"
 
 
@@ -373,7 +372,7 @@ def test_safety_config_additive_processes():
     args = _args(command="kill", port=5000, json=True, bypass_safety=False)
     args.protected_ports = None
     args.protected_processes = ["mycustomapp"]  # user adds custom — systemd must stay
-    ok, msg = check_safety_policy(None, [100], args, inspector)
+    ok, _msg = check_safety_policy(None, [100], args, inspector)
     assert ok is False, (
         "systemd must remain protected even when user adds custom processes"
     )
@@ -419,7 +418,7 @@ def test_states_differ_detects_process_name_change():
 def test_fake_inspector_kill_pid_signature():
     """FakeInspector.kill_pid must accept the debug= param added in base.py."""
     inspector = FakeInspector(pids_on_port={8080: [1234]})
-    ok, msg = inspector.kill_pid(
+    ok, _msg = inspector.kill_pid(
         1234, graceful_timeout=3.0, force=False, dry_run=False, assume_yes=True
     )
     assert ok is True

@@ -4,9 +4,11 @@ Tested via pytest.
 """
 
 import argparse
+
 import pytest
+
+from kport.cli import check_safety_policy, parse_port_range, validate_port
 from kport.exceptions import InvalidPortError
-from kport.cli import validate_port, parse_port_range, check_safety_policy
 from kport.inspectors.base import BaseInspector, ProcessInfo
 
 

@@ -1,12 +1,13 @@
 import json
-import pytest
 from unittest.mock import MagicMock, patch
 
-from kport.profile import load_profiles, resolve_profile
-from kport.notify import notify as _desktop_notify
+import pytest
+
 from kport.cli import handle_product_command
-from kport.mcp_server import handle_kill_port
 from kport.inspectors import get_inspector
+from kport.mcp_server import handle_kill_port
+from kport.notify import notify as _desktop_notify
+from kport.profile import load_profiles, resolve_profile
 
 # pyrefly: ignore [missing-import]
 from tests.test_commands import FakeInspector, _args
@@ -45,9 +46,8 @@ def test_cli_inspect_with_profile(capsys):
     config = {"profiles": {"web": [8080]}}
     inspector = FakeInspector()
     args = _args(command="inspect", profile="web", json=True)
-    with patch("kport.cli.load_config", return_value=config):
-        with patch("kport.cli.docker_mappings_for_host_port", return_value=[]):
-            rc = handle_product_command(args, inspector)
+    with patch("kport.cli.load_config", return_value=config), patch("kport.cli.docker_mappings_for_host_port", return_value=[]):
+        rc = handle_product_command(args, inspector)
 
     assert rc == 5  # EXIT_PORT_FREE
     envelope = json.loads(capsys.readouterr().out)
@@ -64,21 +64,20 @@ def test_mcp_safety_config_additive():
     mock_inspector.find_pids_on_port.return_value = []
     mock_inspector.find_bindings_on_port.return_value = []
 
-    with patch("kport.mcp_server.load_mcp_config", return_value=config):
-        with patch("kport.mcp_server.get_inspector", return_value=mock_inspector):
-            # Port 22 (default protected) must still be blocked!
-            res_22 = handle_kill_port(mock_inspector, 22)
-            assert res_22["success"] is False
-            assert "Security Shield" in res_22["message"]
+    with patch("kport.mcp_server.load_mcp_config", return_value=config), patch("kport.mcp_server.get_inspector", return_value=mock_inspector):
+        # Port 22 (default protected) must still be blocked!
+        res_22 = handle_kill_port(mock_inspector, 22)
+        assert res_22["success"] is False
+        assert "Security Shield" in res_22["message"]
 
-            # Port 9999 (config protected) must also be blocked!
-            res_9999 = handle_kill_port(mock_inspector, 9999)
-            assert res_9999["success"] is False
-            assert "Security Shield" in res_9999["message"]
+        # Port 9999 (config protected) must also be blocked!
+        res_9999 = handle_kill_port(mock_inspector, 9999)
+        assert res_9999["success"] is False
+        assert "Security Shield" in res_9999["message"]
 
-            # Port 8080 (unprotected) must succeed
-            res_8080 = handle_kill_port(mock_inspector, 8080)
-            assert res_8080["success"] is True
+        # Port 8080 (unprotected) must succeed
+        res_8080 = handle_kill_port(mock_inspector, 8080)
+        assert res_8080["success"] is True
 
 
 # 5. Inspector Selection Logic Tests
@@ -228,12 +227,11 @@ def test_kill_process_tree_logic():
         killed_pids.append(pid)
         return True, "killed"
 
-    with patch.object(inspector, "get_child_pids", return_value=[101, 102]):
-        with patch.object(inspector, "kill_pid", side_effect=mock_kill_pid):
-            ok, msg = inspector.kill_process_tree(100)
-            assert ok is True
-            # Depth-first order: [101, 102, 100]
-            assert killed_pids == [101, 102, 100]
+    with patch.object(inspector, "get_child_pids", return_value=[101, 102]), patch.object(inspector, "kill_pid", side_effect=mock_kill_pid):
+        ok, _msg = inspector.kill_process_tree(100)
+        assert ok is True
+        # Depth-first order: [101, 102, 100]
+        assert killed_pids == [101, 102, 100]
 
 
 def test_cli_kill_tree_option(capsys):
@@ -313,10 +311,9 @@ def test_psutil_list_listening_tcp_only():
 
     inspector = PsutilInspector()
 
-    with patch("psutil.net_connections", return_value=[tcp_conn]):
-        with patch("psutil.Process") as mock_proc:
-            mock_proc.return_value.name.return_value = "node"
-            result = inspector.list_listening(proto="tcp")
+    with patch("psutil.net_connections", return_value=[tcp_conn]), patch("psutil.Process") as mock_proc:
+        mock_proc.return_value.name.return_value = "node"
+        result = inspector.list_listening(proto="tcp")
 
     assert all(b.proto == "tcp" for b in result)
     ports = [b.port for b in result]
@@ -336,10 +333,9 @@ def test_psutil_list_listening_udp_only():
 
     inspector = PsutilInspector()
 
-    with patch("psutil.net_connections", return_value=[udp_conn]):
-        with patch("psutil.Process") as mock_proc:
-            mock_proc.return_value.name.return_value = "mdnsd"
-            result = inspector.list_listening(proto="udp")
+    with patch("psutil.net_connections", return_value=[udp_conn]), patch("psutil.Process") as mock_proc:
+        mock_proc.return_value.name.return_value = "mdnsd"
+        result = inspector.list_listening(proto="udp")
 
     assert all(b.proto == "udp" for b in result)
     ports = [b.port for b in result]
@@ -370,10 +366,9 @@ def test_psutil_list_listening_both():
             return [tcp_conn]
         return [udp_conn]
 
-    with patch("psutil.net_connections", side_effect=fake_net_connections):
-        with patch("psutil.Process") as mock_proc:
-            mock_proc.return_value.name.return_value = "svc"
-            result = inspector.list_listening(proto="both")
+    with patch("psutil.net_connections", side_effect=fake_net_connections), patch("psutil.Process") as mock_proc:
+        mock_proc.return_value.name.return_value = "svc"
+        result = inspector.list_listening(proto="both")
 
     protos = {b.proto for b in result}
     assert "tcp" in protos
@@ -392,10 +387,9 @@ def test_psutil_find_bindings_on_port_proto():
 
     inspector = PsutilInspector()
 
-    with patch("psutil.net_connections", return_value=[udp_conn]):
-        with patch("psutil.Process") as mock_proc:
-            mock_proc.return_value.name.return_value = "mdnsd"
-            bindings = inspector.find_bindings_on_port(5353, proto="udp")
+    with patch("psutil.net_connections", return_value=[udp_conn]), patch("psutil.Process") as mock_proc:
+        mock_proc.return_value.name.return_value = "mdnsd"
+        bindings = inspector.find_bindings_on_port(5353, proto="udp")
 
     assert len(bindings) == 1
     assert bindings[0].proto == "udp"
@@ -404,8 +398,8 @@ def test_psutil_find_bindings_on_port_proto():
 
 # 8.7 FallbackInspector.list_listening proto-filters native linux results
 def test_fallback_list_listening_filters_proto():
-    from kport.inspectors.system_impl import FallbackInspector
     from kport.inspectors.base import PortBinding
+    from kport.inspectors.system_impl import FallbackInspector
 
     inspector = FallbackInspector()
     inspector.system = "Linux"
@@ -587,14 +581,14 @@ def test_detect_process_manager_invalid_pid():
 
 # 9.2 systemd service detection via /proc/<pid>/cgroup
 def test_detect_process_manager_systemd():
-    from kport.process_manager import detect_process_manager
     from unittest.mock import mock_open
+
+    from kport.process_manager import detect_process_manager
 
     cgroup_data = "0::/system.slice/nginx.service\n"
     m_open = mock_open(read_data=cgroup_data)
-    with patch("os.path.exists", return_value=True):
-        with patch("builtins.open", m_open):
-            res = detect_process_manager(1234)
+    with patch("os.path.exists", return_value=True), patch("builtins.open", m_open):
+        res = detect_process_manager(1234)
 
     assert res is not None
     assert res["manager"] == "systemd"
@@ -620,12 +614,8 @@ def test_detect_process_manager_supervisor():
     mock_proc.returncode = 0
     mock_proc.stdout = "worker_01   RUNNING   pid 4321, uptime 0:05:00\n"
 
-    with patch("shutil.which", return_value="/usr/bin/supervisorctl"):
-        with patch("subprocess.run", return_value=mock_proc):
-            with patch(
-                "kport.process_manager._get_cgroup_systemd_unit", return_value=None
-            ):
-                res = detect_process_manager(4321)
+    with patch("shutil.which", return_value="/usr/bin/supervisorctl"), patch("subprocess.run", return_value=mock_proc), patch("kport.process_manager._get_cgroup_systemd_unit", return_value=None):
+        res = detect_process_manager(4321)
 
     assert res is not None
     assert res["manager"] == "supervisor"
@@ -656,9 +646,8 @@ def test_cli_explain_managed_by_json(capsys):
         "warning": "Managed by systemd",
     }
 
-    with patch("kport.cli.docker_mappings_for_host_port", return_value=[]):
-        with patch("kport.cli.detect_process_manager", return_value=pm_res):
-            rc = handle_product_command(args, inspector)
+    with patch("kport.cli.docker_mappings_for_host_port", return_value=[]), patch("kport.cli.detect_process_manager", return_value=pm_res):
+        rc = handle_product_command(args, inspector)
 
     assert rc == 0
     out = json.loads(capsys.readouterr().out)
@@ -781,8 +770,8 @@ def test_cli_watch_until_timeout(capsys):
 
 # 11.1 _fetch_interactive_rows gathers local and docker rows
 def test_fetch_interactive_rows():
-    from kport.interactive import _fetch_interactive_rows
     from kport.inspectors.base import PortBinding
+    from kport.interactive import _fetch_interactive_rows
 
     inspector = FakeInspector(
         listening=[
@@ -808,8 +797,8 @@ def test_fetch_interactive_rows():
 
 # 11.2 fallback_numbered_menu execution with selection
 def test_fallback_numbered_menu_selection():
-    from kport.interactive import _fallback_numbered_menu
     from kport.inspectors.base import PortBinding
+    from kport.interactive import _fallback_numbered_menu
 
     killed_ports = []
 
@@ -833,9 +822,8 @@ def test_fallback_numbered_menu_selection():
     inspector = CustomInspector()
     args = _args(command="interactive", yes=True)
 
-    with patch("builtins.input", return_value="1"):
-        with patch("kport.interactive.list_docker_mappings", return_value=[]):
-            rc = _fallback_numbered_menu(inspector, args)
+    with patch("builtins.input", return_value="1"), patch("kport.interactive.list_docker_mappings", return_value=[]):
+        rc = _fallback_numbered_menu(inspector, args)
 
     assert rc == 0
     assert killed_ports == [3000]
@@ -848,9 +836,8 @@ def test_run_interactive_picker_non_tty():
     inspector = FakeInspector()
     args = _args(command="interactive")
 
-    with patch("sys.stdin.isatty", return_value=False):
-        with patch("kport.interactive.list_docker_mappings", return_value=[]):
-            rc = run_interactive_picker(inspector, args)
+    with patch("sys.stdin.isatty", return_value=False), patch("kport.interactive.list_docker_mappings", return_value=[]):
+        rc = run_interactive_picker(inspector, args)
 
     assert rc == 0
 
@@ -900,9 +887,10 @@ def test_execute_kills_confirmation_no():
 # 11.6 _curses_main key handling (search, quit /q, reload /r, Ctrl-r, Esc)
 def test_curses_main_key_handling():
     pytest.importorskip("_curses")
-    from kport.interactive import run_interactive_picker
     from unittest.mock import MagicMock, patch
+
     from kport.inspectors.base import PortBinding
+    from kport.interactive import run_interactive_picker
 
     # Mock inspector listening ports
     inspector = FakeInspector(
@@ -944,8 +932,9 @@ def test_curses_main_key_handling():
 # 11.7 _curses_main reload key handling (Ctrl-r and /r)
 def test_curses_main_reload_handling():
     pytest.importorskip("_curses")
-    from kport.interactive import run_interactive_picker
     from unittest.mock import MagicMock, patch
+
+    from kport.interactive import run_interactive_picker
 
     inspector = FakeInspector()
     args = _args(command="interactive", yes=True)
