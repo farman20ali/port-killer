@@ -1,5 +1,9 @@
 $ErrorActionPreference = 'Stop'
 
+# Remove the kport shim that was created by Install-BinFile during installation.
+# This is required by Chocolatey policy when Install-BinFile is used.
+Uninstall-BinFile -Name "kport"
+
 $packageArgs = @{
   packageName    = $env:ChocolateyPackageName
   softwareName   = 'kport*'
