@@ -31,7 +31,7 @@ if sys.platform == "win32":
         if hasattr(stream, "reconfigure"):
             try:
                 stream.reconfigure(encoding="utf-8")
-            except Exception:
+            except OSError:
                 pass
 
     extra_paths = [
@@ -232,7 +232,7 @@ def build_choco(
             return None
 
         DIST_CHOCO.mkdir(parents=True, exist_ok=True)
-        result = subprocess.run(cmd, cwd=str(REPO_ROOT))
+        result = subprocess.run(cmd, cwd=str(REPO_ROOT), check=False)
         if result.returncode != 0:
             err("choco pack failed")
             return None

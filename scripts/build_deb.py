@@ -30,7 +30,6 @@ import textwrap
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DIST_DIR = REPO_ROOT / "dist" / "deb"
 
@@ -40,7 +39,7 @@ def run(cmd: list[str], description: str, cwd: Path | None = None) -> subprocess
     print(f"🔄 {description}")
     print("=" * 60)
     print("$ " + " ".join(cmd))
-    proc = subprocess.run(cmd, cwd=str(cwd or REPO_ROOT))
+    proc = subprocess.run(cmd, cwd=str(cwd or REPO_ROOT), check=False)
     if proc.returncode != 0:
         print(f"❌ Failed: {description}")
         sys.exit(proc.returncode)
@@ -99,7 +98,7 @@ def _debhelper_compat_level() -> int:
         return 12
     try:
         out = subprocess.check_output(["dh", "--version"], text=True, stderr=subprocess.STDOUT)
-    except Exception:
+    except Exception:  # noqa: BLE001
         return 12
     m = re.search(r"debhelper\s+version\s+(\d+)", out, re.IGNORECASE)
     if not m:
@@ -228,7 +227,7 @@ def check_debian_build_deps(cwd: Path) -> list[str]:
     """Return missing Build-Depends packages (best effort)."""
     if not command_exists("dpkg-checkbuilddeps"):
         return []
-    proc = subprocess.run(["dpkg-checkbuilddeps"], cwd=str(cwd), capture_output=True, text=True)
+    proc = subprocess.run(["dpkg-checkbuilddeps"], cwd=str(cwd), capture_output=True, text=True, check=False)
     if proc.returncode == 0:
         return []
     combined = (proc.stdout or "") + "\n" + (proc.stderr or "")

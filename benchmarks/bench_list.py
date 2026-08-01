@@ -7,8 +7,10 @@ Usage:
 """
 
 import time
-from kport.inspectors.system_impl import FallbackInspector
+
 from kport.inspectors import _psutil_accessible
+from kport.inspectors.system_impl import FallbackInspector
+
 
 def run_benchmark(iterations: int = 50):
     print("=" * 60)

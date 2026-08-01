@@ -3,9 +3,9 @@
 kport - Cross-platform port inspector and killer
 This is a wrapper script. The core logic has been moved to src/kport/.
 """
-import sys
-import os
 import io
+import os
+import sys
 
 # Add the src directory to the python path so it can be run directly
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))

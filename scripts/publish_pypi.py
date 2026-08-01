@@ -27,7 +27,7 @@ def run_command(cmd, description):
     print(f"\n{'='*60}")
     print(f"🔄 {description}")
     print(f"{'='*60}")
-    result = subprocess.run(cmd, shell=True, cwd=str(REPO_ROOT))
+    result = subprocess.run(cmd, shell=True, cwd=str(REPO_ROOT), check=False)
     if result.returncode != 0:
         print(f"❌ Failed: {description}")
         sys.exit(1)
@@ -47,7 +47,8 @@ def check_requirements():
             f"{sys.executable} -m pip show {package}",
             shell=True,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            stderr=subprocess.DEVNULL,
+            check=False,
         )
         if result.returncode != 0:
             missing.append(package)
@@ -75,9 +76,9 @@ def clean_build():
         path = REPO_ROOT / d
         if path.exists():
             if sys.platform == 'win32':
-                subprocess.run(f'rmdir /s /q "{path}"', shell=True)
+                subprocess.run(f'rmdir /s /q "{path}"', shell=True, check=False)
             else:
-                subprocess.run(f'rm -rf "{path}"', shell=True)
+                subprocess.run(f'rm -rf "{path}"', shell=True, check=False)
     print("✅ Cleaned build directories")
 
 
@@ -223,6 +224,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n\n👋 Cancelled by user")
         sys.exit(0)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"\n❌ Error: {e}")
         sys.exit(1)

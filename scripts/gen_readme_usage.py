@@ -10,6 +10,7 @@ Wire into CI as a check step:
 """
 
 from __future__ import annotations
+
 import argparse
 import subprocess
 import sys
@@ -38,7 +39,7 @@ SUBCOMMANDS = [
 
 def run_help(sub):
     cmd = [sys.executable, "-m", "kport"] + sub + ["--help"]
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(ROOT / "src"))
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(ROOT / "src"), check=False)
     return (result.stdout or result.stderr).strip()
 
 

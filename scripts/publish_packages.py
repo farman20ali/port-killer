@@ -40,7 +40,7 @@ if sys.platform == "win32":
         if hasattr(_stream, "reconfigure"):
             try:
                 _stream.reconfigure(encoding="utf-8")
-            except Exception:
+            except OSError:
                 pass
 
 REPO_ROOT  = Path(__file__).resolve().parents[1]
@@ -90,7 +90,7 @@ def _run_script(script: str, extra_args: list[str]) -> bool:
         return False
     cmd = [sys.executable, str(script_path)] + extra_args
     print(f"  $ {' '.join(str(c) for c in cmd)}")
-    result = subprocess.run(cmd, cwd=str(REPO_ROOT))
+    result = subprocess.run(cmd, cwd=str(REPO_ROOT), check=False)
     return result.returncode == 0
 
 
@@ -121,7 +121,7 @@ def _sha256_url(url: str) -> str | None:
                     print(f"\r  Downloading … {pct:3d}%", end="", flush=True)
         print()
         return digest.hexdigest().upper()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         print()
         err(f"Download failed: {exc}")
         return None
@@ -175,7 +175,7 @@ def _choco_push(nupkg: Path, api_key: str | None, dry_run: bool) -> bool:
         return True
 
     print(f"  $ choco push {nupkg.name} --source https://push.chocolatey.org/ --api-key ***")
-    result = subprocess.run(cmd, cwd=str(REPO_ROOT))
+    result = subprocess.run(cmd, cwd=str(REPO_ROOT), check=False)
     return result.returncode == 0
 
 
@@ -452,7 +452,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n\n👋 Cancelled")
         sys.exit(0)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         err(f"Unexpected error: {exc}")
         import traceback
         traceback.print_exc()
