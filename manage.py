@@ -18,6 +18,7 @@ Usage (Interactive Menu):
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
@@ -213,10 +214,10 @@ def cmd_publish(args: argparse.Namespace) -> int:
             ret = vscode_ret
 
     if args.all or args.choco:
-        choco_args = ["--publish"]
+        choco_args = ["--chocolatey"]
         if args.dry_run:
             choco_args.append("--dry-run")
-        choco_ret = run_script("publish_choco.py", choco_args)
+        choco_ret = run_script("publish_packages.py", choco_args)
         if choco_ret != 0:
             ret = choco_ret
 
@@ -228,14 +229,13 @@ def cmd_test() -> int:
     section("Running Automated Tests")
 
     # Try importing and running pytest
-    try:
-        import pytest
+    if importlib.util.find_spec("pytest") is not None:
         info("Found pytest installed. Running unit tests...")
         cmd = ["pytest"]
         print(f"$ {' '.join(cmd)}")
         result = subprocess.run(cmd, cwd=str(REPO_ROOT))
         return result.returncode
-    except ImportError:
+    else:
         warn("pytest is not installed. Falling back to the custom lightweight test runner...")
         return run_script("run_tests.py", [])
 
