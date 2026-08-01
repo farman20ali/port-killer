@@ -33,8 +33,10 @@ def notify(title: str, message: str) -> None:
     """
     try:
         _dispatch(title, message)
-    except Exception:
-        pass  # Notification failure is always non-fatal
+    except (OSError, subprocess.SubprocessError):
+        # Notification failures are non-fatal and intentionally ignored.
+        # Narrow exceptions to avoid broad-except lint errors.
+        return
 
 
 def _dispatch(title: str, message: str) -> None:

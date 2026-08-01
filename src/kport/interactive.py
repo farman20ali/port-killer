@@ -5,6 +5,8 @@ Provides a terminal user interface (curses-based with fallback) for listing acti
 filtering, multi-selecting, and terminating processes.
 """
 
+from __future__ import annotations
+
 import sys
 from typing import List, Dict, Any
 
@@ -206,7 +208,7 @@ def run_interactive_picker(inspector: BaseInspector, args: Any) -> int:
     def _curses_main(stdscr):
         try:
             curses.curs_set(0)
-        except Exception:
+        except curses.error:
             pass
 
         curses.start_color()
@@ -252,7 +254,7 @@ def run_interactive_picker(inspector: BaseInspector, args: Any) -> int:
             # Curses search is active by default; show cursor
             try:
                 curses.curs_set(1)
-            except Exception:
+            except curses.error:
                 pass
 
             # Header
@@ -358,6 +360,6 @@ def run_interactive_picker(inspector: BaseInspector, args: Any) -> int:
             print("Cancelled.")
             return 0
         return _execute_kills(inspector, selected_targets, args)
-    except Exception:
+    except Exception:  # noqa: BLE001 - fallback to text menu on any curses exception
         # If curses initialization fails (e.g. TERM missing or unsupported terminal)
         return _fallback_numbered_menu(inspector, args)

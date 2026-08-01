@@ -5,6 +5,9 @@ Detects if a process (by PID) is managed by systemd, pm2, or supervisor.
 Returns structured info to explain why processes may automatically restart if killed.
 """
 
+from __future__ import annotations
+
+import json
 import os
 import re
 import shutil
@@ -35,8 +38,9 @@ def _get_cgroup_systemd_unit(pid: int) -> Optional[str]:
                         if segment.startswith("user@"):
                             continue
                         return segment
-    except Exception:
-        pass
+    except OSError:
+        # Could not read /proc/<pid>/cgroup (process may have exited)
+        return None
     return None
 
 
@@ -55,8 +59,9 @@ def _get_proc_environ(pid: int) -> Dict[str, str]:
                 env_dict[k.decode("utf-8", errors="ignore")] = v.decode(
                     "utf-8", errors="ignore"
                 )
-    except Exception:
-        pass
+    except OSError:
+        # Missing /proc/<pid>/environ (no access or process gone)
+        return env_dict
     return env_dict
 
 
@@ -76,8 +81,6 @@ def _detect_pm2_app(pid: int, env: Dict[str, str]) -> Optional[str]:
                 ["pm2", "jlist"], capture_output=True, text=True, timeout=3
             )
             if res.returncode == 0 and res.stdout:
-                import json
-
                 data = json.loads(res.stdout)
                 if isinstance(data, list):
                     for app in data:
@@ -92,8 +95,9 @@ def _detect_pm2_app(pid: int, env: Dict[str, str]) -> Optional[str]:
                             ):
                                 if app.get("pid") == pid:
                                     return app.get("name")
-        except Exception:
-            pass
+        except (subprocess.SubprocessError, OSError, json.JSONDecodeError, ValueError):
+            # pm2 not available or output unreadable
+            return None
 
     return None
 
@@ -111,8 +115,8 @@ def _detect_supervisor_app(pid: int) -> Optional[str]:
                     m = re.search(r"^(\S+)\s+\S+\s+pid\s+(\d+)", line.strip())
                     if m and int(m.group(2)) == pid:
                         return m.group(1)
-        except Exception:
-            pass
+        except (subprocess.SubprocessError, OSError):
+            return None
     return None
 
 

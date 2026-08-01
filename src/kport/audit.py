@@ -40,7 +40,7 @@ def _get_user() -> str:
     """Return the current OS username, falling back gracefully."""
     try:
         return getpass.getuser()
-    except Exception:
+    except (ImportError, KeyError, OSError):
         try:
             uid = os.getuid()  # type: ignore[attr-defined]  # Unix only
             return f"uid:{uid}"

@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 from typing import List, Dict, Optional, Any, Tuple
@@ -60,7 +61,7 @@ def _configure_stdio() -> None:
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8")
-        except Exception:
+        except (AttributeError, ValueError, OSError):
             pass
 
 
@@ -123,7 +124,7 @@ def check_safety_policy(
                         False,
                         f"Security Shield Active: PID {pid} runs critical process '{info.name}' which is protected. Action aborted. Use --bypass-safety to override.",
                     )
-        except Exception:
+        except (OSError, AttributeError, ValueError, IndexError):
             pass
 
     return True, ""
@@ -210,7 +211,7 @@ def _is_elevated() -> bool:
             import ctypes
 
             return ctypes.windll.shell32.IsUserAnAdmin() != 0
-        except Exception:
+        except (AttributeError, OSError):
             return False
     return (os.geteuid() == 0) if hasattr(os, "geteuid") else False
 
@@ -226,14 +227,14 @@ def _poll_until_free(
     while time.time() - start_time < timeout:
         try:
             bindings = inspector.find_bindings_on_port(port)
-        except Exception:
+        except (OSError, ValueError, IndexError, subprocess.SubprocessError):
             bindings = []
         if not bindings:
             return True
         time.sleep(interval)
     try:
         bindings = inspector.find_bindings_on_port(port)
-    except Exception:
+    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
         bindings = []
     return len(bindings) == 0
 
@@ -270,7 +271,7 @@ def load_config(config_path: Optional[str], debug: bool = False) -> Dict[str, An
                 file=sys.stderr,
             )
             sys.exit(EXIT_INVALID_INPUT)
-        except Exception as e:
+        except OSError as e:
             print(
                 colorize(f"Error: failed to read config file {path}: {e}", Colors.RED),
                 file=sys.stderr,
@@ -298,7 +299,7 @@ def apply_config_defaults(args: argparse.Namespace, cfg: Dict[str, Any]) -> None
                 current = getattr(args, name)
                 if name == "graceful_timeout" and current is None:
                     setattr(args, name, float(cfg[key]))
-            except Exception:
+            except (ValueError, TypeError):
                 pass
 
     _set_bool("yes", "yes")
@@ -631,7 +632,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                                 break
                         if _raw_occupied:
                             break
-                except Exception:
+                except (OSError, ValueError, IndexError):
                     pass
 
             if _raw_occupied:
@@ -1466,7 +1467,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                 file=sys.stderr,
             )
             return EXIT_GENERAL_ERROR
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - top-level MCP server error handler
             print(colorize(f"MCP server error: {e}", Colors.RED), file=sys.stderr)
             return EXIT_GENERAL_ERROR
 
@@ -1863,7 +1864,7 @@ Examples:
                 file=sys.stderr,
             )
             return EXIT_GENERAL_ERROR
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - top-level MCP server error handler
             print(colorize(f"MCP server error: {e}", Colors.RED), file=sys.stderr)
             return EXIT_GENERAL_ERROR
 
@@ -2943,7 +2944,7 @@ Examples:
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")
         return EXIT_GENERAL_ERROR
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - main entry point catch-all
         print(colorize(f"Unexpected error: {e}", Colors.RED), file=sys.stderr)
         return EXIT_GENERAL_ERROR
 

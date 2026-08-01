@@ -157,7 +157,7 @@ def _escalate_kill_unix(
             timeout=10,
         )
         return result.returncode == 0
-    except Exception:
+    except (subprocess.SubprocessError, OSError):
         return False
 
 
@@ -201,7 +201,7 @@ def _escalate_kill_windows(pid: int, assume_yes: bool, debug: bool = False) -> b
             timeout=30,
         )
         return result.returncode == 0
-    except Exception:
+    except (subprocess.SubprocessError, OSError):
         return False
 
 
@@ -370,7 +370,7 @@ class BaseInspector:
                 False,
                 "Permission denied — could not escalate. Try running with sudo/admin.",
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - catch arbitrary exceptions during signal dispatch
             return False, f"SIGTERM error: {e}"
 
         # Stage 2: Wait & Poll
@@ -398,7 +398,7 @@ class BaseInspector:
                         force = True
                 elif assume_yes:
                     force = True
-            except Exception:
+            except (EOFError, OSError, ValueError):
                 if assume_yes:
                     force = True
 
@@ -423,7 +423,7 @@ class BaseInspector:
             if self._try_escalate(pid, signal.SIGKILL, assume_yes, debug=debug):
                 return True, "Force-killed via privilege escalation"
             return False, "Permission denied on force kill — could not escalate."
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - catch arbitrary exceptions during signal dispatch
             return False, f"SIGKILL error: {e}"
 
     # ------------------------------------------------------------------
@@ -510,7 +510,7 @@ class BaseInspector:
                 remaining_pids = [p for p in remaining_pids if self.is_process_alive(p)]
                 if not remaining_pids:
                     return True, f"Port {port} successfully freed via fuser fallback"
-            except Exception as e:
+            except (subprocess.SubprocessError, OSError) as e:
                 errors.append(f"fuser fallback failed: {e}")
 
         if not remaining_pids:

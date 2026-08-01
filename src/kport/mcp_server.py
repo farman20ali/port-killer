@@ -3,6 +3,7 @@ Model Context Protocol (MCP) server implementation for kport.
 Implements standard stdio-based tool calls with zero dependencies.
 Incorporates a strict safety shield to prevent AI agents from killing critical system ports.
 """
+from __future__ import annotations
 
 import os
 import sys
@@ -40,8 +41,9 @@ def load_mcp_config() -> dict:
                     data = json.load(f)
                 if isinstance(data, dict):
                     return data
-            except Exception:
-                pass
+            except (OSError, json.JSONDecodeError) as ex:
+                # Non-fatal: config read/parse failed; continue with defaults.
+                log(f"Failed to load MCP config from {p}: {ex!s}")
     return {}
 
 
@@ -350,7 +352,7 @@ def run_mcp_server() -> None:
                             else False,
                         },
                     }
-                except Exception as ex:
+                except Exception as ex:  # noqa: BLE001 - top-level tool execution handler (intentional)
                     log(f"Tool execution failed: {traceback.format_exc()}")
                     resp = {
                         "jsonrpc": "2.0",
@@ -359,7 +361,7 @@ def run_mcp_server() -> None:
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": f"Error executing tool '{tool_name}': {str(ex)}",
+                                    "text": f"Error executing tool '{tool_name}': {ex!s}",
                                 }
                             ],
                             "isError": True,
@@ -385,5 +387,5 @@ def run_mcp_server() -> None:
                     sys.stdout.write(json.dumps(resp) + "\n")
                     sys.stdout.flush()
 
-        except Exception:
+        except Exception:  # noqa: BLE001 - top-level RPC framing (must not crash the server)
             log(f"RPC framing error: {traceback.format_exc()}")
