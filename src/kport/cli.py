@@ -36,6 +36,7 @@ from .inspectors import BaseInspector, get_inspector
 from .notify import notify as _desktop_notify
 from .process_manager import detect_process_manager
 from .profile import load_profiles, resolve_profile
+from .project import resolve_project
 
 # Exit codes
 EXIT_OK = 0
@@ -461,6 +462,26 @@ def handle_diagnose(args: argparse.Namespace, inspector: BaseInspector) -> int:
                 "reason": f"Process {pid} is running under process manager '{pm_info['manager']}' service '{pm_info['name']}'"
             })
 
+        # Project context inference — derived from process cwd
+        cwd = p.get("cwd")
+        project = resolve_project(cwd)
+        if project is not None:
+            inferences.append({
+                "type": "project_context",
+                "pid": pid,
+                "git_root": project.git_root,
+                "project_name": project.project_name,
+                "branch": project.branch,
+                "remote_origin": project.remote_origin,
+                "is_worktree": project.is_worktree,
+                "confidence": "medium",
+                "reason": (
+                    f"Process {pid} cwd ({cwd!r}) is inside Git repository "
+                    f"'{project.project_name or project.git_root}'"
+                    + (f" on branch '{project.branch}'" if project.branch else "")
+                ),
+            })
+
     # Docker network isolation inference
     for d in obs_docker:
         inferences.append({
@@ -661,6 +682,13 @@ def handle_diagnose(args: argparse.Namespace, inspector: BaseInspector) -> int:
                 print(f"  - [Process Manager] PID {inf['pid']} appears to be managed by {inf['manager']} service '{inf['name']}'")
             elif inf["type"] == "docker_isolation":
                 print(f"  - [Docker Isolation] Container {inf['container_name']} isolates execution in network namespace")
+            elif inf["type"] == "project_context":
+                proj_label = inf.get("project_name") or inf.get("git_root") or "unknown"
+                branch_label = f" ({inf['branch']})" if inf.get("branch") else ""
+                wt_label = " [worktree]" if inf.get("is_worktree") else ""
+                origin_label = f" — {inf['remote_origin']}" if inf.get("remote_origin") else ""
+                confidence = inf.get("confidence", "medium")
+                print(f"  - [Project Context / confidence:{confidence}] PID {inf['pid']} cwd is inside repo '{proj_label}'{branch_label}{wt_label}{origin_label}")
     else:
         print("  No inferred process relationships detected.")
     print()
