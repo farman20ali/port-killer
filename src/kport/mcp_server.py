@@ -89,7 +89,7 @@ TOOLS = [
                 },
                 "force": {
                     "type": "boolean",
-                    "default": True,
+                    "default": False,
                     "description": "Whether to force-kill (SIGKILL/fuser fallback) the process if graceful SIGTERM fails.",
                 },
                 "docker_action": {
@@ -191,7 +191,7 @@ def handle_inspect_port(inspector, port: int) -> dict[str, Any]:
 
 
 def handle_kill_port(
-    inspector, port: int, force: bool = True, docker_action: str = "stop"
+    inspector, port: int, force: bool = False, docker_action: str = "stop"
 ) -> dict[str, Any]:
     """Execute kill_port tool request under safety shield validations."""
     if not (1 <= port <= 65535):
@@ -330,7 +330,7 @@ def run_mcp_server() -> None:
                         result_data = handle_inspect_port(inspector, target_port)
                     elif tool_name == "kill_port":
                         target_port = int(arguments.get("port"))
-                        force_flag = bool(arguments.get("force", True))
+                        force_flag = bool(arguments.get("force", False))
                         docker_act = str(arguments.get("docker_action", "stop"))
                         result_data = handle_kill_port(
                             inspector, target_port, force_flag, docker_act

@@ -205,6 +205,36 @@ def test_kill_port_free_port_succeeds():
     assert data["success"] is True
 
 
+def test_kill_port_defaults_to_graceful():
+    """kill_port tool call must pass force=False to the inspector by default."""
+    mock_inspector = MagicMock()
+    mock_inspector.find_pids_on_port.return_value = [1234]
+    mock_inspector.get_process_info.return_value = MagicMock(name="someproc")
+    mock_inspector.kill_port.return_value = (True, "Port 19997 freed")
+
+    with patch("kport.mcp_server.get_inspector", return_value=mock_inspector), patch("kport.mcp_server.docker_mappings_for_host_port", return_value=[]):
+        responses = _send_messages(
+            {
+                "jsonrpc": "2.0",
+                "id": 10,
+                "method": "tools/call",
+                "params": {
+                    "name": "kill_port",
+                    "arguments": {"port": 19997},
+                },
+            }
+        )
+
+    assert len(responses) == 1
+    data = json.loads(responses[0]["result"]["content"][0]["text"])
+    assert data["success"] is True
+    
+    # Assert mock_inspector.kill_port was called with force=False
+    mock_inspector.kill_port.assert_called_once()
+    kwargs = mock_inspector.kill_port.call_args[1]
+    assert kwargs.get("force") is False
+
+
 # ---------------------------------------------------------------------------
 # Notification – no response expected
 # ---------------------------------------------------------------------------
