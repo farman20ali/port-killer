@@ -32,7 +32,7 @@ from .formatter import (
     print_table_list_product,
     print_table_listen,
 )
-from .inspectors import BaseInspector, get_inspector
+from .inspectors import BaseInspector, get_inspector, ConnectionInfo
 from .notify import notify as _desktop_notify
 from .process_manager import detect_process_manager
 from .profile import load_profiles, resolve_profile
@@ -716,12 +716,94 @@ def handle_diagnose(args: argparse.Namespace, inspector: BaseInspector) -> int:
     return EXIT_PORT_DOCKER if obs_type == "docker" else (EXIT_OK if is_blocked else EXIT_PORT_FREE)
 
 
+def handle_connections(args: argparse.Namespace, inspector: BaseInspector) -> int:
+    conns = inspector.list_connections()
+
+    # Filter by pid
+    if getattr(args, "pid", None) is not None:
+        try:
+            target_pid = int(args.pid)
+            conns = [c for c in conns if c.pid == target_pid]
+        except (ValueError, TypeError):
+            pass
+
+    # Filter by process name (substring match, case-insensitive)
+    if getattr(args, "process", None):
+        p_lower = args.process.lower()
+        conns = [c for c in conns if c.process_name and p_lower in c.process_name.lower()]
+
+    # Filter by port (either local or remote)
+    if getattr(args, "port", None) is not None:
+        try:
+            target_port = int(args.port)
+            conns = [c for c in conns if c.local_port == target_port or c.remote_port == target_port]
+        except (ValueError, TypeError):
+            pass
+
+    # Filter by state
+    if getattr(args, "state", None):
+        s_upper = args.state.upper()
+        conns = [c for c in conns if c.state and c.state.upper() == s_upper]
+
+    if getattr(args, "json", False):
+        serialized = []
+        for c in conns:
+            serialized.append({
+                "pid": c.pid,
+                "process_name": c.process_name,
+                "protocol": c.proto,
+                "local_address": c.local_address,
+                "local_port": c.local_port,
+                "remote_address": c.remote_address,
+                "remote_port": c.remote_port,
+                "state": c.state
+            })
+        data = {
+            "connections": serialized,
+            "count": len(serialized)
+        }
+        print(_json_out("connections", data))
+        return EXIT_OK
+
+    print(colorize("=== ACTIVE CONNECTIONS ===", Colors.CYAN + Colors.BOLD))
+    print()
+
+    if not conns:
+        print("No active connections found.")
+        print()
+        return EXIT_OK
+
+    # Print header
+    header = f"{'PID':<8}{'PROCESS':<16}{'LOCAL':<28}{'REMOTE':<28}{'STATE':<12}"
+    print(colorize(header, Colors.BOLD + Colors.WHITE))
+
+    for c in conns:
+        pid_str = str(c.pid) if c.pid is not None else "-"
+        pname_str = c.process_name if c.process_name else "-"
+        local_str = f"{c.local_address}:{c.local_port}"
+        remote_str = f"{c.remote_address}:{c.remote_port}" if c.remote_port is not None else c.remote_address
+        
+        state_color = Colors.GREEN if c.state == "ESTABLISHED" else (Colors.YELLOW if c.state == "LISTEN" else Colors.CYAN)
+        state_str = colorize(c.state, state_color)
+
+        line = f"{pid_str:<8}{pname_str:<16}{local_str:<28}{remote_str:<28}{state_str}"
+        print(line)
+
+    print()
+    print(f"{len(conns)} connection(s) found.")
+    print()
+    return EXIT_OK
+
+
 def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -> int:
     """Implement subcommands defined in the product specification."""
     debug = bool(getattr(args, "debug", False))
 
     if args.command == "diagnose":
         return handle_diagnose(args, inspector)
+
+    if args.command == "connections":
+        return handle_connections(args, inspector)
 
     if args.command == "docker":
         extra = getattr(args, "extra", []) or []
@@ -1823,9 +1905,9 @@ _kport_completion() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    opts="inspect explain diagnose kill kill-process list docker conflicts watch mcp completion --json --dry-run --yes --debug --config --bypass-safety --version --wait-for-exit --proto"
+    opts="inspect explain diagnose connections kill kill-process list docker conflicts watch mcp completion --json --dry-run --yes --debug --config --bypass-safety --version --wait-for-exit --proto"
     case "${prev}" in
-        inspect|explain|diagnose|watch|kill)
+        inspect|explain|diagnose|connections|watch|kill)
             return 0
             ;;
         kill-process|--inspect-process|-ip|-kp)
@@ -1842,7 +1924,7 @@ complete -F _kport_completion kport
     elif shell == "zsh":
         print("""# zsh completion for kport
 #compdef kport
-
+ 
 _kport() {
     local line
     _arguments -C \\
@@ -1857,13 +1939,14 @@ _kport() {
         '(-v --version)'{-v,--version}'[Show version]' \\
         '1: :->cmds' \\
         '*:: :->args'
-
+ 
     case $state in
         cmds)
             _values "subcommand" \\
                 'inspect[Inspect a port (docker-aware)]' \\
                 'explain[Explain why a port is blocked]' \\
                 'diagnose[Structured analysis and fix recommendations for a port]' \\
+                'connections[List active network connections]' \\
                 'kill[Safely free a port (docker-aware)]' \\
                 'kill-process[Kill processes by name]' \\
                 'list[List active ports (local + docker)]' \\
@@ -1879,7 +1962,7 @@ _kport() {
     elif shell == "fish":
         print("""# fish completion for kport
 complete -c kport -f
-complete -c kport -a "inspect explain diagnose kill kill-process list docker conflicts watch mcp completion"
+complete -c kport -a "inspect explain diagnose connections kill kill-process list docker conflicts watch mcp completion"
 complete -c kport -s y -l yes -d "Skip confirmation prompts"
 complete -c kport -l json -d "Output machine-readable JSON"
 complete -c kport -l dry-run -d "Show actions without executing"
@@ -1894,7 +1977,7 @@ complete -c kport -s v -l version -d "Show version"
         print("""# powershell completion for kport
 Register-ArgumentCompleter -Native -CommandName kport -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
-    $opts = @('inspect', 'explain', 'diagnose', 'kill', 'kill-process', 'list', 'docker', 'conflicts', 'watch', 'mcp', 'completion', '--json', '--dry-run', '--yes', '--debug', '--config', '--bypass-safety', '--version', '--wait-for-exit', '--proto')
+    $opts = @('inspect', 'explain', 'diagnose', 'connections', 'kill', 'kill-process', 'list', 'docker', 'conflicts', 'watch', 'mcp', 'completion', '--json', '--dry-run', '--yes', '--debug', '--config', '--bypass-safety', '--version', '--wait-for-exit', '--proto')
     $opts | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
         [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
     }
@@ -2135,6 +2218,22 @@ Examples:
 
     _sp_conflicts = sub.add_parser(
         "conflicts", parents=[parent_parser], help="Detect docker/local port conflicts"
+    )
+
+    sp_connections = sub.add_parser(
+        "connections", parents=[parent_parser], help="List active network connections"
+    )
+    sp_connections.add_argument(
+        "--pid", type=int, help="Filter connections by process ID"
+    )
+    sp_connections.add_argument(
+        "--process", type=str, help="Filter connections by process name"
+    )
+    sp_connections.add_argument(
+        "--port", type=int, help="Filter connections by local or remote port"
+    )
+    sp_connections.add_argument(
+        "--state", type=str, help="Filter connections by connection state (e.g. ESTABLISHED)"
     )
 
     sp_watch = sub.add_parser(

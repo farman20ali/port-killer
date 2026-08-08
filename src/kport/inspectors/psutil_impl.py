@@ -9,7 +9,7 @@ import os
 
 import psutil  # Safe to import because this implementation is dynamically loaded only when psutil is active.
 
-from .base import BaseInspector, PortBinding, ProcessInfo
+from .base import BaseInspector, PortBinding, ProcessInfo, ConnectionInfo
 
 
 class PsutilInspector(BaseInspector):
@@ -140,6 +140,53 @@ class PsutilInspector(BaseInspector):
                     )
                 )
         return sorted(bindings, key=lambda b: b.port)
+
+    def list_connections(self) -> list[ConnectionInfo]:
+        connections: list[ConnectionInfo] = []
+        try:
+            conns = psutil.net_connections(kind="tcp")
+        except psutil.Error:
+            return []
+
+        # Deduplicate process name lookup by PID to avoid N connections * N queries
+        unique_pids = {conn.pid for conn in conns if conn.pid}
+        pid_to_name: dict[int, str | None] = {}
+        for pid in unique_pids:
+            try:
+                p = psutil.Process(pid)
+                pid_to_name[pid] = p.name()
+            except psutil.Error:
+                pid_to_name[pid] = None
+
+        for conn in conns:
+            if not conn.laddr:
+                continue
+            l_ip = conn.laddr.ip if hasattr(conn.laddr, "ip") else conn.laddr[0]
+            l_port = conn.laddr.port if hasattr(conn.laddr, "port") else conn.laddr[1]
+
+            r_ip = "*"
+            r_port = None
+            if conn.raddr:
+                r_ip = conn.raddr.ip if hasattr(conn.raddr, "ip") else conn.raddr[0]
+                r_port = conn.raddr.port if hasattr(conn.raddr, "port") else conn.raddr[1]
+
+            pid = conn.pid
+            pname = pid_to_name.get(pid) if pid else None
+
+            connections.append(
+                ConnectionInfo(
+                    pid=pid,
+                    process_name=pname,
+                    proto="tcp",
+                    local_address=l_ip,
+                    local_port=l_port,
+                    remote_address=r_ip,
+                    remote_port=r_port,
+                    state=conn.status,
+                )
+            )
+
+        return sorted(connections, key=lambda c: (c.pid or 0, c.local_port))
 
     def get_process_info(self, pid: int) -> ProcessInfo | None:
         try:

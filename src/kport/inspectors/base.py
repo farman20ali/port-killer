@@ -122,6 +122,18 @@ class PortBinding:
     proto: str = "tcp"
 
 
+@dataclass
+class ConnectionInfo:
+    pid: int | None
+    process_name: str | None
+    proto: str
+    local_address: str
+    local_port: int
+    remote_address: str
+    remote_port: int | None
+    state: str
+
+
 # ---------------------------------------------------------------------------
 # Privilege escalation helpers
 # ---------------------------------------------------------------------------
@@ -216,6 +228,10 @@ def _escalate_kill_windows(pid: int, assume_yes: bool, debug: bool = False) -> b
 class BaseInspector:
     def list_listening(self, proto: str = "tcp") -> list[PortBinding]:
         """List all active listening ports."""
+        raise NotImplementedError()
+
+    def list_connections(self) -> list[ConnectionInfo]:
+        """List all active network connections."""
         raise NotImplementedError()
 
     def find_pids_on_port(self, port: int, proto: str = "tcp") -> list[int]:

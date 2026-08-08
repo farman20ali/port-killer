@@ -14,7 +14,7 @@ import struct
 import subprocess
 from typing import Any
 
-from .base import BaseInspector, PortBinding, ProcessInfo
+from .base import BaseInspector, PortBinding, ProcessInfo, ConnectionInfo
 
 # --- Linux-native /proc parsing helpers ---
 
@@ -65,6 +65,58 @@ def _parse_proc_net_file(filename: str, family: str) -> list[tuple[str, int, int
                 else:
                     ip = parse_ipv6(ip_hex)
                 sockets.append((ip, port, inode))
+            except (ValueError, IndexError):
+                continue
+    except OSError:
+        pass
+    return sockets
+
+
+def _parse_proc_net_connections(filename: str, family: str) -> list[tuple[str, int, str, int, str, int]]:
+    """Parse socket information (local, remote, state, inode) from /proc/net/tcp*."""
+    sockets = []
+    if not os.path.exists(filename):
+        return sockets
+    try:
+        with open(filename, "r") as f:
+            lines = f.readlines()
+        if len(lines) <= 1:
+            return sockets
+        for line in lines[1:]:
+            parts = line.strip().split()
+            if len(parts) < 10:
+                continue
+            local_addr = parts[1]
+            remote_addr = parts[2]
+            state_hex = parts[3]
+            inode = int(parts[9])
+
+            state_map = {
+                "01": "ESTABLISHED", "02": "SYN_SENT", "03": "SYN_RECV",
+                "04": "FIN_WAIT1", "05": "FIN_WAIT2", "06": "TIME_WAIT",
+                "07": "CLOSE", "08": "CLOSE_WAIT", "09": "LAST_ACK",
+                "0A": "LISTEN", "0B": "CLOSING"
+            }
+            state = state_map.get(state_hex, f"STATE_{state_hex}")
+
+            try:
+                l_ip_hex, l_port_hex = local_addr.split(":")
+                l_port = int(l_port_hex, 16)
+                r_ip_hex, r_port_hex = remote_addr.split(":")
+                r_port = int(r_port_hex, 16)
+
+                if family == "IPv4":
+                    l_ip = parse_ipv4(l_ip_hex)
+                    r_ip = parse_ipv4(r_ip_hex)
+                else:
+                    l_ip = parse_ipv6(l_ip_hex)
+                    r_ip = parse_ipv6(r_ip_hex)
+
+                if state == "LISTEN" or r_ip in ("0.0.0.0", "::"):
+                    r_ip = "*"
+                    r_port = 0
+
+                sockets.append((l_ip, l_port, r_ip, r_port, state, inode))
             except (ValueError, IndexError):
                 continue
     except OSError:
@@ -555,6 +607,136 @@ def _get_extended_udp_table_ipv6() -> list[PortBinding]:
         )
 
     return bindings
+
+
+def _get_extended_tcp_connections_ipv4() -> list[ConnectionInfo]:
+    connections = []
+    if platform.system() != "Windows":
+        return connections
+
+    iphlpapi = ctypes.windll.iphlpapi
+    size = wintypes.DWORD(0)
+    res = iphlpapi.GetExtendedTcpTable(
+        None, ctypes.byref(size), True, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0
+    )
+
+    buf = ctypes.create_string_buffer(size.value)
+    res = iphlpapi.GetExtendedTcpTable(
+        buf, ctypes.byref(size), True, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0
+    )
+    if res != 0:
+        return []
+
+    num_entries = ctypes.cast(buf, ctypes.POINTER(wintypes.DWORD)).contents.value
+    entry_size = ctypes.sizeof(MIB_TCPROW_OWNER_PID)
+    offset = ctypes.sizeof(wintypes.DWORD)
+
+    state_map = {
+        1: "CLOSED", 2: "LISTEN", 3: "SYN_SENT", 4: "SYN_RECV",
+        5: "ESTABLISHED", 6: "FIN_WAIT1", 7: "FIN_WAIT2",
+        8: "CLOSE_WAIT", 9: "CLOSING", 10: "LAST_ACK",
+        11: "TIME_WAIT", 12: "DELETE_TCB",
+    }
+
+    for i in range(num_entries):
+        entry_ptr = ctypes.cast(
+            ctypes.byref(buf, offset + i * entry_size),
+            ctypes.POINTER(MIB_TCPROW_OWNER_PID),
+        )
+        row = entry_ptr.contents
+        state = state_map.get(row.dwState, f"STATE_{row.dwState}")
+
+        l_ip_bytes = struct.pack("<I", row.dwLocalAddr)
+        l_ip = socket.inet_ntop(socket.AF_INET, l_ip_bytes)
+        l_port = socket.ntohs(row.dwLocalPort & 0xFFFF)
+
+        r_ip_bytes = struct.pack("<I", row.dwRemoteAddr)
+        r_ip = socket.inet_ntop(socket.AF_INET, r_ip_bytes)
+        r_port = socket.ntohs(row.dwRemotePort & 0xFFFF)
+
+        if state == "LISTEN" or r_ip == "0.0.0.0":
+            r_ip = "*"
+            r_port = None
+
+        pid = int(row.dwOwningPid)
+        connections.append(
+            ConnectionInfo(
+                pid=pid,
+                process_name=None,
+                proto="tcp",
+                local_address=l_ip,
+                local_port=l_port,
+                remote_address=r_ip,
+                remote_port=r_port,
+                state=state,
+            )
+        )
+    return connections
+
+
+def _get_extended_tcp_connections_ipv6() -> list[ConnectionInfo]:
+    connections = []
+    if platform.system() != "Windows":
+        return connections
+
+    iphlpapi = ctypes.windll.iphlpapi
+    size = wintypes.DWORD(0)
+    res = iphlpapi.GetExtendedTcpTable(
+        None, ctypes.byref(size), True, AF_INET6, TCP_TABLE_OWNER_PID_ALL, 0
+    )
+
+    buf = ctypes.create_string_buffer(size.value)
+    res = iphlpapi.GetExtendedTcpTable(
+        buf, ctypes.byref(size), True, AF_INET6, TCP_TABLE_OWNER_PID_ALL, 0
+    )
+    if res != 0:
+        return []
+
+    num_entries = ctypes.cast(buf, ctypes.POINTER(wintypes.DWORD)).contents.value
+    entry_size = ctypes.sizeof(MIB_TCP6ROW_OWNER_PID)
+    offset = ctypes.sizeof(wintypes.DWORD)
+
+    state_map = {
+        1: "CLOSED", 2: "LISTEN", 3: "SYN_SENT", 4: "SYN_RECV",
+        5: "ESTABLISHED", 6: "FIN_WAIT1", 7: "FIN_WAIT2",
+        8: "CLOSE_WAIT", 9: "CLOSING", 10: "LAST_ACK",
+        11: "TIME_WAIT", 12: "DELETE_TCB",
+    }
+
+    for i in range(num_entries):
+        entry_ptr = ctypes.cast(
+            ctypes.byref(buf, offset + i * entry_size),
+            ctypes.POINTER(MIB_TCP6ROW_OWNER_PID),
+        )
+        row = entry_ptr.contents
+        state = state_map.get(row.dwState, f"STATE_{row.dwState}")
+
+        l_ip_bytes = bytes(row.ucLocalAddr)
+        l_ip = socket.inet_ntop(socket.AF_INET6, l_ip_bytes)
+        l_port = socket.ntohs(row.dwLocalPort & 0xFFFF)
+
+        r_ip_bytes = bytes(row.ucRemoteAddr)
+        r_ip = socket.inet_ntop(socket.AF_INET6, r_ip_bytes)
+        r_port = socket.ntohs(row.dwRemotePort & 0xFFFF)
+
+        if state == "LISTEN" or r_ip in ("::", "0:0:0:0:0:0:0:0"):
+            r_ip = "*"
+            r_port = None
+
+        pid = int(row.dwOwningPid)
+        connections.append(
+            ConnectionInfo(
+                pid=pid,
+                process_name=None,
+                proto="tcp",
+                local_address=l_ip,
+                local_port=l_port,
+                remote_address=r_ip,
+                remote_port=r_port,
+                state=state,
+            )
+        )
+    return connections
 
 
 def _windows_listening_native() -> list[PortBinding]:
@@ -1720,3 +1902,300 @@ class FallbackInspector(BaseInspector):
             except (subprocess.SubprocessError, OSError, ValueError, RecursionError):
                 pass
             return []
+
+    def list_connections(self) -> list[ConnectionInfo]:
+        self._clear_cache()
+        if self.system == "Windows":
+            return self._windows_connections()
+        elif self.system == "Linux":
+            return self._linux_connections()
+        else:
+            return self._unix_connections()
+
+    def _windows_connections(self) -> list[ConnectionInfo]:
+        connections: list[ConnectionInfo] = []
+        try:
+            connections.extend(_get_extended_tcp_connections_ipv4())
+        except Exception:
+            pass
+        try:
+            connections.extend(_get_extended_tcp_connections_ipv6())
+        except Exception:
+            pass
+
+        if not connections:
+            connections = self._windows_connections_cmd_fallback()
+
+        # Deduplicate process name lookup by PID
+        unique_pids = {c.pid for c in connections if c.pid}
+        pid_to_name: dict[int, str | None] = {}
+        for pid in unique_pids:
+            if pid:
+                info = self.get_process_info(pid)
+                pid_to_name[pid] = info.name if info else None
+
+        for c in connections:
+            if c.pid:
+                c.process_name = pid_to_name.get(c.pid)
+
+        return connections
+
+    def _windows_connections_cmd_fallback(self) -> list[ConnectionInfo]:
+        connections: list[ConnectionInfo] = []
+        ps = self._powershell()
+        if ps:
+            data = self._run_powershell_json(
+                "Get-NetTCPConnection | "
+                "Select-Object LocalAddress,LocalPort,RemoteAddress,RemotePort,OwningProcess,State | ConvertTo-Json -Depth 3"
+            )
+            if data is not None:
+                items = data if isinstance(data, list) else [data]
+                for item in items:
+                    try:
+                        l_port = int(item.get("LocalPort"))
+                        pid = int(item.get("OwningProcess")) if item.get("OwningProcess") else None
+                        l_ip = item.get("LocalAddress")
+                        r_ip = item.get("RemoteAddress", "*")
+                        r_port = int(item.get("RemotePort")) if item.get("RemotePort") else None
+                        state = item.get("State", "UNKNOWN")
+                        if r_ip in ("0.0.0.0", "::", "*") or state == "Listen":
+                            r_ip = "*"
+                            r_port = None
+                        connections.append(
+                            ConnectionInfo(
+                                pid=pid,
+                                process_name=None,
+                                proto="tcp",
+                                local_address=l_ip,
+                                local_port=l_port,
+                                remote_address=r_ip,
+                                remote_port=r_port,
+                                state=state.upper(),
+                            )
+                        )
+                    except (ValueError, TypeError, KeyError):
+                        continue
+                return connections
+
+        if not shutil.which("netstat"):
+            return connections
+
+        try:
+            proc = self._run_subprocess(["netstat", "-ano"])
+            for line in proc.stdout.splitlines():
+                line = line.strip()
+                if not line or "Proto" in line or "Active" in line:
+                    continue
+                parts = re.split(r"\s+", line)
+                if len(parts) >= 4 and parts[0].upper() == "TCP":
+                    local_addr = parts[1]
+                    remote_addr = parts[2]
+                    state = parts[3]
+                    pid_str = parts[4] if len(parts) >= 5 else None
+
+                    try:
+                        pid = int(pid_str) if pid_str else None
+                    except ValueError:
+                        pid = None
+
+                    try:
+                        l_ip, l_port_str = local_addr.rsplit(":", 1)
+                        l_port = int(l_port_str)
+                    except ValueError:
+                        continue
+
+                    r_ip = "*"
+                    r_port = None
+                    if remote_addr and ":" in remote_addr:
+                        try:
+                            r_ip, r_port_str = remote_addr.rsplit(":", 1)
+                            r_port = int(r_port_str)
+                        except ValueError:
+                            pass
+
+                    if state == "LISTENING" or r_ip in ("0.0.0.0", "::", "*"):
+                        r_ip = "*"
+                        r_port = None
+
+                    connections.append(
+                        ConnectionInfo(
+                            pid=pid,
+                            process_name=None,
+                            proto="tcp",
+                            local_address=l_ip,
+                            local_port=l_port,
+                            remote_address=r_ip,
+                            remote_port=r_port,
+                            state="LISTEN" if state == "LISTENING" else state,
+                        )
+                    )
+        except Exception:
+            pass
+        return connections
+
+    def _linux_connections(self) -> list[ConnectionInfo]:
+        connections: list[ConnectionInfo] = []
+        inode_to_pid = _get_linux_inode_to_pid_map()
+
+        raw_conns = []
+        raw_conns.extend(_parse_proc_net_connections("/proc/net/tcp", "IPv4"))
+        raw_conns.extend(_parse_proc_net_connections("/proc/net/tcp6", "IPv6"))
+
+        # Deduplicate process name lookup
+        unique_pids = {inode_to_pid.get(inode) for _, _, _, _, _, inode in raw_conns if inode_to_pid.get(inode)}
+        pid_to_name: dict[int, str | None] = {}
+        for pid in unique_pids:
+            if pid:
+                info = self.get_process_info(pid)
+                pid_to_name[pid] = info.name if info else None
+
+        for l_ip, l_port, r_ip, r_port, state, inode in raw_conns:
+            pid = inode_to_pid.get(inode)
+            pname = pid_to_name.get(pid) if pid else None
+            connections.append(
+                ConnectionInfo(
+                    pid=pid,
+                    process_name=pname,
+                    proto="tcp",
+                    local_address=l_ip,
+                    local_port=l_port,
+                    remote_address=r_ip,
+                    remote_port=r_port if r_ip != "*" else None,
+                    state=state,
+                )
+            )
+
+        if not connections and shutil.which("ss"):
+            connections = self._linux_connections_ss_fallback()
+
+        return connections
+
+    def _linux_connections_ss_fallback(self) -> list[ConnectionInfo]:
+        connections: list[ConnectionInfo] = []
+        try:
+            proc = self._run_subprocess(["ss", "-tanp"])
+            for line in proc.stdout.splitlines():
+                if "State" in line or not line.strip():
+                    continue
+                parts = re.split(r"\s+", line.strip())
+                if len(parts) >= 5:
+                    state = parts[0].upper()
+                    laddr = parts[3]
+                    raddr = parts[4]
+                    users = parts[5] if len(parts) >= 6 else ""
+
+                    try:
+                        l_ip, l_port_str = laddr.rsplit(":", 1)
+                        l_port = int(l_port_str)
+                    except ValueError:
+                        continue
+
+                    r_ip = "*"
+                    r_port = None
+                    if raddr and ":" in raddr:
+                        try:
+                            r_ip, r_port_str = raddr.rsplit(":", 1)
+                            r_port = int(r_port_str)
+                        except ValueError:
+                            pass
+
+                    if state == "LISTEN" or r_ip in ("0.0.0.0", "[::]", "::", "*"):
+                        r_ip = "*"
+                        r_port = None
+
+                    pid = None
+                    pname = None
+                    m = re.search(r"pid=(\d+)", users)
+                    if m:
+                        pid = int(m.group(1))
+                        m_name = re.search(r'"([^"]+)"', users)
+                        if m_name:
+                            pname = m_name.group(1)
+
+                    connections.append(
+                        ConnectionInfo(
+                            pid=pid,
+                            process_name=pname,
+                            proto="tcp",
+                            local_address=l_ip,
+                            local_port=l_port,
+                            remote_address=r_ip,
+                            remote_port=r_port,
+                            state=state,
+                        )
+                    )
+        except Exception:
+            pass
+        return connections
+
+    def _unix_connections(self) -> list[ConnectionInfo]:
+        connections: list[ConnectionInfo] = []
+        if not shutil.which("lsof"):
+            return connections
+
+        try:
+            proc = self._run_subprocess(["lsof", "-nP", "-iTCP"])
+            for line in proc.stdout.splitlines():
+                if "COMMAND" in line or not line.strip():
+                    continue
+                parts = re.split(r"\s+", line.strip())
+                if len(parts) < 9:
+                    continue
+
+                pname = parts[0]
+                try:
+                    pid = int(parts[1])
+                except ValueError:
+                    pid = None
+
+                name_field = parts[8]
+                state = "UNKNOWN"
+                m_state = re.search(r"\((\w+)\)", name_field)
+                if m_state:
+                    state = m_state.group(1).upper()
+                    name_field = name_field.split("(")[0].strip()
+
+                l_ip = "*"
+                l_port = 0
+                r_ip = "*"
+                r_port = None
+
+                if "->" in name_field:
+                    local_part, remote_part = name_field.split("->", 1)
+                    try:
+                        l_ip, l_port_str = local_part.rsplit(":", 1)
+                        l_port = int(l_port_str)
+                    except ValueError:
+                        pass
+
+                    try:
+                        r_ip, r_port_str = remote_part.rsplit(":", 1)
+                        r_port = int(r_port_str)
+                    except ValueError:
+                        pass
+                else:
+                    try:
+                        l_ip, l_port_str = name_field.rsplit(":", 1)
+                        l_port = int(l_port_str)
+                    except ValueError:
+                        pass
+
+                if state == "LISTEN" or r_ip in ("0.0.0.0", "::", "*"):
+                    r_ip = "*"
+                    r_port = None
+
+                connections.append(
+                    ConnectionInfo(
+                        pid=pid,
+                        process_name=pname,
+                        proto="tcp",
+                        local_address=l_ip,
+                        local_port=l_port,
+                        remote_address=r_ip,
+                        remote_port=r_port,
+                        state=state,
+                    )
+                )
+        except Exception:
+            pass
+        return connections
