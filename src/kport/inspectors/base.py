@@ -102,6 +102,9 @@ class ProcessInfo:
     exe: str | None = None
     cmdline: list[str] | None = None
     user: str | None = None
+    ppid: int | None = None
+    cwd: str | None = None
+    start_time: float | None = None
 
     def __post_init__(self) -> None:
         """Auto-enrich generic runtime names with their script/jar argument."""

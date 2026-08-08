@@ -97,6 +97,25 @@ def _get_linux_inode_to_pid_map() -> dict[int, int]:
     return inode_to_pid
 
 
+_BOOT_TIME: float | None = None
+
+
+def _get_boot_time() -> float:
+    global _BOOT_TIME
+    if _BOOT_TIME is not None:
+        return _BOOT_TIME
+    try:
+        with open("/proc/stat", "r") as f:
+            for line in f:
+                if line.startswith("btime "):
+                    _BOOT_TIME = float(line.split()[1])
+                    return _BOOT_TIME
+    except Exception:
+        pass
+    _BOOT_TIME = 0.0
+    return _BOOT_TIME
+
+
 def _get_linux_process_info(pid: int) -> ProcessInfo | None:
     """Retrieve process information natively on Linux from /proc."""
     try:
@@ -127,7 +146,56 @@ def _get_linux_process_info(pid: int) -> ProcessInfo | None:
         if not name and cmdline:
             name = os.path.basename(cmdline[0])
 
-        return ProcessInfo(pid=pid, name=name, cmdline=cmdline, user=user)
+        ppid = None
+        try:
+            with open(f"/proc/{pid}/status", "r", errors="ignore") as f:
+                for line in f:
+                    if line.startswith("PPid:"):
+                        ppid = int(line.split()[1])
+                        break
+        except (OSError, ValueError, IndexError):
+            pass
+
+        cwd = None
+        try:
+            cwd = os.readlink(f"/proc/{pid}/cwd")
+        except OSError:
+            pass
+
+        start_time = None
+        try:
+            with open(f"/proc/{pid}/stat", "r", errors="ignore") as f:
+                stat_content = f.read().strip()
+            rpar_idx = stat_content.rfind(")")
+            if rpar_idx != -1:
+                fields = stat_content[rpar_idx + 2:].split()
+                if len(fields) >= 20:
+                    ticks = int(fields[19])
+                    try:
+                        sc_clk_tck = os.sysconf("SC_CLK_TCK")
+                    except (AttributeError, ValueError):
+                        sc_clk_tck = 100
+                    btime = _get_boot_time()
+                    if btime > 0:
+                        start_time = btime + (ticks / sc_clk_tck)
+        except Exception:
+            pass
+
+        if start_time is None:
+            try:
+                start_time = float(stat_info.st_mtime)
+            except Exception:
+                pass
+
+        return ProcessInfo(
+            pid=pid,
+            name=name,
+            cmdline=cmdline,
+            user=user,
+            ppid=ppid,
+            cwd=cwd,
+            start_time=start_time,
+        )
     except OSError:
         return None
 
@@ -517,6 +585,44 @@ def _windows_listening_native() -> list[PortBinding]:
     return bindings
 
 
+def _get_windows_ppid_native(pid: int) -> int | None:
+    """Retrieve process parent PID natively on Windows using Toolhelp32Snapshot."""
+    if platform.system() != "Windows":
+        return None
+    try:
+        kernel32 = ctypes.windll.kernel32
+        h_snap = kernel32.CreateToolhelp32Snapshot(0x00000002, 0)
+        if h_snap == -1 or not h_snap:
+            return None
+        try:
+            class PROCESSENTRY32W(ctypes.Structure):
+                _fields_ = [
+                    ("dwSize", wintypes.DWORD),
+                    ("cntUsage", wintypes.DWORD),
+                    ("th32ProcessID", wintypes.DWORD),
+                    ("th32DefaultHeapID", ctypes.c_void_p),
+                    ("th32ModuleID", wintypes.DWORD),
+                    ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD),
+                    ("pcPriClassBase", wintypes.LONG),
+                    ("dwFlags", wintypes.DWORD),
+                    ("szExeFile", ctypes.c_wchar * 260),
+                ]
+            pe = PROCESSENTRY32W()
+            pe.dwSize = ctypes.sizeof(PROCESSENTRY32W)
+            if kernel32.Process32FirstW(h_snap, ctypes.byref(pe)):
+                while True:
+                    if pe.th32ProcessID == pid:
+                        return pe.th32ParentProcessID
+                    if not kernel32.Process32NextW(h_snap, ctypes.byref(pe)):
+                        break
+        finally:
+            kernel32.CloseHandle(h_snap)
+    except Exception:
+        pass
+    return None
+
+
 def _get_windows_process_info_native(pid: int) -> ProcessInfo | None:
     """Retrieve process name/executable path natively on Windows using ctypes."""
     if platform.system() != "Windows":
@@ -529,10 +635,45 @@ def _get_windows_process_info_native(pid: int) -> ProcessInfo | None:
         try:
             size = wintypes.DWORD(260)
             buf = ctypes.create_unicode_buffer(260)
+            exe_path = None
+            name = None
             if kernel32.QueryFullProcessImageNameW(h_proc, 0, buf, ctypes.byref(size)):
                 exe_path = buf.value
                 name = os.path.basename(exe_path)
-                return ProcessInfo(pid=pid, name=name, exe=exe_path)
+
+            if not name:
+                return None
+
+            class FILETIME(ctypes.Structure):
+                _fields_ = [
+                    ("dwLowDateTime", wintypes.DWORD),
+                    ("dwHighDateTime", wintypes.DWORD),
+                ]
+            creation_time = FILETIME()
+            exit_time = FILETIME()
+            kernel_time = FILETIME()
+            user_time = FILETIME()
+            start_time = None
+            if kernel32.GetProcessTimes(
+                h_proc,
+                ctypes.byref(creation_time),
+                ctypes.byref(exit_time),
+                ctypes.byref(kernel_time),
+                ctypes.byref(user_time)
+            ):
+                val = (creation_time.dwHighDateTime << 32) + creation_time.dwLowDateTime
+                if val > 0:
+                    start_time = (val / 10000000.0) - 11644473600.0
+
+            ppid = _get_windows_ppid_native(pid)
+
+            return ProcessInfo(
+                pid=pid,
+                name=name,
+                exe=exe_path,
+                ppid=ppid,
+                start_time=start_time
+            )
         finally:
             kernel32.CloseHandle(h_proc)
     except Exception:  # noqa: BLE001, S110 - ignore native call failure
@@ -1171,17 +1312,49 @@ class FallbackInspector(BaseInspector):
                         return info
                 except (OSError, ValueError, IndexError, AttributeError):
                     pass
+                from datetime import datetime
                 proc = self._run_subprocess(
-                    ["ps", "-p", str(pid), "-o", "pid=,comm=,user=,args="]
+                    ["ps", "-p", str(pid), "-o", "pid=,ppid=,comm=,user=,lstart=,args="]
                 )
                 out = proc.stdout.strip()
                 if not out:
                     return None
-                parts = re.split(r"\s+", out, maxsplit=2)
-                if len(parts) >= 2:
-                    name = parts[1]
-                    user = parts[2].split()[0] if len(parts) >= 3 else None
-                    return ProcessInfo(pid=pid, name=name, user=user)
+                parts = re.split(r"\s+", out)
+                if len(parts) >= 10:
+                    try:
+                        ppid = int(parts[1])
+                    except (ValueError, IndexError):
+                        ppid = None
+                    name = parts[2]
+                    user = parts[3]
+                    start_time = None
+                    try:
+                        date_str = " ".join(parts[4:9])
+                        date_str = re.sub(r"\s+", " ", date_str)
+                        dt = datetime.strptime(date_str, "%a %b %d %H:%M:%S %Y")
+                        start_time = dt.timestamp()
+                    except Exception:
+                        pass
+                    cmdline = parts[9:] if len(parts) > 9 else None
+                    cwd = None
+                    if shutil.which("lsof"):
+                        try:
+                            res = self._run_subprocess(["lsof", "-p", str(pid), "-a", "-d", "cwd", "-F", "n"])
+                            for line in res.stdout.splitlines():
+                                if line.startswith("n"):
+                                    cwd = line[1:].strip()
+                                    break
+                        except Exception:
+                            pass
+                    return ProcessInfo(
+                        pid=pid,
+                        name=name,
+                        cmdline=cmdline,
+                        user=user,
+                        ppid=ppid,
+                        cwd=cwd,
+                        start_time=start_time,
+                    )
         except Exception:  # noqa: BLE001 - robust wrapper for process info retrieval
             return None
         return None

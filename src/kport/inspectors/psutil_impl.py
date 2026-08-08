@@ -160,12 +160,30 @@ class PsutilInspector(BaseInspector):
                 user = p.username() if hasattr(p, "username") else None
             except psutil.Error:
                 pass
+            ppid = None
+            try:
+                ppid = p.ppid()
+            except psutil.Error:
+                pass
+            cwd = None
+            try:
+                cwd = p.cwd() or None
+            except psutil.Error:
+                pass
+            start_time = None
+            try:
+                start_time = p.create_time() or None
+            except psutil.Error:
+                pass
             return ProcessInfo(
                 pid=pid,
                 name=p.name(),
                 exe=exe,
                 cmdline=cmdline,
                 user=user,
+                ppid=ppid,
+                cwd=cwd,
+                start_time=start_time,
             )
         except psutil.Error:
             return None
