@@ -773,20 +773,28 @@ def handle_connections(args: argparse.Namespace, inspector: BaseInspector) -> in
         print()
         return EXIT_OK
 
-    # Print header
-    header = f"{'PID':<8}{'PROCESS':<16}{'LOCAL':<28}{'REMOTE':<28}{'STATE':<12}"
+    # Print header  (PROCESS column width = 24 to fit most real names)
+    _PROC_W = 24
+    header = f"{'PID':<8}{'PROCESS':<{_PROC_W}}{'LOCAL':<28}{'REMOTE':<28}{'STATE':<12}"
     print(colorize(header, Colors.BOLD + Colors.WHITE))
 
     for c in conns:
         pid_str = str(c.pid) if c.pid is not None else "-"
-        pname_str = c.process_name if c.process_name else "-"
+        raw_name = c.process_name if c.process_name else "-"
+        # Truncate long names so the LOCAL column is always visually separate.
+        # We cap at (_PROC_W - 1) total chars so the f-string left-pad always
+        # emits at least one trailing space before the LOCAL column.
+        if len(raw_name) >= _PROC_W:
+            pname_str = raw_name[:_PROC_W - 2] + "\u2026"  # e.g. 22 + 1 = 23 chars
+        else:
+            pname_str = raw_name
         local_str = f"{c.local_address}:{c.local_port}"
         remote_str = f"{c.remote_address}:{c.remote_port}" if c.remote_port is not None else c.remote_address
-        
+
         state_color = Colors.GREEN if c.state == "ESTABLISHED" else (Colors.YELLOW if c.state == "LISTEN" else Colors.CYAN)
         state_str = colorize(c.state, state_color)
 
-        line = f"{pid_str:<8}{pname_str:<16}{local_str:<28}{remote_str:<28}{state_str}"
+        line = f"{pid_str:<8}{pname_str:<{_PROC_W}}{local_str:<28}{remote_str:<28}{state_str}"
         print(line)
 
     print()

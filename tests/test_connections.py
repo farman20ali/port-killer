@@ -131,3 +131,119 @@ def test_handle_connections_cli_filtering(capsys):
     assert '"schema_version": 1' in out
     assert '"command": "connections"' in out
     assert '"count": 3' in out
+
+
+def test_long_process_name_does_not_merge_with_local_column(capsys):
+    """Regression: process names longer than the PROCESS column width must be
+    truncated with an ellipsis so the LOCAL column is always visually separate."""
+    long_name = "language_server_windows_x64.exe"  # 32 chars, exceeds 24-wide column
+    conn = ConnectionInfo(
+        pid=7032, process_name=long_name, proto="tcp",
+        local_address="127.0.0.1", local_port=56362,
+        remote_address="127.0.0.1", remote_port=51876, state="ESTABLISHED",
+    )
+    inspector = MagicMock()
+    inspector.list_connections.return_value = [conn]
+
+    args = MagicMock(pid=None, process=None, port=None, state=None, json=False)
+    handle_connections(args, inspector)
+    out, _ = capsys.readouterr()
+
+    # The LOCAL address must appear on the same data line, not merged with name
+    data_line = [l for l in out.splitlines() if "127.0.0.1:56362" in l]
+    assert data_line, "LOCAL address not found in output"
+    # The full raw name must NOT appear; the column must be truncated
+    assert long_name not in data_line[0], (
+        f"Long process name was not truncated; columns ran together: {data_line[0]!r}"
+    )
+    # The local address must not be immediately adjacent to end of the (truncated) name
+    # i.e. there must be whitespace before '127.0.0.1:56362'
+    idx = data_line[0].find("127.0.0.1:56362")
+    assert idx > 0 and data_line[0][idx - 1] == " ", (
+        f"No space before LOCAL address — columns merged: {data_line[0]!r}"
+    )
+
+
+def test_pid_zero_and_time_wait_round_trip(capsys):
+    """PID 0 / TIME_WAIT must be preserved in both text and JSON output,
+    and must be selectable by --state TIME_WAIT without crashing."""
+    import json as json_mod
+
+    tw = ConnectionInfo(
+        pid=0, process_name=None, proto="tcp",
+        local_address="192.168.1.5", local_port=51883,
+        remote_address="172.64.144.52", remote_port=443, state="TIME_WAIT",
+    )
+    other = ConnectionInfo(
+        pid=1234, process_name="python.exe", proto="tcp",
+        local_address="0.0.0.0", local_port=8000,
+        remote_address="*", remote_port=None, state="LISTEN",
+    )
+    inspector = MagicMock()
+    inspector.list_connections.return_value = [tw, other]
+
+    # Text output: PID 0 shown as "0", no process name shown as "-", state preserved
+    args = MagicMock(pid=None, process=None, port=None, state=None, json=False)
+    handle_connections(args, inspector)
+    out, _ = capsys.readouterr()
+    lines = [l for l in out.splitlines() if "51883" in l]
+    assert lines, "TIME_WAIT connection not in output"
+    assert "TIME_WAIT" in lines[0]
+    # PID 0 must appear as "0", not suppressed or replaced
+    assert lines[0].startswith("0 ") or lines[0].startswith("0\t")
+
+    # JSON output: pid=0 preserved as integer 0, state preserved
+    args_j = MagicMock(pid=None, process=None, port=None, state=None, json=True)
+    handle_connections(args_j, inspector)
+    out_j, _ = capsys.readouterr()
+    parsed = json_mod.loads(out_j)
+    tw_entry = next(c for c in parsed["data"]["connections"] if c["local_port"] == 51883)
+    assert tw_entry["pid"] == 0, f"PID 0 not preserved in JSON: {tw_entry['pid']!r}"
+    assert tw_entry["state"] == "TIME_WAIT"
+    assert tw_entry["process_name"] is None
+
+    # --state TIME_WAIT must select ONLY the TIME_WAIT row
+    args_f = MagicMock(pid=None, process=None, port=None, state="TIME_WAIT", json=False)
+    handle_connections(args_f, inspector)
+    out_f, _ = capsys.readouterr()
+    assert "TIME_WAIT" in out_f
+    assert "python.exe" not in out_f
+    assert "1 connection(s) found." in out_f
+
+    # --state ESTABLISHED must NOT include TIME_WAIT
+    args_e = MagicMock(pid=None, process=None, port=None, state="ESTABLISHED", json=False)
+    handle_connections(args_e, inspector)
+    out_e, _ = capsys.readouterr()
+    assert "TIME_WAIT" not in out_e
+
+
+def test_disappearing_process_does_not_crash():
+    """Process lookup must not crash when a process exits between connection
+    enumeration and name resolution (normal race condition)."""
+    import psutil
+
+    # A PID that is almost certainly not a real process
+    ghost_pid = 999999
+    conn = ConnectionInfo(
+        pid=ghost_pid, process_name=None, proto="tcp",
+        local_address="127.0.0.1", local_port=9999,
+        remote_address="*", remote_port=None, state="LISTEN",
+    )
+
+    # Simulate the psutil inspector encountering a NoSuchProcess mid-lookup
+    with patch("psutil.net_connections") as mock_conns, \
+         patch("psutil.Process") as mock_proc:
+        mock_laddr = MagicMock(); mock_laddr.ip = "127.0.0.1"; mock_laddr.port = 9999
+        raw = MagicMock(); raw.pid = ghost_pid; raw.laddr = mock_laddr
+        raw.raddr = None; raw.status = "LISTEN"
+        mock_conns.return_value = [raw]
+        mock_proc.side_effect = psutil.NoSuchProcess(ghost_pid)
+
+        from kport.inspectors.psutil_impl import PsutilInspector
+        inspector = PsutilInspector()
+        conns = inspector.list_connections()  # must not raise
+
+    assert isinstance(conns, list)
+    assert len(conns) == 1
+    assert conns[0].pid == ghost_pid
+    assert conns[0].process_name is None  # resolved to None gracefully
