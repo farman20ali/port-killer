@@ -18,6 +18,7 @@ from . import __version__, audit
 from .constants import PROTECTED_PORTS, PROTECTED_PROCESS_NAMES
 from .docker_engine import (
     docker_action_on_container,
+    docker_available,
     docker_mappings_for_host_port,
     list_docker_mappings,
 )
@@ -803,12 +804,527 @@ def handle_connections(args: argparse.Namespace, inspector: BaseInspector) -> in
     return EXIT_OK
 
 
+# ---------------------------------------------------------------------------
+# Phase 2E — kport doctor
+# ---------------------------------------------------------------------------
+
+def _doctor_platform_info() -> dict:
+    """Return a minimal, non-sensitive snapshot of the inspection environment."""
+    import platform as _plat
+    from . import inspectors as _insp
+
+    using_psutil = _insp.USING_PSUTIL
+    psutil_accessible = _insp.USING_PSUTIL and _insp._psutil_accessible()
+
+    return {
+        "os": _plat.system(),
+        "os_version": _plat.version(),
+        "python": _plat.python_version(),
+        "inspector_backend": "psutil" if psutil_accessible else "fallback",
+        "psutil_available": using_psutil,
+        "psutil_accessible": psutil_accessible,
+    }
+
+
+def _doctor_capabilities(platform_info: dict) -> dict:
+    """Assess what the current backend can and cannot inspect."""
+    limitations: list[str] = []
+    notes: list[str] = []
+
+    if not platform_info["psutil_available"]:
+        limitations.append("psutil is not installed — using OS-native fallback inspector")
+    elif not platform_info["psutil_accessible"]:
+        limitations.append(
+            "psutil is installed but cannot enumerate connections "
+            "(possible AppArmor/snap restriction) — using fallback inspector"
+        )
+
+    if platform_info["os"] == "Windows":
+        notes.append("Process owner resolution uses tasklist and ctypes (no /proc)")
+    elif platform_info["os"] == "Darwin":
+        notes.append(
+            "macOS: connection enumeration uses lsof if psutil is unavailable"
+        )
+
+    return {
+        "can_inspect_connections": True,  # both backends implement list_connections
+        "can_inspect_listeners": True,
+        "can_inspect_processes": True,
+        "limitations": limitations,
+        "notes": notes,
+    }
+
+
+def _doctor_listener_findings(
+    bindings: list,
+    findings: list[dict],
+) -> list[dict]:
+    """
+    Analyse the listening-port snapshot and populate findings in-place.
+    Returns a list of serialisable listener dicts.
+    """
+    from collections import defaultdict
+
+    # Group by port → detect possible dual-stack (IPv4+IPv6 wildcard) duplicates
+    port_groups: dict[int, list] = defaultdict(list)
+    for b in bindings:
+        port_groups[b.port].append(b)
+
+    listeners_out = []
+    for b in bindings:
+        ip = b.laddr.rsplit(":", 1)[0] if ":" in b.laddr else b.laddr
+        is_wildcard = ip in ("0.0.0.0", "::", "*")
+        is_localhost = ip in ("127.0.0.1", "::1")
+
+        entry = {
+            "port": b.port,
+            "address": b.laddr,
+            "pid": b.pid,
+            "process_name": b.process_name,
+            "state": b.state,
+            "proto": b.proto,
+            "wildcard": is_wildcard,
+            "localhost_only": is_localhost,
+        }
+        listeners_out.append(entry)
+
+        # Risk: wildcard public exposure
+        if is_wildcard:
+            findings.append({
+                "severity": "WARNING",
+                "category": "listener",
+                "message": (
+                    f"Port {b.port} is bound to wildcard address ({ip}), "
+                    f"exposing it to the local network"
+                    + (f" — observed process: {b.process_name}" if b.process_name else "")
+                ),
+            })
+
+    # Detect IPv4/IPv6 dual-stack overlaps (both 0.0.0.0 and :: on same port)
+    for port, group in port_groups.items():
+        ips = {
+            (b.laddr.rsplit(":", 1)[0] if ":" in b.laddr else b.laddr)
+            for b in group
+        }
+        if "0.0.0.0" in ips and "::" in ips:
+            findings.append({
+                "severity": "INFO",
+                "category": "listener",
+                "message": (
+                    f"Port {port} has both IPv4 (0.0.0.0) and IPv6 (::) wildcard listeners "
+                    f"— dual-stack binding (normal for many servers)"
+                ),
+            })
+
+    return listeners_out
+
+
+def _doctor_connection_summary(conns: list) -> dict:
+    """Produce a concise connection-state summary; no per-connection dump."""
+    from collections import Counter
+
+    state_counts: Counter = Counter()
+    for c in conns:
+        state_counts[c.state] += 1
+
+    return {
+        "total": len(conns),
+        "LISTEN": state_counts.get("LISTEN", 0),
+        "ESTABLISHED": state_counts.get("ESTABLISHED", 0),
+        "TIME_WAIT": state_counts.get("TIME_WAIT", 0),
+        "CLOSE_WAIT": state_counts.get("CLOSE_WAIT", 0),
+        "other": sum(
+            v for k, v in state_counts.items()
+            if k not in ("LISTEN", "ESTABLISHED", "TIME_WAIT", "CLOSE_WAIT")
+        ),
+    }
+
+
+def _doctor_process_findings(
+    bindings: list,
+    inspector: "BaseInspector",
+    findings: list[dict],
+) -> list[dict]:
+    """
+    For each unique PID holding a listener, collect enriched process info,
+    service-manager detection, and project context.
+    Returns a serialisable list of per-process dicts.
+    """
+    seen_pids: set[int] = set()
+    proc_entries: list[dict] = []
+
+    for b in bindings:
+        pid = b.pid
+        if not pid or pid in seen_pids:
+            continue
+        seen_pids.add(pid)
+
+        # --- Process info ---
+        try:
+            info = inspector.get_process_info(pid)
+        except Exception:
+            info = None
+
+        proc_entry: dict = {
+            "pid": pid,
+            "name": info.name if info else b.process_name or "unknown",
+            "user": info.user if info else None,
+            "ppid": info.ppid if info else None,
+            "cwd": info.cwd if info else None,
+            "start_time": info.start_time if info else None,
+        }
+
+        # --- Service manager detection ---
+        pm_info: dict | None = None
+        try:
+            pm_info = detect_process_manager(pid, proc_entry["name"])
+        except Exception:
+            pass
+
+        if pm_info:
+            proc_entry["service_manager"] = {
+                "manager": pm_info["manager"],
+                "name": pm_info["name"],
+            }
+            findings.append({
+                "severity": "INFO",
+                "category": "service",
+                "message": (
+                    f"PID {pid} ({proc_entry['name']}) appears to be managed by "
+                    f"{pm_info['manager']} service '{pm_info['name']}' — "
+                    f"stopping via process manager is preferred over direct kill"
+                ),
+            })
+        else:
+            proc_entry["service_manager"] = None
+
+        # --- Project context ---
+        cwd = proc_entry.get("cwd")
+        project_info: dict | None = None
+        try:
+            proj = resolve_project(cwd)
+        except Exception:
+            proj = None
+
+        if proj:
+            project_info = {
+                "git_root": proj.git_root,
+                "project_name": proj.project_name,
+                "branch": proj.branch,
+                "remote_origin": proj.remote_origin,
+                "is_worktree": proj.is_worktree,
+            }
+            findings.append({
+                "severity": "INFO",
+                "category": "project",
+                "message": (
+                    f"PID {pid} ({proc_entry['name']}) is associated with project "
+                    f"'{proj.project_name or proj.git_root}'"
+                    + (f" on branch '{proj.branch}'" if proj.branch else "")
+                ),
+            })
+
+        proc_entry["project"] = project_info
+        proc_entries.append(proc_entry)
+
+    return proc_entries
+
+
+def _doctor_docker_section(
+    bindings: list,
+    findings: list[dict],
+) -> dict:
+    """
+    Query Docker for host-port mappings relevant to listening ports.
+    Returns serialisable summary dict.
+    """
+
+    if not docker_available():
+        findings.append({
+            "severity": "INFO",
+            "category": "docker",
+            "message": "Docker CLI not found on PATH — Docker container inspection skipped",
+        })
+        return {"available": False, "containers": []}
+
+    try:
+        all_mappings = list_docker_mappings()
+    except Exception:
+        findings.append({
+            "severity": "INFO",
+            "category": "docker",
+            "message": "Docker is available but could not be queried (daemon not running or permission denied)",
+        })
+        return {"available": True, "daemon_accessible": False, "containers": []}
+
+    if not all_mappings:
+        return {"available": True, "daemon_accessible": True, "containers": []}
+
+    # Only report containers whose host port overlaps with a listener we found
+    listener_ports = {b.port for b in bindings}
+    relevant = [m for m in all_mappings if m.host_port in listener_ports]
+
+    for m in relevant:
+        findings.append({
+            "severity": "INFO",
+            "category": "docker",
+            "message": (
+                f"Host port {m.host_port} is mapped to container "
+                f"'{m.container_name}' (port {m.container_port}/{m.proto})"
+            ),
+        })
+
+    containers_out = [
+        {
+            "container_id": m.container_id[:12],
+            "container_name": m.container_name,
+            "image": m.image,
+            "status": m.status,
+            "host_port": m.host_port,
+            "container_port": m.container_port,
+            "proto": m.proto,
+        }
+        for m in all_mappings  # report all, even if not overlapping
+    ]
+    return {"available": True, "daemon_accessible": True, "containers": containers_out}
+
+
+def handle_doctor(args: argparse.Namespace, inspector: "BaseInspector") -> int:
+    """
+    Read-only environment-wide diagnostic report.
+
+    Aggregates existing inspection capabilities to help a developer understand
+    what is running on their machine and whether anything unusual is present.
+
+    Sections:
+      1. Platform & Capabilities
+      2. Listener Health
+      3. Connection Summary
+      4. Process / Service Context
+      5. Project Context (per-process)
+      6. Docker
+      7. Findings (OBSERVATION / INFERENCE / WARNING / RECOMMENDATION)
+    """
+    use_json = getattr(args, "json", False)
+    findings: list[dict] = []
+
+    # ------------------------------------------------------------------
+    # 1. Platform / capabilities (never crashes)
+    # ------------------------------------------------------------------
+    try:
+        platform_info = _doctor_platform_info()
+    except Exception:
+        platform_info = {"os": "unknown", "inspector_backend": "unknown"}
+
+    try:
+        capabilities = _doctor_capabilities(platform_info)
+    except Exception:
+        capabilities = {"limitations": ["Could not assess capabilities"], "notes": []}
+
+    # ------------------------------------------------------------------
+    # 2. Listeners
+    # ------------------------------------------------------------------
+    bindings: list = []
+    try:
+        bindings = inspector.list_listening(proto="tcp")
+    except Exception as exc:
+        findings.append({
+            "severity": "WARNING",
+            "category": "capability",
+            "message": f"Could not enumerate listening ports: {exc}",
+        })
+
+    listeners_out = _doctor_listener_findings(bindings, findings)
+
+    # ------------------------------------------------------------------
+    # 3. Connection summary
+    # ------------------------------------------------------------------
+    conns: list = []
+    try:
+        conns = inspector.list_connections()
+    except Exception as exc:
+        findings.append({
+            "severity": "WARNING",
+            "category": "capability",
+            "message": f"Could not enumerate network connections: {exc}",
+        })
+
+    conn_summary = _doctor_connection_summary(conns)
+
+    # ------------------------------------------------------------------
+    # 4 & 5. Process / service / project context (per listener)
+    # ------------------------------------------------------------------
+    proc_entries: list[dict] = []
+    try:
+        proc_entries = _doctor_process_findings(bindings, inspector, findings)
+    except Exception as exc:
+        findings.append({
+            "severity": "WARNING",
+            "category": "capability",
+            "message": f"Could not resolve process context: {exc}",
+        })
+
+    # ------------------------------------------------------------------
+    # 6. Docker
+    # ------------------------------------------------------------------
+    docker_section: dict = {}
+    try:
+        docker_section = _doctor_docker_section(bindings, findings)
+    except Exception as exc:
+        findings.append({
+            "severity": "WARNING",
+            "category": "capability",
+            "message": f"Docker inspection failed: {exc}",
+        })
+        docker_section = {"available": False, "containers": []}
+
+    # ------------------------------------------------------------------
+    # 7. High-level recommendations (only when meaningful)
+    # ------------------------------------------------------------------
+    public_listeners = [ln for ln in listeners_out if ln.get("wildcard")]
+    if public_listeners:
+        findings.append({
+            "severity": "RECOMMENDATION",
+            "category": "listener",
+            "message": (
+                f"{len(public_listeners)} listener(s) bound to wildcard address. "
+                f"If intended for local development only, bind to 127.0.0.1 instead."
+            ),
+        })
+
+    capability_issues = [f for f in findings if f["category"] == "capability"]
+    if capability_issues:
+        findings.append({
+            "severity": "RECOMMENDATION",
+            "category": "capability",
+            "message": (
+                "Some inspection subsystems reported limitations. "
+                "Run with elevated privileges (sudo / Administrator) for full visibility."
+            ),
+        })
+
+    # ------------------------------------------------------------------
+    # JSON output
+    # ------------------------------------------------------------------
+    if use_json:
+        data = {
+            "platform": platform_info,
+            "capabilities": capabilities,
+            "listeners": listeners_out,
+            "connection_summary": conn_summary,
+            "processes": proc_entries,
+            "docker": docker_section,
+            "findings": findings,
+        }
+        print(_json_out("doctor", data))
+        return EXIT_OK
+
+    # ------------------------------------------------------------------
+    # Human-readable output
+    # ------------------------------------------------------------------
+    print(colorize("=== KPORT DOCTOR ===", Colors.CYAN + Colors.BOLD))
+    print()
+
+    # Section 1 — Platform
+    print(colorize("PLATFORM & CAPABILITIES", Colors.BOLD + Colors.WHITE))
+    print(f"  OS:        {platform_info.get('os', 'unknown')} {platform_info.get('os_version', '')[:48].strip()}")
+    print(f"  Backend:   {platform_info.get('inspector_backend', 'unknown')}")
+    for note in capabilities.get("notes", []):
+        print(f"  Note:      {note}")
+    for lim in capabilities.get("limitations", []):
+        print(colorize(f"  Limit:     {lim}", Colors.YELLOW))
+    print()
+
+    # Section 2 — Listeners
+    print(colorize("LISTENERS", Colors.BOLD + Colors.WHITE))
+    if not listeners_out:
+        print("  No listening ports detected.")
+    else:
+        print(f"  {'PORT':<8}{'ADDRESS':<28}{'PID':<8}{'PROCESS'}")
+        for ln in sorted(listeners_out, key=lambda x: x["port"]):
+            flag = colorize(" [PUBLIC]", Colors.YELLOW) if ln.get("wildcard") else ""
+            pname = ln.get("process_name") or "-"
+            pid_s = str(ln.get("pid") or "-")
+            print(f"  {ln['port']:<8}{ln['address']:<28}{pid_s:<8}{pname}{flag}")
+    print()
+
+    # Section 3 — Connections
+    print(colorize("CONNECTION SUMMARY", Colors.BOLD + Colors.WHITE))
+    print(f"  Total:       {conn_summary['total']}")
+    print(f"  LISTEN:      {conn_summary['LISTEN']}")
+    print(f"  ESTABLISHED: {conn_summary['ESTABLISHED']}")
+    print(f"  TIME_WAIT:   {conn_summary['TIME_WAIT']}")
+    print(f"  CLOSE_WAIT:  {conn_summary['CLOSE_WAIT']}")
+    if conn_summary["other"]:
+        print(f"  Other:       {conn_summary['other']}")
+    print()
+
+    # Section 4 & 5 — Processes / Services / Projects
+    print(colorize("PROCESS & PROJECT CONTEXT", Colors.BOLD + Colors.WHITE))
+    if not proc_entries:
+        print("  No process context available.")
+    else:
+        for p in proc_entries:
+            sm = p.get("service_manager")
+            proj = p.get("project")
+            sm_label = f" [{sm['manager']}:{sm['name']}]" if sm else ""
+            print(f"  PID {p['pid']} ({p['name']}){sm_label}")
+            if p.get("user"):
+                print(f"    User:    {p['user']}")
+            if p.get("cwd"):
+                print(f"    CWD:     {p['cwd']}")
+            if proj:
+                branch = f" ({proj['branch']})" if proj.get("branch") else ""
+                origin = f" — {proj['remote_origin']}" if proj.get("remote_origin") else ""
+                print(f"    Project: {proj['project_name'] or proj['git_root']}{branch}{origin}")
+            else:
+                print("    Project: none detected")
+    print()
+
+    # Section 6 — Docker
+    print(colorize("DOCKER", Colors.BOLD + Colors.WHITE))
+    if not docker_section.get("available"):
+        print("  Docker CLI not found — skipped.")
+    elif not docker_section.get("daemon_accessible", True):
+        print("  Docker CLI found but daemon is not accessible (not running or permission denied).")
+    elif not docker_section.get("containers"):
+        print("  Docker is available but no containers with host-port mappings found.")
+    else:
+        for c in docker_section["containers"]:
+            print(f"  {c['container_name']} ({c['image']})  host:{c['host_port']} → container:{c['container_port']}/{c['proto']}")
+    print()
+
+    # Section 7 — Findings
+    print(colorize("FINDINGS", Colors.BOLD + Colors.WHITE))
+    _SEV_COLOR = {
+        "INFO": Colors.CYAN,
+        "WARNING": Colors.YELLOW,
+        "RISK": Colors.RED,
+        "RECOMMENDATION": Colors.GREEN,
+    }
+    if not findings:
+        print(colorize("  No issues found. Environment looks healthy.", Colors.GREEN))
+    else:
+        for f in findings:
+            sev = f.get("severity", "INFO")
+            color = _SEV_COLOR.get(sev, Colors.WHITE)
+            cat = f.get("category", "")
+            label = f"[{sev}]" if not cat else f"[{sev}/{cat.upper()}]"
+            print(colorize(f"  {label} {f['message']}", color))
+    print()
+
+    return EXIT_OK
+
+
 def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -> int:
     """Implement subcommands defined in the product specification."""
     debug = bool(getattr(args, "debug", False))
 
     if args.command == "diagnose":
         return handle_diagnose(args, inspector)
+
+    if args.command == "doctor":
+        return handle_doctor(args, inspector)
 
     if args.command == "connections":
         return handle_connections(args, inspector)
@@ -1913,7 +2429,7 @@ _kport_completion() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    opts="inspect explain diagnose connections kill kill-process list docker conflicts watch mcp completion --json --dry-run --yes --debug --config --bypass-safety --version --wait-for-exit --proto"
+    opts="inspect explain diagnose doctor connections kill kill-process list docker conflicts watch mcp completion --json --dry-run --yes --debug --config --bypass-safety --version --wait-for-exit --proto"
     case "${prev}" in
         inspect|explain|diagnose|connections|watch|kill)
             return 0
@@ -1954,6 +2470,7 @@ _kport() {
                 'inspect[Inspect a port (docker-aware)]' \\
                 'explain[Explain why a port is blocked]' \\
                 'diagnose[Structured analysis and fix recommendations for a port]' \\
+                'doctor[Environment-wide read-only diagnostic report]' \\
                 'connections[List active network connections]' \\
                 'kill[Safely free a port (docker-aware)]' \\
                 'kill-process[Kill processes by name]' \\
@@ -1970,7 +2487,7 @@ _kport() {
     elif shell == "fish":
         print("""# fish completion for kport
 complete -c kport -f
-complete -c kport -a "inspect explain diagnose connections kill kill-process list docker conflicts watch mcp completion"
+complete -c kport -a "inspect explain diagnose doctor connections kill kill-process list docker conflicts watch mcp completion"
 complete -c kport -s y -l yes -d "Skip confirmation prompts"
 complete -c kport -l json -d "Output machine-readable JSON"
 complete -c kport -l dry-run -d "Show actions without executing"
@@ -1985,7 +2502,7 @@ complete -c kport -s v -l version -d "Show version"
         print("""# powershell completion for kport
 Register-ArgumentCompleter -Native -CommandName kport -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
-    $opts = @('inspect', 'explain', 'diagnose', 'connections', 'kill', 'kill-process', 'list', 'docker', 'conflicts', 'watch', 'mcp', 'completion', '--json', '--dry-run', '--yes', '--debug', '--config', '--bypass-safety', '--version', '--wait-for-exit', '--proto')
+    $opts = @('inspect', 'explain', 'diagnose', 'doctor', 'connections', 'kill', 'kill-process', 'list', 'docker', 'conflicts', 'watch', 'mcp', 'completion', '--json', '--dry-run', '--yes', '--debug', '--config', '--bypass-safety', '--version', '--wait-for-exit', '--proto')
     $opts | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
         [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
     }
@@ -2226,6 +2743,12 @@ Examples:
 
     _sp_conflicts = sub.add_parser(
         "conflicts", parents=[parent_parser], help="Detect docker/local port conflicts"
+    )
+
+    sub.add_parser(
+        "doctor",
+        parents=[parent_parser],
+        help="Environment-wide read-only diagnostic report",
     )
 
     sp_connections = sub.add_parser(
