@@ -574,6 +574,12 @@ def handle_diagnose(args: argparse.Namespace, inspector: BaseInspector) -> int:
                 cmd = f"pm2 stop {pm['name']}"
             elif pm["manager"] == "supervisor":
                 cmd = f"supervisorctl stop {pm['name']}"
+            elif pm["manager"] == "windows-service":
+                services = pm["name"].split(",")
+                if len(services) == 1:
+                    cmd = f"Stop-Service -Name {services[0]}"
+                else:
+                    cmd = " ; ".join(f"Stop-Service -Name {s}" for s in services)
             else:
                 cmd = f"kport kill {port}"
                 
