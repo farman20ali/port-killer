@@ -391,9 +391,303 @@ def _resolve_ports_for_args(args: argparse.Namespace) -> list[int]:
     return []
 
 
+def handle_diagnose(args: argparse.Namespace, inspector: BaseInspector) -> int:
+    """Implement structured diagnostic analysis on a specific port.
+    
+    Conceptually separates:
+      - OBSERVATION (direct facts)
+      - INFERENCE (derived / heuristic conclusions)
+      - RISKS (security / process concerns)
+      - RECOMMENDATION (remediation plan)
+    """
+    debug = bool(getattr(args, "debug", False))
+    port = args.port
+    validate_port(port)
+
+    # 1. Observations
+    docker_hits = docker_mappings_for_host_port(port, debug=debug)
+    local_bindings = inspector.find_bindings_on_port(
+        port, proto=getattr(args, "proto", "tcp")
+    )
+    pids = inspector.find_pids_on_port(
+        port, proto=getattr(args, "proto", "tcp")
+    )
+
+    is_blocked = bool(docker_hits or local_bindings or pids)
+
+    obs_type = "free"
+    if docker_hits:
+        obs_type = "docker"
+    elif pids:
+        obs_type = "local"
+    elif local_bindings:
+        obs_type = "local-unknown"
+
+    # Process and docker container observations
+    obs_processes = []
+    for pid in pids:
+        info = inspector.get_process_info(pid)
+        if info:
+            obs_processes.append(asdict(info))
+        else:
+            obs_processes.append({"pid": pid, "name": "unknown", "exe": None, "cmdline": None, "user": None})
+
+    obs_docker = [asdict(m) for m in docker_hits]
+    obs_bindings = [asdict(b) for b in local_bindings]
+
+    observations = {
+        "port": port,
+        "blocked": is_blocked,
+        "type": obs_type,
+        "bindings": obs_bindings,
+        "processes": obs_processes,
+        "docker_containers": obs_docker,
+    }
+
+    # 2. Inferences
+    inferences = []
+    
+    # Process manager inferences (derived via detect_process_manager)
+    for p in obs_processes:
+        pid = p["pid"]
+        pm_info = detect_process_manager(pid)
+        if pm_info:
+            inferences.append({
+                "type": "process_manager",
+                "pid": pid,
+                "manager": pm_info["manager"],
+                "name": pm_info["name"],
+                "confidence": "high",
+                "reason": f"Process {pid} is running under process manager '{pm_info['manager']}' service '{pm_info['name']}'"
+            })
+
+    # Docker network isolation inference
+    for d in obs_docker:
+        inferences.append({
+            "type": "docker_isolation",
+            "container_name": d["container_name"],
+            "container_id": d["container_id"],
+            "confidence": "high",
+            "reason": f"Container '{d['container_name']}' isolates the socket in a virtual network namespace mapped to host port {d['host_port']}"
+        })
+
+    # 3. Risks
+    risks = []
+    
+    # Wildcard bind risk
+    for b in local_bindings:
+        # Check for 0.0.0.0 or [::]
+        laddr_ip = b.laddr.split(":")[0] if ":" in b.laddr else b.laddr
+        if laddr_ip in ("0.0.0.0", "::", "*"):
+            risks.append({
+                "type": "public_exposure",
+                "message": f"Socket {b.laddr} bound to wildcard address ({laddr_ip}) - exposed to local network",
+                "severity": "WARNING"
+            })
+
+    # Safety shield checks
+    protected_ports = set(DEFAULT_PROTECTED_PORTS)
+    config_ports = getattr(args, "protected_ports", None)
+    if isinstance(config_ports, list):
+        protected_ports.update(config_ports)
+
+    protected_procs = set(DEFAULT_PROTECTED_PROCESS_NAMES)
+    config_procs = getattr(args, "protected_processes", None)
+    if isinstance(config_procs, list):
+        protected_procs.update(p.lower() for p in config_procs)
+
+    is_protected_port = port in protected_ports
+    is_protected_process = False
+    protected_pids = []
+
+    if is_protected_port:
+        risks.append({
+            "type": "protected_port",
+            "message": f"Port {port} is listed in protected ports. Termination will be blocked by default.",
+            "severity": "IMPORTANT"
+        })
+
+    for p in obs_processes:
+        base_name = p["name"].lower().split(" (")[0]
+        if base_name in protected_procs:
+            is_protected_process = True
+            protected_pids.append(p["pid"])
+            risks.append({
+                "type": "protected_process",
+                "message": f"PID {p['pid']} ({p['name']}) is listed in protected processes. Termination will be blocked by default.",
+                "severity": "IMPORTANT"
+            })
+
+    # Auto-restart risk (due to process manager)
+    for inf in inferences:
+        if inf["type"] == "process_manager":
+            risks.append({
+                "type": "auto_restart",
+                "message": f"PID {inf['pid']} is managed by {inf['manager']}. Standard termination will trigger auto-restart.",
+                "severity": "WARNING"
+            })
+
+    # 4. Recommendations
+    recommendations = []
+    
+    # Safe checks
+    bypass_safety = getattr(args, "bypass_safety", False)
+    safety_blocks = (is_protected_port or is_protected_process) and not bypass_safety
+
+    if not is_blocked:
+        recommendations.append({
+            "action": "bind",
+            "command": None,
+            "reason": "Port is free and available to bind.",
+            "safe": True
+        })
+    elif safety_blocks:
+        reasons = []
+        if is_protected_port:
+            reasons.append(f"Port {port} is protected")
+        if is_protected_process:
+            reasons.append(f"Process(es) {', '.join(map(str, protected_pids))} are protected")
+        
+        recommendations.append({
+            "action": "abort",
+            "command": None,
+            "reason": f"Safety Shield Active: {' and '.join(reasons)}. Termination aborted. To override, re-run with --bypass-safety.",
+            "safe": False
+        })
+    elif obs_docker:
+        # Recommend stopping container
+        d = obs_docker[0]
+        recommendations.append({
+            "action": "stop_docker_container",
+            "command": f"kport kill {port} --docker-action stop",
+            "reason": f"Port belongs to Docker container '{d['container_name']}'. Stop container cleanly to release port.",
+            "safe": True
+        })
+    else:
+        # Check process managers
+        pm_managed = [inf for inf in inferences if inf["type"] == "process_manager"]
+        if pm_managed:
+            pm = pm_managed[0]
+            if pm["manager"] == "systemd":
+                cmd = f"systemctl stop {pm['name']}"
+            elif pm["manager"] == "pm2":
+                cmd = f"pm2 stop {pm['name']}"
+            elif pm["manager"] == "supervisor":
+                cmd = f"supervisorctl stop {pm['name']}"
+            else:
+                cmd = f"kport kill {port}"
+                
+            recommendations.append({
+                "action": "stop_service",
+                "command": cmd,
+                "reason": f"Process is managed by {pm['manager']}. Stopping via the service manager prevents auto-restart.",
+                "safe": True
+            })
+        elif obs_type == "local-unknown":
+            recommendations.append({
+                "action": "escalate_privileges",
+                "command": f"sudo kport diagnose {port}" if sys.platform != "win32" else "Run terminal as Administrator",
+                "reason": "Port is occupied but owning process is not visible. Diagnose with administrator/root privileges.",
+                "safe": True
+            })
+        else:
+            # Standard local process
+            pids_str = " ".join(str(p["pid"]) for p in obs_processes)
+            recommendations.append({
+                "action": "kill_processes",
+                "command": f"kport kill {port}",
+                "reason": f"Terminate standard local process(es) on port (PIDs: {pids_str})",
+                "safe": True
+            })
+
+    # Assemble response payload
+    data = {
+        "port": port,
+        "blocked": is_blocked,
+        "observations": observations,
+        "inferences": inferences,
+        "risks": risks,
+        "recommendations": recommendations,
+    }
+
+    if args.json:
+        print(_json_out("diagnose", data))
+        return EXIT_PORT_DOCKER if obs_type == "docker" else (EXIT_OK if is_blocked else EXIT_PORT_FREE)
+
+    # Human-readable console print
+    print(colorize(f"=== DIAGNOSTICS FOR PORT {port} ===", Colors.CYAN + Colors.BOLD))
+    print()
+
+    # Section 1: OBSERVATION
+    print(colorize("OBSERVATION", Colors.BOLD + Colors.WHITE))
+    print(f"  Status: {'OCCUPIED' if is_blocked else 'FREE'}")
+    if obs_type == "docker":
+        print("  Type:   Docker Container Mapping")
+        for d in obs_docker:
+            print(f"  Container: {d['container_name']} ({d['container_id'][:12]})")
+            print(f"  Image:     {d['image']}")
+            print(f"  Mapping:   host {d['host_port']} -> container {d['container_port']}")
+            print(f"  Status:    {d['status']}")
+    elif obs_type == "local":
+        print("  Type:   Local Process Binding")
+        for p in obs_processes:
+            print(f"  - PID {p['pid']} ({p['name']})")
+            if p.get("user"):
+                print(f"    User:       {p['user']}")
+            if p.get("exe"):
+                print(f"    Executable: {p['exe']}")
+            if p.get("cmdline"):
+                print(f"    Command:    {' '.join(p['cmdline'])}")
+    elif obs_type == "local-unknown":
+        print("  Type:   Local Binding (Process Unidentified)")
+        print(colorize("  Warning: Port active but owning process not visible.", Colors.YELLOW))
+        for b in obs_bindings:
+            print(f"  - Family {b['family']} binding: {b['laddr']} ({b['proto'].upper()} - {b['state'] or 'UNKNOWN'})")
+    else:
+        print("  No processes or containers are bound to this port.")
+    print()
+
+    # Section 2: INFERENCE
+    print(colorize("INFERENCE", Colors.BOLD + Colors.WHITE))
+    if inferences:
+        for inf in inferences:
+            if inf["type"] == "process_manager":
+                print(f"  - [Process Manager] PID {inf['pid']} appears to be managed by {inf['manager']} service '{inf['name']}'")
+            elif inf["type"] == "docker_isolation":
+                print(f"  - [Docker Isolation] Container {inf['container_name']} isolates execution in network namespace")
+    else:
+        print("  No inferred process relationships detected.")
+    print()
+
+    # Section 3: RISKS
+    print(colorize("RISKS", Colors.BOLD + Colors.WHITE))
+    if risks:
+        for r in risks:
+            sev_color = Colors.RED if r["severity"] == "IMPORTANT" else Colors.YELLOW
+            print(colorize(f"  - [{r['severity']}] {r['message']}", sev_color))
+    else:
+        print("  No significant security or execution risks detected.")
+    print()
+
+    # Section 4: RECOMMENDATION
+    print(colorize("RECOMMENDATION", Colors.BOLD + Colors.WHITE))
+    for rec in recommendations:
+        rec_color = Colors.GREEN if rec["safe"] else Colors.RED
+        print(f"  - Action: {rec['action'].upper()}")
+        print(f"    Reason: {rec['reason']}")
+        if rec.get("command"):
+            print(f"    Fix:    {colorize(rec['command'], rec_color)}")
+    print()
+
+    return EXIT_PORT_DOCKER if obs_type == "docker" else (EXIT_OK if is_blocked else EXIT_PORT_FREE)
+
+
 def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -> int:
     """Implement subcommands defined in the product specification."""
     debug = bool(getattr(args, "debug", False))
+
+    if args.command == "diagnose":
+        return handle_diagnose(args, inspector)
 
     if args.command == "docker":
         extra = getattr(args, "extra", []) or []
@@ -1495,9 +1789,9 @@ _kport_completion() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    opts="inspect explain kill kill-process list docker conflicts watch mcp completion --json --dry-run --yes --debug --config --bypass-safety --version --wait-for-exit --proto"
+    opts="inspect explain diagnose kill kill-process list docker conflicts watch mcp completion --json --dry-run --yes --debug --config --bypass-safety --version --wait-for-exit --proto"
     case "${prev}" in
-        inspect|explain|watch|kill)
+        inspect|explain|diagnose|watch|kill)
             return 0
             ;;
         kill-process|--inspect-process|-ip|-kp)
@@ -1535,6 +1829,7 @@ _kport() {
             _values "subcommand" \\
                 'inspect[Inspect a port (docker-aware)]' \\
                 'explain[Explain why a port is blocked]' \\
+                'diagnose[Structured analysis and fix recommendations for a port]' \\
                 'kill[Safely free a port (docker-aware)]' \\
                 'kill-process[Kill processes by name]' \\
                 'list[List active ports (local + docker)]' \\
@@ -1550,7 +1845,7 @@ _kport() {
     elif shell == "fish":
         print("""# fish completion for kport
 complete -c kport -f
-complete -c kport -a "inspect explain kill kill-process list docker conflicts watch mcp completion"
+complete -c kport -a "inspect explain diagnose kill kill-process list docker conflicts watch mcp completion"
 complete -c kport -s y -l yes -d "Skip confirmation prompts"
 complete -c kport -l json -d "Output machine-readable JSON"
 complete -c kport -l dry-run -d "Show actions without executing"
@@ -1565,7 +1860,7 @@ complete -c kport -s v -l version -d "Show version"
         print("""# powershell completion for kport
 Register-ArgumentCompleter -Native -CommandName kport -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
-    $opts = @('inspect', 'explain', 'kill', 'kill-process', 'list', 'docker', 'conflicts', 'watch', 'mcp', 'completion', '--json', '--dry-run', '--yes', '--debug', '--config', '--bypass-safety', '--version', '--wait-for-exit', '--proto')
+    $opts = @('inspect', 'explain', 'diagnose', 'kill', 'kill-process', 'list', 'docker', 'conflicts', 'watch', 'mcp', 'completion', '--json', '--dry-run', '--yes', '--debug', '--config', '--bypass-safety', '--version', '--wait-for-exit', '--proto')
     $opts | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
         [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
     }
@@ -1747,6 +2042,11 @@ Examples:
         "explain", parents=[parent_parser], help="Explain why a port is blocked"
     )
     sp_explain.add_argument("port", type=int)
+
+    sp_diagnose = sub.add_parser(
+        "diagnose", parents=[parent_parser], help="Structured analysis and fix recommendations for a port"
+    )
+    sp_diagnose.add_argument("port", type=int)
 
     sp_kill = sub.add_parser(
         "kill", parents=[parent_parser], help="Safely free a port (docker-aware)"
