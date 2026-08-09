@@ -38,6 +38,24 @@ from .notify import notify as _desktop_notify
 from .process_manager import detect_process_manager
 from .profile import load_profiles, resolve_profile
 from .project import resolve_project
+from .safety import (
+    SafetyDecision,
+    check_safety_policy as _core_check_safety_policy,
+    load_kport_config,
+    resolve_protected_sets,
+)
+from .diagnostics import (
+    diagnose_port as _diagnose_port_data,
+    run_doctor as _run_doctor_data,
+    detect_conflicts as _detect_conflicts_data,
+    filter_connections as _filter_connections_data,
+    _doctor_platform_info,
+    _doctor_capabilities,
+    _doctor_listener_findings,
+    _doctor_connection_summary,
+    _doctor_process_findings,
+    _doctor_docker_section,
+)
 
 # Exit codes
 EXIT_OK = 0
@@ -66,8 +84,9 @@ def _configure_stdio() -> None:
             pass
 
 
-# Default safety policies — imported from constants to share with MCP server.
-# These are used as the starting baseline; config can only ADD to these, never replace.
+# Default safety policies — kept for backward compatibility with code that
+# references these names directly (e.g. handle_diagnose risk section).
+# The authoritative policy now lives in safety.py.
 DEFAULT_PROTECTED_PORTS = PROTECTED_PORTS
 DEFAULT_PROTECTED_PROCESS_NAMES = PROTECTED_PROCESS_NAMES
 
@@ -77,58 +96,47 @@ def check_safety_policy(
     pids: list[int],
     args: argparse.Namespace,
     inspector: BaseInspector,
-) -> tuple[bool, str]:
+) -> SafetyDecision:
     """
     Check if a port or any associated PIDs are protected by safety policies.
-    Returns (True, "") if safety policy permits, or (False, error_msg) if blocked.
+
+    Delegates to the centralized safety module (safety.py).  Reads
+    bypass_safety, protected_ports, and protected_processes from *args* so
+    that CLI configuration continues to work as before.
+
+    Returns a SafetyDecision that supports (bool, str) tuple-unpacking for
+    backward compatibility.
     """
     bypass = getattr(args, "bypass_safety", False)
 
-    # R16 fix: config overrides are ADDITIVE, not replacements.
-    # A user setting protected_ports:[8080] should ADD to the defaults,
-    # not silently unprotect SSH (22), Redis (6379), etc.
-    protected_ports = set(DEFAULT_PROTECTED_PORTS)
+    # Build a config-like dict from CLI args so the shared policy function
+    # can apply the same additive override logic.
+    config: dict = {}
     config_ports = getattr(args, "protected_ports", None)
     if isinstance(config_ports, list):
-        protected_ports.update(config_ports)  # additive
-
-    protected_procs = set(DEFAULT_PROTECTED_PROCESS_NAMES)
+        config["protected_ports"] = config_ports
     config_procs = getattr(args, "protected_processes", None)
     if isinstance(config_procs, list):
-        protected_procs.update(p.lower() for p in config_procs)  # additive
+        config["protected_processes"] = config_procs
 
-    # Check Port protection
-    if port is not None and port in protected_ports:
-        if bypass:
-            debug_log(
-                getattr(args, "debug", False),
-                f"Safety shield bypassed for protected port {port}",
-            )
-        else:
-            return (
-                False,
-                f"Security Shield Active: Port {port} is a protected port. Action aborted. Use --bypass-safety to override.",
-            )
+    decision = _core_check_safety_policy(
+        port=port,
+        pids=pids,
+        inspector=inspector,
+        bypass_safety=bypass,
+        config=config if config else None,
+    )
 
-    # Check Process protection
-    for pid in pids:
-        try:
-            info = inspector.get_process_info(pid)
-            if info and info.name.lower().split(" (")[0] in protected_procs:
-                if bypass:
-                    debug_log(
-                        getattr(args, "debug", False),
-                        f"Safety shield bypassed for protected process '{info.name}' (PID {pid})",
-                    )
-                else:
-                    return (
-                        False,
-                        f"Security Shield Active: PID {pid} runs critical process '{info.name}' which is protected. Action aborted. Use --bypass-safety to override.",
-                    )
-        except (OSError, AttributeError, ValueError, IndexError):
-            pass
+    if bypass and not decision.allowed:
+        # Should not normally happen, but guard anyway.
+        pass
+    elif bypass and decision.allowed and decision.policy_source == "bypass":
+        debug_log(
+            getattr(args, "debug", False),
+            f"Safety shield bypassed (port={port}, pids={pids})",
+        )
 
-    return True, ""
+    return decision
 
 
 def debug_log(enabled: bool, msg: str) -> None:
@@ -395,248 +403,45 @@ def _resolve_ports_for_args(args: argparse.Namespace) -> list[int]:
 
 def handle_diagnose(args: argparse.Namespace, inspector: BaseInspector) -> int:
     """Implement structured diagnostic analysis on a specific port.
-    
-    Conceptually separates:
+
+    Delegates computation to diagnostics.py and renders the result here.
+    Separates:
       - OBSERVATION (direct facts)
       - INFERENCE (derived / heuristic conclusions)
       - RISKS (security / process concerns)
       - RECOMMENDATION (remediation plan)
     """
-    debug = bool(getattr(args, "debug", False))
     port = args.port
     validate_port(port)
 
-    # 1. Observations
-    docker_hits = docker_mappings_for_host_port(port, debug=debug)
-    local_bindings = inspector.find_bindings_on_port(
-        port, proto=getattr(args, "proto", "tcp")
-    )
-    pids = inspector.find_pids_on_port(
-        port, proto=getattr(args, "proto", "tcp")
-    )
-
-    is_blocked = bool(docker_hits or local_bindings or pids)
-
-    obs_type = "free"
-    if docker_hits:
-        obs_type = "docker"
-    elif pids:
-        obs_type = "local"
-    elif local_bindings:
-        obs_type = "local-unknown"
-
-    # Process and docker container observations
-    obs_processes = []
-    for pid in pids:
-        info = inspector.get_process_info(pid)
-        if info:
-            obs_processes.append(asdict(info))
-        else:
-            obs_processes.append({"pid": pid, "name": "unknown", "exe": None, "cmdline": None, "user": None})
-
-    obs_docker = [asdict(m) for m in docker_hits]
-    obs_bindings = [asdict(b) for b in local_bindings]
-
-    observations = {
-        "port": port,
-        "blocked": is_blocked,
-        "type": obs_type,
-        "bindings": obs_bindings,
-        "processes": obs_processes,
-        "docker_containers": obs_docker,
-    }
-
-    # 2. Inferences
-    inferences = []
-    
-    # Process manager inferences (derived via detect_process_manager)
-    for p in obs_processes:
-        pid = p["pid"]
-        pm_info = detect_process_manager(pid)
-        if pm_info:
-            inferences.append({
-                "type": "process_manager",
-                "pid": pid,
-                "manager": pm_info["manager"],
-                "name": pm_info["name"],
-                "confidence": "high",
-                "reason": f"Process {pid} is running under process manager '{pm_info['manager']}' service '{pm_info['name']}'"
-            })
-
-        # Project context inference — derived from process cwd
-        cwd = p.get("cwd")
-        project = resolve_project(cwd)
-        if project is not None:
-            inferences.append({
-                "type": "project_context",
-                "pid": pid,
-                "git_root": project.git_root,
-                "project_name": project.project_name,
-                "branch": project.branch,
-                "remote_origin": project.remote_origin,
-                "is_worktree": project.is_worktree,
-                "confidence": "medium",
-                "reason": (
-                    f"Process {pid} cwd ({cwd!r}) is inside Git repository "
-                    f"'{project.project_name or project.git_root}'"
-                    + (f" on branch '{project.branch}'" if project.branch else "")
-                ),
-            })
-
-    # Docker network isolation inference
-    for d in obs_docker:
-        inferences.append({
-            "type": "docker_isolation",
-            "container_name": d["container_name"],
-            "container_id": d["container_id"],
-            "confidence": "high",
-            "reason": f"Container '{d['container_name']}' isolates the socket in a virtual network namespace mapped to host port {d['host_port']}"
-        })
-
-    # 3. Risks
-    risks = []
-    
-    # Wildcard bind risk
-    for b in local_bindings:
-        # Check for 0.0.0.0 or [::]
-        laddr_ip = b.laddr.split(":")[0] if ":" in b.laddr else b.laddr
-        if laddr_ip in ("0.0.0.0", "::", "*"):
-            risks.append({
-                "type": "public_exposure",
-                "message": f"Socket {b.laddr} bound to wildcard address ({laddr_ip}) - exposed to local network",
-                "severity": "WARNING"
-            })
-
-    # Safety shield checks
-    protected_ports = set(DEFAULT_PROTECTED_PORTS)
+    # Build config for safety-aware risk annotations
+    config: dict = {}
     config_ports = getattr(args, "protected_ports", None)
     if isinstance(config_ports, list):
-        protected_ports.update(config_ports)
-
-    protected_procs = set(DEFAULT_PROTECTED_PROCESS_NAMES)
+        config["protected_ports"] = config_ports
     config_procs = getattr(args, "protected_processes", None)
     if isinstance(config_procs, list):
-        protected_procs.update(p.lower() for p in config_procs)
+        config["protected_processes"] = config_procs
 
-    is_protected_port = port in protected_ports
-    is_protected_process = False
-    protected_pids = []
+    bypass = getattr(args, "bypass_safety", False)
+    # Shared structured computation — no rendering here
+    data = _diagnose_port_data(
+        port=port,
+        inspector=inspector,
+        proto=getattr(args, "proto", "tcp"),
+        config=config if config else None,
+        bypass_safety=bypass,
+    )
 
-    if is_protected_port:
-        risks.append({
-            "type": "protected_port",
-            "message": f"Port {port} is listed in protected ports. Termination will be blocked by default.",
-            "severity": "IMPORTANT"
-        })
-
-    for p in obs_processes:
-        base_name = p["name"].lower().split(" (")[0]
-        if base_name in protected_procs:
-            is_protected_process = True
-            protected_pids.append(p["pid"])
-            risks.append({
-                "type": "protected_process",
-                "message": f"PID {p['pid']} ({p['name']}) is listed in protected processes. Termination will be blocked by default.",
-                "severity": "IMPORTANT"
-            })
-
-    # Auto-restart risk (due to process manager)
-    for inf in inferences:
-        if inf["type"] == "process_manager":
-            risks.append({
-                "type": "auto_restart",
-                "message": f"PID {inf['pid']} is managed by {inf['manager']}. Standard termination will trigger auto-restart.",
-                "severity": "WARNING"
-            })
-
-    # 4. Recommendations
-    recommendations = []
-    
-    # Safe checks
-    bypass_safety = getattr(args, "bypass_safety", False)
-    safety_blocks = (is_protected_port or is_protected_process) and not bypass_safety
-
-    if not is_blocked:
-        recommendations.append({
-            "action": "bind",
-            "command": None,
-            "reason": "Port is free and available to bind.",
-            "safe": True
-        })
-    elif safety_blocks:
-        reasons = []
-        if is_protected_port:
-            reasons.append(f"Port {port} is protected")
-        if is_protected_process:
-            reasons.append(f"Process(es) {', '.join(map(str, protected_pids))} are protected")
-        
-        recommendations.append({
-            "action": "abort",
-            "command": None,
-            "reason": f"Safety Shield Active: {' and '.join(reasons)}. Termination aborted. To override, re-run with --bypass-safety.",
-            "safe": False
-        })
-    elif obs_docker:
-        # Recommend stopping container
-        d = obs_docker[0]
-        recommendations.append({
-            "action": "stop_docker_container",
-            "command": f"kport kill {port} --docker-action stop",
-            "reason": f"Port belongs to Docker container '{d['container_name']}'. Stop container cleanly to release port.",
-            "safe": True
-        })
-    else:
-        # Check process managers
-        pm_managed = [inf for inf in inferences if inf["type"] == "process_manager"]
-        if pm_managed:
-            pm = pm_managed[0]
-            if pm["manager"] == "systemd":
-                cmd = f"systemctl stop {pm['name']}"
-            elif pm["manager"] == "pm2":
-                cmd = f"pm2 stop {pm['name']}"
-            elif pm["manager"] == "supervisor":
-                cmd = f"supervisorctl stop {pm['name']}"
-            elif pm["manager"] == "windows-service":
-                services = pm["name"].split(",")
-                if len(services) == 1:
-                    cmd = f"Stop-Service -Name {services[0]}"
-                else:
-                    cmd = " ; ".join(f"Stop-Service -Name {s}" for s in services)
-            else:
-                cmd = f"kport kill {port}"
-                
-            recommendations.append({
-                "action": "stop_service",
-                "command": cmd,
-                "reason": f"Process is managed by {pm['manager']}. Stopping via the service manager prevents auto-restart.",
-                "safe": True
-            })
-        elif obs_type == "local-unknown":
-            recommendations.append({
-                "action": "escalate_privileges",
-                "command": f"sudo kport diagnose {port}" if sys.platform != "win32" else "Run terminal as Administrator",
-                "reason": "Port is occupied but owning process is not visible. Diagnose with administrator/root privileges.",
-                "safe": True
-            })
-        else:
-            # Standard local process
-            pids_str = " ".join(str(p["pid"]) for p in obs_processes)
-            recommendations.append({
-                "action": "kill_processes",
-                "command": f"kport kill {port}",
-                "reason": f"Terminate standard local process(es) on port (PIDs: {pids_str})",
-                "safe": True
-            })
-
-    # Assemble response payload
-    data = {
-        "port": port,
-        "blocked": is_blocked,
-        "observations": observations,
-        "inferences": inferences,
-        "risks": risks,
-        "recommendations": recommendations,
-    }
+    is_blocked = data["blocked"]
+    observations = data["observations"]
+    inferences = data["inferences"]
+    risks = data["risks"]
+    recommendations = data["recommendations"]
+    obs_type = observations["type"]
+    obs_processes = observations["processes"]
+    obs_docker = observations["docker_containers"]
+    obs_bindings = observations["bindings"]
 
     if args.json:
         print(_json_out("diagnose", data))
@@ -718,6 +523,92 @@ def handle_diagnose(args: argparse.Namespace, inspector: BaseInspector) -> int:
 
 
 def handle_connections(args: argparse.Namespace, inspector: BaseInspector) -> int:
+    """Display active network connections with optional filters.
+
+    Delegates filtering and serialization to diagnostics.py.
+    """
+    pid_filter = None
+    if getattr(args, "pid", None) is not None:
+        try:
+            pid_filter = int(args.pid)
+        except (ValueError, TypeError):
+            pass
+
+    port_filter = None
+    if getattr(args, "port", None) is not None:
+        try:
+            port_filter = int(args.port)
+        except (ValueError, TypeError):
+            pass
+
+    process_filter = getattr(args, "process", None) or None
+    state_filter = getattr(args, "state", None) or None
+
+    if getattr(args, "json", False):
+        # JSON path: use shared serialization from diagnostics.py
+        serialized = _filter_connections_data(
+            inspector,
+            pid=pid_filter,
+            process=process_filter,
+            port=port_filter,
+            state=state_filter,
+        )
+        data = {"connections": serialized, "count": len(serialized)}
+        print(_json_out("connections", data))
+        return EXIT_OK
+
+    # Text path: use raw ConnectionInfo objects so we can format the table
+    conns = inspector.list_connections()
+
+    if pid_filter is not None:
+        conns = [c for c in conns if c.pid == pid_filter]
+
+    if process_filter:
+        p_lower = process_filter.lower()
+        conns = [c for c in conns if c.process_name and p_lower in c.process_name.lower()]
+
+    if port_filter is not None:
+        conns = [c for c in conns if c.local_port == port_filter or c.remote_port == port_filter]
+
+    if state_filter:
+        s_upper = state_filter.upper()
+        conns = [c for c in conns if c.state and c.state.upper() == s_upper]
+
+    print(colorize("=== ACTIVE CONNECTIONS ===", Colors.CYAN + Colors.BOLD))
+    print()
+
+    if not conns:
+        print("No active connections found.")
+        print()
+        return EXIT_OK
+
+    # Print header  (PROCESS column width = 24 to fit most real names)
+    _PROC_W = 24
+    header = f"{'PID':<8}{'PROCESS':<{_PROC_W}}{'LOCAL':<28}{'REMOTE':<28}{'STATE':<12}"
+    print(colorize(header, Colors.BOLD + Colors.WHITE))
+
+    for c in conns:
+        pid_str = str(c.pid) if c.pid is not None else "-"
+        raw_name = c.process_name if c.process_name else "-"
+        if len(raw_name) >= _PROC_W:
+            pname_str = raw_name[:_PROC_W - 2] + "\u2026"
+        else:
+            pname_str = raw_name
+        local_str = f"{c.local_address}:{c.local_port}"
+        remote_str = f"{c.remote_address}:{c.remote_port}" if c.remote_port is not None else c.remote_address
+
+        state_color = Colors.GREEN if c.state == "ESTABLISHED" else (Colors.YELLOW if c.state == "LISTEN" else Colors.CYAN)
+        state_str = colorize(c.state, state_color)
+
+        line = f"{pid_str:<8}{pname_str:<{_PROC_W}}{local_str:<28}{remote_str:<28}{state_str}"
+        print(line)
+
+    print()
+    print(f"{len(conns)} connection(s) found.")
+    print()
+    return EXIT_OK
+
+
     conns = inspector.list_connections()
 
     # Filter by pid
@@ -802,293 +693,7 @@ def handle_connections(args: argparse.Namespace, inspector: BaseInspector) -> in
     print(f"{len(conns)} connection(s) found.")
     print()
     return EXIT_OK
-
-
-# ---------------------------------------------------------------------------
 # Phase 2E — kport doctor
-# ---------------------------------------------------------------------------
-
-def _doctor_platform_info() -> dict:
-    """Return a minimal, non-sensitive snapshot of the inspection environment."""
-    import platform as _plat
-    from . import inspectors as _insp
-
-    using_psutil = _insp.USING_PSUTIL
-    psutil_accessible = _insp.USING_PSUTIL and _insp._psutil_accessible()
-
-    return {
-        "os": _plat.system(),
-        "os_version": _plat.version(),
-        "python": _plat.python_version(),
-        "inspector_backend": "psutil" if psutil_accessible else "fallback",
-        "psutil_available": using_psutil,
-        "psutil_accessible": psutil_accessible,
-    }
-
-
-def _doctor_capabilities(platform_info: dict) -> dict:
-    """Assess what the current backend can and cannot inspect."""
-    limitations: list[str] = []
-    notes: list[str] = []
-
-    if not platform_info["psutil_available"]:
-        limitations.append("psutil is not installed — using OS-native fallback inspector")
-    elif not platform_info["psutil_accessible"]:
-        limitations.append(
-            "psutil is installed but cannot enumerate connections "
-            "(possible AppArmor/snap restriction) — using fallback inspector"
-        )
-
-    if platform_info["os"] == "Windows":
-        notes.append("Process owner resolution uses tasklist and ctypes (no /proc)")
-    elif platform_info["os"] == "Darwin":
-        notes.append(
-            "macOS: connection enumeration uses lsof if psutil is unavailable"
-        )
-
-    return {
-        "can_inspect_connections": True,  # both backends implement list_connections
-        "can_inspect_listeners": True,
-        "can_inspect_processes": True,
-        "limitations": limitations,
-        "notes": notes,
-    }
-
-
-def _doctor_listener_findings(
-    bindings: list,
-    findings: list[dict],
-) -> list[dict]:
-    """
-    Analyse the listening-port snapshot and populate findings in-place.
-    Returns a list of serialisable listener dicts.
-    """
-    from collections import defaultdict
-
-    # Group by port → detect possible dual-stack (IPv4+IPv6 wildcard) duplicates
-    port_groups: dict[int, list] = defaultdict(list)
-    for b in bindings:
-        port_groups[b.port].append(b)
-
-    listeners_out = []
-    for b in bindings:
-        ip = b.laddr.rsplit(":", 1)[0] if ":" in b.laddr else b.laddr
-        is_wildcard = ip in ("0.0.0.0", "::", "*")
-        is_localhost = ip in ("127.0.0.1", "::1")
-
-        entry = {
-            "port": b.port,
-            "address": b.laddr,
-            "pid": b.pid,
-            "process_name": b.process_name,
-            "state": b.state,
-            "proto": b.proto,
-            "wildcard": is_wildcard,
-            "localhost_only": is_localhost,
-        }
-        listeners_out.append(entry)
-
-        # Risk: wildcard public exposure
-        if is_wildcard:
-            findings.append({
-                "severity": "WARNING",
-                "category": "listener",
-                "message": (
-                    f"Port {b.port} is bound to wildcard address ({ip}), "
-                    f"exposing it to the local network"
-                    + (f" — observed process: {b.process_name}" if b.process_name else "")
-                ),
-            })
-
-    # Detect IPv4/IPv6 dual-stack overlaps (both 0.0.0.0 and :: on same port)
-    for port, group in port_groups.items():
-        ips = {
-            (b.laddr.rsplit(":", 1)[0] if ":" in b.laddr else b.laddr)
-            for b in group
-        }
-        if "0.0.0.0" in ips and "::" in ips:
-            findings.append({
-                "severity": "INFO",
-                "category": "listener",
-                "message": (
-                    f"Port {port} has both IPv4 (0.0.0.0) and IPv6 (::) wildcard listeners "
-                    f"— dual-stack binding (normal for many servers)"
-                ),
-            })
-
-    return listeners_out
-
-
-def _doctor_connection_summary(conns: list) -> dict:
-    """Produce a concise connection-state summary; no per-connection dump."""
-    from collections import Counter
-
-    state_counts: Counter = Counter()
-    for c in conns:
-        state_counts[c.state] += 1
-
-    return {
-        "total": len(conns),
-        "LISTEN": state_counts.get("LISTEN", 0),
-        "ESTABLISHED": state_counts.get("ESTABLISHED", 0),
-        "TIME_WAIT": state_counts.get("TIME_WAIT", 0),
-        "CLOSE_WAIT": state_counts.get("CLOSE_WAIT", 0),
-        "other": sum(
-            v for k, v in state_counts.items()
-            if k not in ("LISTEN", "ESTABLISHED", "TIME_WAIT", "CLOSE_WAIT")
-        ),
-    }
-
-
-def _doctor_process_findings(
-    bindings: list,
-    inspector: "BaseInspector",
-    findings: list[dict],
-) -> list[dict]:
-    """
-    For each unique PID holding a listener, collect enriched process info,
-    service-manager detection, and project context.
-    Returns a serialisable list of per-process dicts.
-    """
-    seen_pids: set[int] = set()
-    proc_entries: list[dict] = []
-
-    for b in bindings:
-        pid = b.pid
-        if not pid or pid in seen_pids:
-            continue
-        seen_pids.add(pid)
-
-        # --- Process info ---
-        try:
-            info = inspector.get_process_info(pid)
-        except Exception:
-            info = None
-
-        proc_entry: dict = {
-            "pid": pid,
-            "name": info.name if info else b.process_name or "unknown",
-            "user": info.user if info else None,
-            "ppid": info.ppid if info else None,
-            "cwd": info.cwd if info else None,
-            "start_time": info.start_time if info else None,
-        }
-
-        # --- Service manager detection ---
-        pm_info: dict | None = None
-        try:
-            pm_info = detect_process_manager(pid, proc_entry["name"])
-        except Exception:
-            pass
-
-        if pm_info:
-            proc_entry["service_manager"] = {
-                "manager": pm_info["manager"],
-                "name": pm_info["name"],
-            }
-            findings.append({
-                "severity": "INFO",
-                "category": "service",
-                "message": (
-                    f"PID {pid} ({proc_entry['name']}) appears to be managed by "
-                    f"{pm_info['manager']} service '{pm_info['name']}' — "
-                    f"stopping via process manager is preferred over direct kill"
-                ),
-            })
-        else:
-            proc_entry["service_manager"] = None
-
-        # --- Project context ---
-        cwd = proc_entry.get("cwd")
-        project_info: dict | None = None
-        try:
-            proj = resolve_project(cwd)
-        except Exception:
-            proj = None
-
-        if proj:
-            project_info = {
-                "git_root": proj.git_root,
-                "project_name": proj.project_name,
-                "branch": proj.branch,
-                "remote_origin": proj.remote_origin,
-                "is_worktree": proj.is_worktree,
-            }
-            findings.append({
-                "severity": "INFO",
-                "category": "project",
-                "message": (
-                    f"PID {pid} ({proc_entry['name']}) is associated with project "
-                    f"'{proj.project_name or proj.git_root}'"
-                    + (f" on branch '{proj.branch}'" if proj.branch else "")
-                ),
-            })
-
-        proc_entry["project"] = project_info
-        proc_entries.append(proc_entry)
-
-    return proc_entries
-
-
-def _doctor_docker_section(
-    bindings: list,
-    findings: list[dict],
-) -> dict:
-    """
-    Query Docker for host-port mappings relevant to listening ports.
-    Returns serialisable summary dict.
-    """
-
-    if not docker_available():
-        findings.append({
-            "severity": "INFO",
-            "category": "docker",
-            "message": "Docker CLI not found on PATH — Docker container inspection skipped",
-        })
-        return {"available": False, "containers": []}
-
-    try:
-        all_mappings = list_docker_mappings()
-    except Exception:
-        findings.append({
-            "severity": "INFO",
-            "category": "docker",
-            "message": "Docker is available but could not be queried (daemon not running or permission denied)",
-        })
-        return {"available": True, "daemon_accessible": False, "containers": []}
-
-    if not all_mappings:
-        return {"available": True, "daemon_accessible": True, "containers": []}
-
-    # Only report containers whose host port overlaps with a listener we found
-    listener_ports = {b.port for b in bindings}
-    relevant = [m for m in all_mappings if m.host_port in listener_ports]
-
-    for m in relevant:
-        findings.append({
-            "severity": "INFO",
-            "category": "docker",
-            "message": (
-                f"Host port {m.host_port} is mapped to container "
-                f"'{m.container_name}' (port {m.container_port}/{m.proto})"
-            ),
-        })
-
-    containers_out = [
-        {
-            "container_id": m.container_id[:12],
-            "container_name": m.container_name,
-            "image": m.image,
-            "status": m.status,
-            "host_port": m.host_port,
-            "container_port": m.container_port,
-            "proto": m.proto,
-        }
-        for m in all_mappings  # report all, even if not overlapping
-    ]
-    return {"available": True, "daemon_accessible": True, "containers": containers_out}
-
-
 def handle_doctor(args: argparse.Namespace, inspector: "BaseInspector") -> int:
     """
     Read-only environment-wide diagnostic report.
@@ -1106,116 +711,19 @@ def handle_doctor(args: argparse.Namespace, inspector: "BaseInspector") -> int:
       7. Findings (OBSERVATION / INFERENCE / WARNING / RECOMMENDATION)
     """
     use_json = getattr(args, "json", False)
-    findings: list[dict] = []
-
-    # ------------------------------------------------------------------
-    # 1. Platform / capabilities (never crashes)
-    # ------------------------------------------------------------------
-    try:
-        platform_info = _doctor_platform_info()
-    except Exception:
-        platform_info = {"os": "unknown", "inspector_backend": "unknown"}
-
-    try:
-        capabilities = _doctor_capabilities(platform_info)
-    except Exception:
-        capabilities = {"limitations": ["Could not assess capabilities"], "notes": []}
-
-    # ------------------------------------------------------------------
-    # 2. Listeners
-    # ------------------------------------------------------------------
-    bindings: list = []
-    try:
-        bindings = inspector.list_listening(proto="tcp")
-    except Exception as exc:
-        findings.append({
-            "severity": "WARNING",
-            "category": "capability",
-            "message": f"Could not enumerate listening ports: {exc}",
-        })
-
-    listeners_out = _doctor_listener_findings(bindings, findings)
-
-    # ------------------------------------------------------------------
-    # 3. Connection summary
-    # ------------------------------------------------------------------
-    conns: list = []
-    try:
-        conns = inspector.list_connections()
-    except Exception as exc:
-        findings.append({
-            "severity": "WARNING",
-            "category": "capability",
-            "message": f"Could not enumerate network connections: {exc}",
-        })
-
-    conn_summary = _doctor_connection_summary(conns)
-
-    # ------------------------------------------------------------------
-    # 4 & 5. Process / service / project context (per listener)
-    # ------------------------------------------------------------------
-    proc_entries: list[dict] = []
-    try:
-        proc_entries = _doctor_process_findings(bindings, inspector, findings)
-    except Exception as exc:
-        findings.append({
-            "severity": "WARNING",
-            "category": "capability",
-            "message": f"Could not resolve process context: {exc}",
-        })
-
-    # ------------------------------------------------------------------
-    # 6. Docker
-    # ------------------------------------------------------------------
-    docker_section: dict = {}
-    try:
-        docker_section = _doctor_docker_section(bindings, findings)
-    except Exception as exc:
-        findings.append({
-            "severity": "WARNING",
-            "category": "capability",
-            "message": f"Docker inspection failed: {exc}",
-        })
-        docker_section = {"available": False, "containers": []}
-
-    # ------------------------------------------------------------------
-    # 7. High-level recommendations (only when meaningful)
-    # ------------------------------------------------------------------
-    public_listeners = [ln for ln in listeners_out if ln.get("wildcard")]
-    if public_listeners:
-        findings.append({
-            "severity": "RECOMMENDATION",
-            "category": "listener",
-            "message": (
-                f"{len(public_listeners)} listener(s) bound to wildcard address. "
-                f"If intended for local development only, bind to 127.0.0.1 instead."
-            ),
-        })
-
-    capability_issues = [f for f in findings if f["category"] == "capability"]
-    if capability_issues:
-        findings.append({
-            "severity": "RECOMMENDATION",
-            "category": "capability",
-            "message": (
-                "Some inspection subsystems reported limitations. "
-                "Run with elevated privileges (sudo / Administrator) for full visibility."
-            ),
-        })
+    data = _run_doctor_data(inspector)
+    platform_info = data["platform"]
+    capabilities = data["capabilities"]
+    listeners_out = data["listeners"]
+    conn_summary = data["connection_summary"]
+    proc_entries = data["processes"]
+    docker_section = data["docker"]
+    findings = data["findings"]
 
     # ------------------------------------------------------------------
     # JSON output
     # ------------------------------------------------------------------
     if use_json:
-        data = {
-            "platform": platform_info,
-            "capabilities": capabilities,
-            "listeners": listeners_out,
-            "connection_summary": conn_summary,
-            "processes": proc_entries,
-            "docker": docker_section,
-            "findings": findings,
-        }
         print(_json_out("doctor", data))
         return EXIT_OK
 

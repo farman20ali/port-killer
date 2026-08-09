@@ -94,8 +94,8 @@ def test_doctor_command_dispatches_correctly(capsys):
     """handle_product_command with command='doctor' must call handle_doctor."""
     inspector = FakeInspectorWithConnections()
     args = _doctor_args(json=True)
-    with patch("kport.cli.list_docker_mappings", return_value=[]), \
-         patch("kport.cli.docker_available", return_value=False):
+    with patch("kport.diagnostics.list_docker_mappings", return_value=[]), \
+         patch("kport.diagnostics.docker_available", return_value=False):
         rc = handle_product_command(args, inspector)
     assert rc == EXIT_OK
     out = capsys.readouterr().out
@@ -115,7 +115,7 @@ def test_doctor_healthy_environment_json(capsys):
         connections=[_conn("ESTABLISHED"), _conn("LISTEN")],
     )
     args = _doctor_args(json=True)
-    with patch("kport.cli.docker_available", return_value=False):
+    with patch("kport.diagnostics.docker_available", return_value=False):
         rc = handle_doctor(args, inspector)
     assert rc == EXIT_OK
     out = capsys.readouterr().out
@@ -139,7 +139,7 @@ def test_doctor_healthy_environment_text(capsys):
         connections=[],
     )
     args = _doctor_args(json=False)
-    with patch("kport.cli.docker_available", return_value=False):
+    with patch("kport.diagnostics.docker_available", return_value=False):
         handle_doctor(args, inspector)
     out = capsys.readouterr().out
     for header in ("PLATFORM", "LISTENERS", "CONNECTION SUMMARY",
@@ -225,7 +225,7 @@ def test_service_managed_process_finding(capsys):
         "warning": "...",
     }
     findings: list[dict] = []
-    with patch("kport.cli.detect_process_manager", return_value=pm_info):
+    with patch("kport.diagnostics.detect_process_manager", return_value=pm_info):
         entries = _doctor_process_findings(inspector.list_listening(), inspector, findings)
 
     svc_findings = [f for f in findings if f["category"] == "service"]
@@ -242,7 +242,7 @@ def test_no_service_finding_for_plain_process():
         process_info={1234: pi},
     )
     findings: list[dict] = []
-    with patch("kport.cli.detect_process_manager", return_value=None):
+    with patch("kport.diagnostics.detect_process_manager", return_value=None):
         entries = _doctor_process_findings(inspector.list_listening(), inspector, findings)
     svc_findings = [f for f in findings if f["category"] == "service"]
     assert not svc_findings
@@ -269,8 +269,8 @@ def test_project_context_finding():
         remote_origin="https://github.com/user/myapp",
     )
     findings: list[dict] = []
-    with patch("kport.cli.detect_process_manager", return_value=None), \
-         patch("kport.cli.resolve_project", return_value=fake_project):
+    with patch("kport.diagnostics.detect_process_manager", return_value=None), \
+         patch("kport.diagnostics.resolve_project", return_value=fake_project):
         entries = _doctor_process_findings(inspector.list_listening(), inspector, findings)
 
     proj_findings = [f for f in findings if f["category"] == "project"]
@@ -288,8 +288,8 @@ def test_no_project_finding_when_no_cwd():
         process_info={1234: pi},
     )
     findings: list[dict] = []
-    with patch("kport.cli.detect_process_manager", return_value=None), \
-         patch("kport.cli.resolve_project", return_value=None):
+    with patch("kport.diagnostics.detect_process_manager", return_value=None), \
+         patch("kport.diagnostics.resolve_project", return_value=None):
         entries = _doctor_process_findings(inspector.list_listening(), inspector, findings)
     proj_findings = [f for f in findings if f["category"] == "project"]
     assert not proj_findings
@@ -316,8 +316,8 @@ def test_docker_port_conflict_finding():
         proto="tcp",
     )
     findings: list[dict] = []
-    with patch("kport.cli.docker_available", return_value=True), \
-         patch("kport.cli.list_docker_mappings", return_value=[mock_mapping]):
+    with patch("kport.diagnostics.docker_available", return_value=True), \
+         patch("kport.diagnostics.list_docker_mappings", return_value=[mock_mapping]):
         section = _doctor_docker_section([b], findings)
     assert section["available"] is True
     assert len(section["containers"]) == 1
@@ -330,7 +330,7 @@ def test_docker_port_conflict_finding():
 def test_docker_unavailable_does_not_crash():
     """Docker not on PATH must produce an INFO finding, not crash."""
     findings: list[dict] = []
-    with patch("kport.cli.docker_available", return_value=False):
+    with patch("kport.diagnostics.docker_available", return_value=False):
         section = _doctor_docker_section([], findings)
     assert section["available"] is False
     info = [f for f in findings if f["category"] == "docker" and f["severity"] == "INFO"]
@@ -341,8 +341,8 @@ def test_docker_unavailable_does_not_crash():
 def test_docker_daemon_not_running():
     """Docker CLI present but daemon unreachable must produce an INFO finding."""
     findings: list[dict] = []
-    with patch("kport.cli.docker_available", return_value=True), \
-         patch("kport.cli.list_docker_mappings", side_effect=Exception("connection refused")):
+    with patch("kport.diagnostics.docker_available", return_value=True), \
+         patch("kport.diagnostics.list_docker_mappings", side_effect=Exception("connection refused")):
         section = _doctor_docker_section([], findings)
     assert section.get("available") is True
     assert section.get("daemon_accessible") is False

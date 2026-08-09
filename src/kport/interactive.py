@@ -14,6 +14,7 @@ from .docker_engine import docker_action_on_container, list_docker_mappings
 from .formatter import Colors, colorize, confirm_prompt
 from .inspectors import BaseInspector
 from .process_manager import detect_process_manager
+from .safety import check_safety_policy, load_kport_config
 
 
 def _fetch_interactive_rows(inspector: BaseInspector) -> list[dict[str, Any]]:
@@ -122,6 +123,33 @@ def _execute_kills(
     """Execute kill action on all user-selected items."""
     if not selected_rows:
         return 0
+
+    # Safety check before confirmation or execution
+    cfg = load_kport_config()
+    bypass = getattr(args, "bypass_safety", False)
+    config = {}
+    config_ports = getattr(args, "protected_ports", None)
+    if isinstance(config_ports, list):
+        config["protected_ports"] = config_ports
+    config_procs = getattr(args, "protected_processes", None)
+    if isinstance(config_procs, list):
+        config["protected_processes"] = config_procs
+    if not config and cfg:
+        config = cfg
+
+    for r in selected_rows:
+        if r["type"] != "docker":
+            pids = inspector.find_pids_on_port(r["port"], proto=r.get("proto", "tcp"))
+            allowed, reason = check_safety_policy(
+                port=r["port"],
+                pids=pids,
+                inspector=inspector,
+                bypass_safety=bypass,
+                config=config if config else None,
+            )
+            if not allowed:
+                print(colorize(f"\n✗ {reason}", Colors.RED))
+                return 1
 
     # Confirmation gate unless yes/assume_yes is specified
     assume_yes = getattr(args, "yes", False)

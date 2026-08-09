@@ -22,6 +22,12 @@ from .docker_engine import (
     list_docker_mappings,
 )
 from .inspectors import get_inspector
+from .safety import check_safety_policy, load_kport_config
+from .diagnostics import (
+    diagnose_port as _diagnose_port_data,
+    detect_conflicts as _detect_conflicts_data,
+    run_doctor as _run_doctor_data,
+)
 
 # R10 fix: use shared constants from kport.constants (single source of truth).
 # MCP and CLI now share identical default protection lists.
@@ -29,23 +35,7 @@ from .inspectors import get_inspector
 
 def load_mcp_config() -> dict:
     """Load configuration dictionary from default kport config locations."""
-    home = os.path.expanduser("~")
-    paths = [
-        os.path.join(os.getcwd(), ".kport.json"),
-        os.path.join(home, ".kport.json"),
-        os.path.join(home, ".config", "kport", "config.json"),
-    ]
-    for p in paths:
-        if os.path.exists(p):
-            try:
-                with open(p, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                if isinstance(data, dict):
-                    return data
-            except (OSError, json.JSONDecodeError) as ex:
-                # Non-fatal: config read/parse failed; continue with defaults.
-                log(f"Failed to load MCP config from {p}: {ex!s}")
-    return {}
+    return load_kport_config()
 
 
 def log(msg: str) -> None:
@@ -101,6 +91,38 @@ TOOLS = [
             },
             "required": ["port"],
         },
+    },
+    {
+        "name": "diagnose_port",
+        "description": "Runs a detailed semantic diagnostic analysis on a specific port, providing structured observations, inferred service relationships/manager context, process risks, and remediation recommendations.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "description": "The port number to diagnose.",
+                },
+                "proto": {
+                    "type": "string",
+                    "enum": ["tcp", "udp", "both"],
+                    "default": "tcp",
+                    "description": "The protocol type to scan.",
+                }
+            },
+            "required": ["port"],
+        },
+    },
+    {
+        "name": "conflicts",
+        "description": "Runs conflict detection on the host machine to identify ports mapped to Docker containers that are also bound/occupied by native host processes.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "doctor",
+        "description": "Runs an environment-wide diagnostic check, summarizing platform/capabilities, active listening sockets, connection counts, process/service context, and high-level configuration/risk findings.",
+        "inputSchema": {"type": "object", "properties": {}},
     },
 ]
 
@@ -197,32 +219,27 @@ def handle_kill_port(
     if not (1 <= port <= 65535):
         raise ValueError(f"Port {port} is out of bounds (1-65535)")
 
-    # Load safety configurations dynamically
+    # 1. Load configuration and retrieve target pids
     cfg = load_mcp_config()
+    inspector = get_inspector()
+    pids = inspector.find_pids_on_port(port)
 
-    # 1. Resolve active protected lists — ADDITIVE, not replacement.
-    #    A user config with protected_ports:[9999] should ADD to defaults,
-    #    not silently unprotect SSH (22), Redis (6379), etc.
-    protected_ports = set(PROTECTED_PORTS)
-    config_ports = cfg.get("protected_ports")
-    if isinstance(config_ports, list):
-        protected_ports.update(config_ports)  # additive union
-
-    protected_procs = set(PROTECTED_PROCESS_NAMES)
-    config_procs = cfg.get("protected_processes")
-    if isinstance(config_procs, list):
-        protected_procs.update(p.lower() for p in config_procs)  # additive union
-
-    # 2. Protected ports shield check
-    if port in protected_ports:
+    # 2. Unified safety policy check
+    # MCP server NEVER bypasses safety (so bypass_safety=False).
+    allowed, reason = check_safety_policy(
+        port=port,
+        pids=pids,
+        inspector=inspector,
+        bypass_safety=False,
+        config=cfg if cfg else None,
+    )
+    if not allowed:
         return {
             "success": False,
-            "message": f"Security Shield Active: Port {port} is a critical system/database socket. AI is prevented from terminating it.",
+            "message": reason,
         }
 
-    inspector = get_inspector()
     docker_hits = docker_mappings_for_host_port(port)
-    pids = inspector.find_pids_on_port(port)
 
     # 3. Docker container path
     if docker_hits:
@@ -257,19 +274,7 @@ def handle_kill_port(
             }
         return {"success": True, "message": f"Port {port} is already free."}
 
-    # 5. Critical process name shield check
-    for pid in pids:
-        info = inspector.get_process_info(pid)
-        # R9 fix: was duplicate "# 5." label. Now correctly numbered as step 5.
-        # Strip enrichment suffix (e.g. "sshd (...)" should still match "sshd")
-        base_name = info.name.lower().split(" (")[0] if info else ""
-        if base_name in protected_procs:
-            return {
-                "success": False,
-                "message": f"Security Shield Active: PID {pid} runs critical system process '{info.name}'. Termination aborted.",
-            }
-
-    # 6. Local process escalated kill
+    # 5. Local process escalated kill
     ok, msg = inspector.kill_port(
         port,
         graceful_timeout=3.0,
@@ -279,6 +284,24 @@ def handle_kill_port(
         assume_yes=True,
     )
     return {"success": ok, "type": "local", "pids_targeted": pids, "message": msg}
+
+
+def handle_diagnose_port(inspector, port: int, proto: str = "tcp") -> dict[str, Any]:
+    """Execute diagnose_port tool request."""
+    if not (1 <= port <= 65535):
+        raise ValueError(f"Port {port} is out of bounds (1-65535)")
+    cfg = load_mcp_config()
+    return _diagnose_port_data(port, inspector, proto=proto, config=cfg)
+
+
+def handle_conflicts(inspector) -> list[dict[str, Any]]:
+    """Execute conflicts tool request."""
+    return _detect_conflicts_data(inspector)
+
+
+def handle_doctor(inspector) -> dict[str, Any]:
+    """Execute doctor tool request."""
+    return _run_doctor_data(inspector)
 
 
 def run_mcp_server() -> None:
@@ -335,6 +358,14 @@ def run_mcp_server() -> None:
                         result_data = handle_kill_port(
                             inspector, target_port, force_flag, docker_act
                         )
+                    elif tool_name == "diagnose_port":
+                        target_port = int(arguments.get("port"))
+                        proto_val = str(arguments.get("proto", "tcp"))
+                        result_data = handle_diagnose_port(inspector, target_port, proto_val)
+                    elif tool_name == "conflicts":
+                        result_data = handle_conflicts(inspector)
+                    elif tool_name == "doctor":
+                        result_data = handle_doctor(inspector)
                     else:
                         raise ValueError(f"Unknown tool: {tool_name}")
 

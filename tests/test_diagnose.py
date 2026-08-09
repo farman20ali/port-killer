@@ -22,7 +22,7 @@ def test_diagnose_free_port(capsys):
     """diagnose on a free port should return free type and exit code free."""
     inspector = FakeInspector()
     args = _args(command="diagnose", port=8080, json=True)
-    with patch("kport.cli.docker_mappings_for_host_port", return_value=[]):
+    with patch("kport.diagnostics.docker_mappings_for_host_port", return_value=[]):
         rc = handle_product_command(args, inspector)
     
     assert rc == EXIT_PORT_FREE
@@ -46,8 +46,8 @@ def test_diagnose_local_process(capsys):
     )
     args = _args(command="diagnose", port=8080, json=True)
     
-    with patch("kport.cli.docker_mappings_for_host_port", return_value=[]), \
-         patch("kport.cli.detect_process_manager", return_value=None):
+    with patch("kport.diagnostics.docker_mappings_for_host_port", return_value=[]), \
+         patch("kport.diagnostics.detect_process_manager", return_value=None):
         rc = handle_product_command(args, inspector)
 
     assert rc == EXIT_OK
@@ -83,8 +83,8 @@ def test_diagnose_systemd_managed(capsys):
         "warning": "warning text"
     }
 
-    with patch("kport.cli.docker_mappings_for_host_port", return_value=[]), \
-         patch("kport.cli.detect_process_manager", return_value=pm_info):
+    with patch("kport.diagnostics.docker_mappings_for_host_port", return_value=[]), \
+         patch("kport.diagnostics.detect_process_manager", return_value=pm_info):
         rc = handle_product_command(args, inspector)
 
     assert rc == EXIT_OK
@@ -125,7 +125,7 @@ def test_diagnose_docker_port(capsys):
         proto="tcp"
     )
     
-    with patch("kport.cli.docker_mappings_for_host_port", return_value=[mock_mapping]):
+    with patch("kport.diagnostics.docker_mappings_for_host_port", return_value=[mock_mapping]):
         rc = handle_product_command(args, inspector)
 
     assert rc == EXIT_PORT_DOCKER
@@ -155,7 +155,7 @@ def test_diagnose_protected_port(capsys):
     )
     args = _args(command="diagnose", port=22, json=True, bypass_safety=False) # 22 is SSH (protected)
     
-    with patch("kport.cli.docker_mappings_for_host_port", return_value=[]):
+    with patch("kport.diagnostics.docker_mappings_for_host_port", return_value=[]):
         rc = handle_product_command(args, inspector)
 
     assert rc == EXIT_OK # port is occupied, exit code is EXIT_OK
@@ -180,8 +180,8 @@ def test_diagnose_public_bind_risk(capsys):
     )
     args = _args(command="diagnose", port=8080, json=True)
     
-    with patch("kport.cli.docker_mappings_for_host_port", return_value=[]), \
-         patch("kport.cli.detect_process_manager", return_value=None):
+    with patch("kport.diagnostics.docker_mappings_for_host_port", return_value=[]), \
+         patch("kport.diagnostics.detect_process_manager", return_value=None):
         rc = handle_product_command(args, inspector)
 
     assert rc == EXIT_OK
@@ -209,8 +209,8 @@ def test_diagnose_observation_not_inference(capsys):
         "warning": "warning"
     }
 
-    with patch("kport.cli.docker_mappings_for_host_port", return_value=[]), \
-         patch("kport.cli.detect_process_manager", return_value=pm_info):
+    with patch("kport.diagnostics.docker_mappings_for_host_port", return_value=[]), \
+         patch("kport.diagnostics.detect_process_manager", return_value=pm_info):
         rc = handle_product_command(args, inspector)
 
     envelope = json.loads(capsys.readouterr().out)

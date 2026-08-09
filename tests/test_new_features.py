@@ -958,3 +958,23 @@ def test_curses_main_reload_handling():
              
         rc = run_interactive_picker(inspector, args)
         assert rc == 0
+
+
+# 11.8 _execute_kills safety shield blocked
+def test_execute_kills_safety_shield_blocked():
+    from kport.interactive import _execute_kills
+
+    inspector = FakeInspector()
+    killed_ports = []
+    inspector.kill_port = lambda port, **kwargs: (killed_ports.append(port) or True, "killed")
+
+    args = _args(command="interactive", yes=True)
+    # Port 22 is protected by default
+    selected_rows = [
+        {"type": "local", "port": 22, "pid": 123, "process": "sshd", "proto": "tcp", "state": "LISTEN", "managed_by": ""}
+    ]
+
+    rc = _execute_kills(inspector, selected_rows, args)
+
+    assert rc == 1
+    assert killed_ports == []

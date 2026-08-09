@@ -73,13 +73,13 @@ def test_initialize_returns_protocol_version():
 
 
 def test_tools_list_returns_all_tools():
-    """tools/list must return all three registered tools."""
+    """tools/list must return all registered tools."""
     responses = _send_messages(
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
     )
     assert len(responses) == 1
     tool_names = {t["name"] for t in responses[0]["result"]["tools"]}
-    assert tool_names == {"list_ports", "inspect_port", "kill_port"}
+    assert tool_names == {"list_ports", "inspect_port", "kill_port", "diagnose_port", "conflicts", "doctor"}
 
 
 def test_tools_have_required_schema_fields():
@@ -267,3 +267,90 @@ def test_unknown_method_returns_method_not_found():
     error = responses[0]["error"]
     assert error["code"] == -32601
     assert "not found" in error["message"].lower()
+
+
+# ---------------------------------------------------------------------------
+# New Diagnostic Tools Calls
+# ---------------------------------------------------------------------------
+
+def test_diagnose_port_tool_call():
+    """diagnose_port tool call must return a valid diagnostic structure."""
+    mock_inspector = MagicMock()
+    mock_inspector.find_pids_on_port.return_value = []
+    mock_inspector.find_bindings_on_port.return_value = []
+
+    with patch("kport.mcp_server.get_inspector", return_value=mock_inspector), \
+         patch("kport.mcp_server.docker_mappings_for_host_port", return_value=[]):
+        responses = _send_messages(
+            {
+                "jsonrpc": "2.0",
+                "id": 20,
+                "method": "tools/call",
+                "params": {
+                    "name": "diagnose_port",
+                    "arguments": {"port": 8080, "proto": "tcp"},
+                },
+            }
+        )
+
+    assert len(responses) == 1
+    result = responses[0]["result"]
+    assert result["isError"] is False
+    data = json.loads(result["content"][0]["text"])
+    assert data["port"] == 8080
+    assert data["blocked"] is False
+    assert "observations" in data
+
+
+def test_conflicts_tool_call():
+    """conflicts tool call must return list of conflicts."""
+    mock_inspector = MagicMock()
+    with patch("kport.mcp_server.get_inspector", return_value=mock_inspector), \
+         patch("kport.mcp_server.list_docker_mappings", return_value=[]):
+        responses = _send_messages(
+            {
+                "jsonrpc": "2.0",
+                "id": 21,
+                "method": "tools/call",
+                "params": {
+                    "name": "conflicts",
+                    "arguments": {},
+                },
+            }
+        )
+
+    assert len(responses) == 1
+    result = responses[0]["result"]
+    assert result["isError"] is False
+    data = json.loads(result["content"][0]["text"])
+    assert isinstance(data, list)
+
+
+def test_doctor_tool_call():
+    """doctor tool call must return environment-wide doctor report."""
+    mock_inspector = MagicMock()
+    mock_inspector.list_listening.return_value = []
+    mock_inspector.list_connections.return_value = []
+
+    with patch("kport.mcp_server.get_inspector", return_value=mock_inspector), \
+         patch("kport.diagnostics.docker_available", return_value=False):
+        responses = _send_messages(
+            {
+                "jsonrpc": "2.0",
+                "id": 22,
+                "method": "tools/call",
+                "params": {
+                    "name": "doctor",
+                    "arguments": {},
+                },
+            }
+        )
+
+    assert len(responses) == 1
+    result = responses[0]["result"]
+    assert result["isError"] is False
+    data = json.loads(result["content"][0]["text"])
+    assert "platform" in data
+    assert "capabilities" in data
+    assert "listeners" in data
+
