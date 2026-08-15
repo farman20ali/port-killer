@@ -22,8 +22,7 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass, field
-
+from dataclasses import dataclass
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -241,7 +240,7 @@ def resolve_project(cwd: str | None) -> ProjectInfo | None:
 
     branch = None
     try:
-        branch = _read_branch(git_path if is_worktree else git_path, is_worktree, git_path)
+        branch = _read_branch(git_path, is_worktree, git_path)
     except Exception:
         pass
 

@@ -14,7 +14,7 @@ import struct
 import subprocess
 from typing import Any
 
-from .base import BaseInspector, PortBinding, ProcessInfo, ConnectionInfo
+from .base import BaseInspector, ConnectionInfo, PortBinding, ProcessInfo
 
 # --- Linux-native /proc parsing helpers ---
 
@@ -744,19 +744,19 @@ def _windows_listening_native() -> list[PortBinding]:
     bindings = []
     try:
         bindings.extend(_get_extended_tcp_table_ipv4())
-    except Exception:  # noqa: BLE001, S110 - ignore native call failure
+    except Exception:
         pass
     try:
         bindings.extend(_get_extended_tcp_table_ipv6())
-    except Exception:  # noqa: BLE001, S110 - ignore native call failure
+    except Exception:
         pass
     try:
         bindings.extend(_get_extended_udp_table_ipv4())
-    except Exception:  # noqa: BLE001, S110 - ignore native call failure
+    except Exception:
         pass
     try:
         bindings.extend(_get_extended_udp_table_ipv6())
-    except Exception:  # noqa: BLE001, S110 - ignore native call failure
+    except Exception:
         pass
 
     for b in bindings:
@@ -858,7 +858,7 @@ def _get_windows_process_info_native(pid: int) -> ProcessInfo | None:
             )
         finally:
             kernel32.CloseHandle(h_proc)
-    except Exception:  # noqa: BLE001, S110 - ignore native call failure
+    except Exception:
         pass
     return None
 
@@ -979,7 +979,7 @@ class FallbackInspector(BaseInspector):
             bindings: list[PortBinding] = []
             try:
                 bindings = _windows_listening_native()
-            except Exception:  # noqa: BLE001, S110 - fallback if native windows call fails
+            except Exception:
                 pass
             if not bindings:
                 bindings = self._windows_listening(proto=proto)
@@ -1016,7 +1016,7 @@ class FallbackInspector(BaseInspector):
                     elif proto == "udp":
                         return [b for b in filtered if b.proto == "udp"]
                     return filtered
-            except Exception:  # noqa: BLE001, S110 - fallback if native windows API fails
+            except Exception:
                 pass
             return self._windows_bindings_on_port(port, proto=proto)
         else:
@@ -1336,7 +1336,7 @@ class FallbackInspector(BaseInspector):
                             }
                         )
                     return sorted({b.pid for b in bindings if b.port == port and b.pid})
-            except Exception:  # noqa: BLE001, S110 - fallback if native windows API fails
+            except Exception:
                 pass
             return self._windows_pids_on_port(port, proto=proto)
         else:
@@ -1469,7 +1469,7 @@ class FallbackInspector(BaseInspector):
                     info = _get_windows_process_info_native(pid)
                     if info:
                         return info
-                except Exception:  # noqa: BLE001, S110 - fallback if native windows call fails
+                except Exception:
                     pass
                 name = self._process_name_for_pid(pid)
                 if name:
@@ -1537,7 +1537,7 @@ class FallbackInspector(BaseInspector):
                         cwd=cwd,
                         start_time=start_time,
                     )
-        except Exception:  # noqa: BLE001 - robust wrapper for process info retrieval
+        except Exception:
             return None
         return None
 
@@ -1642,7 +1642,7 @@ class FallbackInspector(BaseInspector):
             # Step 2: get all listening bindings via native IPHLPAPI (no elevation)
             try:
                 all_bindings = _windows_listening_native()
-            except Exception:  # noqa: BLE001 - fallback if native windows API call fails
+            except Exception:
                 all_bindings = []
 
             if not all_bindings:

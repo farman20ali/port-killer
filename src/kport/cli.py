@@ -16,9 +16,31 @@ from typing import Any
 
 from . import __version__, audit
 from .constants import PROTECTED_PORTS, PROTECTED_PROCESS_NAMES
+from .diagnostics import (
+    _doctor_capabilities,  # noqa: F401
+    _doctor_connection_summary,  # noqa: F401
+    _doctor_docker_section,  # noqa: F401
+    _doctor_listener_findings,  # noqa: F401
+    _doctor_platform_info,  # noqa: F401
+    _doctor_process_findings,  # noqa: F401
+)
+from .diagnostics import (
+    detect_conflicts as _detect_conflicts_data,
+)
+from .diagnostics import (
+    diagnose_port as _diagnose_port_data,
+)
+from .diagnostics import (
+    filter_connections as _filter_connections_data,
+)
+from .diagnostics import (
+    run_doctor as _run_doctor_data,
+)
+
+detect_conflicts = _detect_conflicts_data
 from .docker_engine import (
     docker_action_on_container,
-    docker_available,
+    docker_available,  # noqa: F401
     docker_mappings_for_host_port,
     list_docker_mappings,
 )
@@ -33,28 +55,18 @@ from .formatter import (
     print_table_list_product,
     print_table_listen,
 )
-from .inspectors import BaseInspector, get_inspector, ConnectionInfo
+from .inspectors import BaseInspector, ConnectionInfo, get_inspector  # noqa: F401
 from .notify import notify as _desktop_notify
 from .process_manager import detect_process_manager
 from .profile import load_profiles, resolve_profile
-from .project import resolve_project
+from .project import resolve_project  # noqa: F401
 from .safety import (
     SafetyDecision,
-    check_safety_policy as _core_check_safety_policy,
-    load_kport_config,
-    resolve_protected_sets,
+    load_kport_config,  # noqa: F401
+    resolve_protected_sets,  # noqa: F401
 )
-from .diagnostics import (
-    diagnose_port as _diagnose_port_data,
-    run_doctor as _run_doctor_data,
-    detect_conflicts as _detect_conflicts_data,
-    filter_connections as _filter_connections_data,
-    _doctor_platform_info,
-    _doctor_capabilities,
-    _doctor_listener_findings,
-    _doctor_connection_summary,
-    _doctor_process_findings,
-    _doctor_docker_section,
+from .safety import (
+    check_safety_policy as _core_check_safety_policy,
 )
 
 # Exit codes
@@ -694,7 +706,7 @@ def handle_connections(args: argparse.Namespace, inspector: BaseInspector) -> in
     print()
     return EXIT_OK
 # Phase 2E — kport doctor
-def handle_doctor(args: argparse.Namespace, inspector: "BaseInspector") -> int:
+def handle_doctor(args: argparse.Namespace, inspector: BaseInspector) -> int:
     """
     Read-only environment-wide diagnostic report.
 

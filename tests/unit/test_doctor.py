@@ -8,23 +8,26 @@ from __future__ import annotations
 
 import argparse
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 from kport.cli import (
     EXIT_OK,
-    _doctor_capabilities,
-    _doctor_connection_summary,
-    _doctor_listener_findings,
-    _doctor_process_findings,
-    _doctor_docker_section,
     handle_doctor,
     handle_product_command,
 )
-from kport.inspectors.base import PortBinding, ProcessInfo, ConnectionInfo
-from tests.test_commands import FakeInspector, _args
-
+from kport.diagnostics import (
+    _doctor_capabilities,
+    _doctor_connection_summary,
+    _doctor_docker_section,
+    _doctor_listener_findings,
+    _doctor_process_findings,
+)
+from kport.inspectors.base import ConnectionInfo, PortBinding, ProcessInfo
+from tests.conftest import FakeInspector, _args
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -83,7 +86,6 @@ def test_doctor_is_registered():
     """kport doctor must be a recognised subcommand and not raise."""
     from kport.cli import main
     # --help returns exit 0; just ensure the subcommand is parsed without crash
-    import sys
     try:
         main(["doctor", "--help"])
     except SystemExit as exc:

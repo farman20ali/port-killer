@@ -25,7 +25,6 @@ from typing import Any
 from .constants import PROTECTED_PORTS, PROTECTED_PROCESS_NAMES
 from .inspectors import BaseInspector
 
-
 # ---------------------------------------------------------------------------
 # Configuration loading
 # ---------------------------------------------------------------------------
@@ -86,7 +85,7 @@ class SafetyDecision:
     callers that expect ``(bool, str)`` continue to work without changes.
     """
 
-    __slots__ = ("allowed", "reason", "policy_source")
+    __slots__ = ("allowed", "policy_source", "reason")
 
     def __init__(
         self,

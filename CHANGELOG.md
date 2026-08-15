@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [5.0.0] - Unreleased
+
+### Added
+- **Diagnostic Intelligence (`kport diagnose` / `diagnose_port` MCP)**: Structured port diagnostics outputting observations, inferences (process managers, project context, container isolation), risk assessments, and safe remediation recommendations.
+- **Environment Doctor (`kport doctor` / `doctor` MCP)**: Aggregated health check reporting platform capabilities, backend status (psutil/fallback), listening sockets, connection state summary, process metadata, and Docker mappings.
+- **Active Connection Inspection (`kport connections` / `list_connections` MCP)**: Cross-platform TCP/UDP connection enumeration and filtering by PID, process name, port, and connection state with bounded result caps.
+- **Docker Conflict Detection (`conflicts` MCP)**: Identify host ports mapped to Docker containers that are concurrently occupied by native host processes.
+- **Process Lineage & Context Enrichment**: Enriched `ProcessInfo` with `ppid`, `cwd`, `start_time`, and parent process name (`parent_name`) for deep lineage context.
+- **Windows Service Detection**: Inspect Windows services running behind PIDs using `tasklist /SVC` to provide service names and prevent auto-restart loops.
+- **Git Project & Worktree Context**: Resolve process working directories to Git repository root, current branch, worktree state, and credential-sanitized remote URLs.
+
+### Changed
+- **Centralized Safety Policy (`kport.safety`)**: Consolidated safety checks, configuration loading, and protected resource lists into a single source of truth used identically across CLI, TUI, and MCP.
+- **Additive Configuration Semantics**: `protected_ports` and `protected_processes` defined in configuration files now extend the hard-coded safety defaults rather than overwriting them.
+- **MCP Server Optimization**: Reuses a single inspector instance per server session with clean cache invalidation instead of instantiating new inspectors per RPC call.
+
+### Security
+- **Strict MCP Safety Shield**: The MCP server strictly enforces safety shields on destructive actions (`kill_port`) and cannot be requested to bypass safety.
+- **Credential Sanitization**: Git remote origin URLs resolved during process inspection automatically strip user/token credentials.
+
+### Testing
+- Comprehensive test coverage across all new modules: `test_diagnose.py`, `test_doctor.py`, `test_connections.py`, `test_project.py`, `test_process_manager_win.py`, `test_audit.py`, `test_mcp.py`, and `test_phase4.py` bringing the test suite to 193 passing tests.
+
+---
+
 ## [4.0.3] - 2026-07-31
 
 ### Fixed

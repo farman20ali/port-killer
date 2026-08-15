@@ -6,15 +6,22 @@ Incorporates a strict safety shield to prevent AI agents from killing critical s
 from __future__ import annotations
 
 import json
-import os
 import sys
 import traceback
 from typing import Any
 
 from . import __version__
-from .constants import (
-    PROTECTED_PORTS,
-    PROTECTED_PROCESS_NAMES,
+from .diagnostics import (
+    detect_conflicts as _detect_conflicts_data,
+)
+from .diagnostics import (
+    diagnose_port as _diagnose_port_data,
+)
+from .diagnostics import (
+    filter_connections as _filter_connections_data,
+)
+from .diagnostics import (
+    run_doctor as _run_doctor_data,
 )
 from .docker_engine import (
     docker_action_on_container,
@@ -23,12 +30,6 @@ from .docker_engine import (
 )
 from .inspectors import get_inspector
 from .safety import check_safety_policy, load_kport_config
-from .diagnostics import (
-    diagnose_port as _diagnose_port_data,
-    detect_conflicts as _detect_conflicts_data,
-    filter_connections as _filter_connections_data,
-    run_doctor as _run_doctor_data,
-)
 
 # R10 fix: use shared constants from kport.constants (single source of truth).
 # MCP and CLI now share identical default protection lists.

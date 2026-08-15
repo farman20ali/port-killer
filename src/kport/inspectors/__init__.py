@@ -41,13 +41,13 @@ To verify both paths are exercised, mock ``_psutil_accessible`` to return
 ``False`` and assert that ``get_inspector()`` returns a ``FallbackInspector``.
 """
 
-from .base import BaseInspector, PortBinding, ProcessInfo, ConnectionInfo
+from .base import BaseInspector, ConnectionInfo, PortBinding, ProcessInfo
 
 __all__ = [
     "BaseInspector",
+    "ConnectionInfo",
     "PortBinding",
     "ProcessInfo",
-    "ConnectionInfo",
     "get_inspector",
 ]
 

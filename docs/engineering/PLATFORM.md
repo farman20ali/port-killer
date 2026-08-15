@@ -12,7 +12,7 @@
 
 ---
 
-## 1. Port Inspection
+## 1. Port & Connection Inspection
 
 | Capability | Linux | macOS | Windows | Code Path |
 |---|---|---|---|---|
@@ -24,10 +24,12 @@
 | IPv6 binding | ✅ `/proc/net/tcp6` | ⚠️ psutil | ✅ psutil | `system_impl.py`, `psutil_impl.py` |
 | State field (LISTEN/ESTABLISHED) | ✅ | ✅ | ✅ | psutil + fallback |
 | Local address (`laddr`) | ✅ | ✅ | ✅ | All backends |
+| Active connection enumeration | ✅ | ✅ | ✅ | `list_connections()` in psutil + fallback |
+| Connection filtering & bounding | ✅ | ✅ | ✅ | `diagnostics.py` `filter_connections` |
 
 ---
 
-## 2. Process Information
+## 2. Process Information & Context
 
 | Capability | Linux | macOS | Windows | Code Path |
 |---|---|---|---|---|
@@ -36,9 +38,11 @@
 | Command line (`cmdline`) | ✅ | ✅ | ✅ | `psutil.Process.cmdline()` / `/proc/<pid>/cmdline` |
 | Process owner (`user`) | ✅ | ✅ | ✅ | `psutil.Process.username()` / `/proc/<pid>/status` |
 | Runtime name enrichment | ✅ | ✅ | ✅ | `constants.py` `RUNTIME_ENRICHMENT_NAMES` |
-| Parent PID (`ppid`) | ❌ | ❌ | ❌ | Not in `ProcessInfo` dataclass yet |
-| Working directory (`cwd`) | ❌ | ❌ | ❌ | Not in `ProcessInfo` dataclass yet |
-| Start time / uptime | ❌ | ❌ | ❌ | Not in `ProcessInfo` dataclass yet |
+| Parent PID (`ppid`) | ✅ | ✅ | ✅ | `ProcessInfo.ppid` |
+| Working directory (`cwd`) | ✅ | ✅ | ✅ | `ProcessInfo.cwd` |
+| Start time (`start_time`) | ✅ | ✅ | ✅ | `ProcessInfo.start_time` |
+| Parent process lineage (`parent_name`) | ✅ | ✅ | ✅ | `diagnostics.py` `diagnose_port` |
+| Git repository & worktree context | ✅ | ✅ | ✅ | `project.py` `resolve_project` |
 
 ---
 
@@ -76,10 +80,8 @@
 | systemd unit detection | ✅ `/proc/<pid>/cgroup` | ❌ N/A | ❌ N/A | `process_manager.py` |
 | PM2 detection (env var + binary) | ✅ | ⚠️ | ❌ | `process_manager.py` |
 | Supervisor detection (`supervisorctl`) | ✅ | ⚠️ | ❌ | `process_manager.py` |
-| Windows Service detection (SCM) | ❌ | ❌ | ❌ | **Not implemented** |
+| Windows Service detection (SCM) | ❌ N/A | ❌ N/A | ✅ `tasklist /SVC` | `process_manager.py` |
 | launchd detection (macOS) | ❌ | ❌ | ❌ | **Not implemented** |
-
-> **Gap:** Windows Services (via `sc query` or WMI) and macOS launchd services are not detected. Processes managed by them will not receive auto-restart warnings from `kport explain` or `kport diagnose`.
 
 ---
 
@@ -87,11 +89,12 @@
 
 | Capability | Linux | macOS | Windows | Code Path |
 |---|---|---|---|---|
+| Centralized safety policy | ✅ | ✅ | ✅ | `safety.py` `check_safety_policy` |
 | Protected ports list | ✅ | ✅ | ✅ | `constants.py` `PROTECTED_PORTS` |
 | Protected process names | ✅ | ✅ | ✅ | `constants.py` `PROTECTED_PROCESS_NAMES` |
-| Bypass safety (`--bypass-safety`) | ✅ | ✅ | ✅ | `cli.py`, `mcp_server.py` |
-| Config-based additive safety policy | ✅ | ✅ | ✅ | `cli.py` `apply_config_defaults()` |
-| MCP safety shield | ✅ | ✅ | ✅ | `mcp_server.py` `handle_kill_port()` |
+| Bypass safety (`--bypass-safety`) | ✅ | ✅ | ✅ (CLI only) | `safety.py`, `cli.py` |
+| Additive config safety overrides | ✅ | ✅ | ✅ | `safety.py` `resolve_protected_sets` |
+| Strict MCP safety enforcement | ✅ | ✅ | ✅ | `mcp_server.py` `handle_kill_port` |
 
 ---
 
@@ -125,11 +128,14 @@
 |---|---|---|---|---|
 | Stdio JSON-RPC server | ✅ | ✅ | ✅ | `mcp_server.py` |
 | Protocol version `2024-11-05` | ✅ | ✅ | ✅ | Verified via test suite |
-| `list_ports` tool | ✅ | ✅ | ✅ | |
-| `inspect_port` tool | ✅ | ✅ | ✅ | |
-| `kill_port` tool (graceful default) | ✅ | ✅ | ✅ | `force=False` default since v4.0.4 |
-| Safety shield in MCP | ✅ | ✅ | ✅ | Additive protected_ports/procs from config |
-| Official MCP SDK | ❌ | ❌ | ❌ | Hand-rolled JSON-RPC (correct; SDK migration deferred) |
+| `list_ports` tool | ✅ | ✅ | ✅ | Local + Docker listening ports |
+| `inspect_port` tool | ✅ | ✅ | ✅ | Port detail lookup |
+| `kill_port` tool | ✅ | ✅ | ✅ | Safe termination (`force=False` default) |
+| `diagnose_port` tool | ✅ | ✅ | ✅ | Semantic observations, inferences, risks, recommendations |
+| `list_connections` tool | ✅ | ✅ | ✅ | Filterable active connection inspection (bounded) |
+| `conflicts` tool | ✅ | ✅ | ✅ | Docker vs native host conflict detection |
+| `doctor` tool | ✅ | ✅ | ✅ | Environment-wide health check |
+| Safety shield in MCP | ✅ | ✅ | ✅ | Strict enforcement, no bypass |
 
 ---
 
@@ -160,13 +166,11 @@ psutil installed AND accessible?
 
 | Limitation | Affected Platform(s) | Severity |
 |---|---|---|
-| Windows Service detection absent | Windows | Medium — missed auto-restart warnings for SCM services |
 | launchd detection absent | macOS | Low — PM2/Supervisor detection still works |
 | lsof fallback reliability | macOS | Low — lsof is bundled with macOS; generally reliable |
 | Snap sandbox Docker isolation | Linux (snap-installed kport) | Low — `/proc` raw fallback exists |
 | UAC elevation | Windows | Medium — ShellExecuteEx is called but UAC prompt behavior untested in CI |
 | IPv6 state reporting | All | Low — state field may be `None` in fallback IPv6 path |
-| `ProcessInfo.ppid/cwd/start_time` | All | Low — enrichment fields absent from data model |
 
 ---
 

@@ -99,6 +99,15 @@ python -m kport -h
 # Inspect a port (local or docker)
 kport inspect 8080
 
+# Structured diagnostic analysis (observations, inferences, risks, recommendations)
+kport diagnose 8080
+
+# Environment-wide system diagnostics and health report
+kport doctor
+
+# Inspect and filter active network connections
+kport connections --port 8080
+
 # Explain why a port is blocked
 kport explain 8080
 
@@ -171,6 +180,10 @@ python -m kport.mcp_server
 - `list_ports` — List all active listening ports (local + Docker)
 - `inspect_port` — Detailed info about a specific port
 - `kill_port` — Free a port (always respects the Safety Shield)
+- `diagnose_port` — Structured diagnostic analysis (observations, inferences, risks, recommendations)
+- `list_connections` — Enumerate and filter active network connections (by PID, process, port, state)
+- `conflicts` — Detect Docker container vs native host process port collisions
+- `doctor` — Environment-wide diagnostics and system health check
 
 Configure in Claude Desktop / Cursor / VS Code Copilot:
 
@@ -189,11 +202,11 @@ Configure in Claude Desktop / Cursor / VS Code Copilot:
 
 On Linux, some ports may appear as `LISTEN` but the owning PID/process name is not visible without elevated privileges (common with system services).
 
-If you see `local-unknown` in `inspect` / `explain`, try:
+If you see `local-unknown` in `inspect` / `explain` / `diagnose`, try:
 
 ```bash
 sudo -E kport inspect 6379
-sudo -E kport explain 6379
+sudo -E kport diagnose 6379
 ```
 
 If you installed with `pip install --user kport`, `sudo` may not find `kport` because root's `PATH` doesn't include your user scripts directory.
@@ -230,7 +243,7 @@ Set persistent defaults via a JSON config file (searched in this priority order)
 }
 ```
 
-> **Note:** Setting `protected_ports` or `protected_processes` in your config **replaces** (not extends) the default Safety Shield lists.
+> **Note:** Setting `protected_ports` or `protected_processes` in your config **extends** (is additive to) the default Safety Shield lists.
 
 ### Inspect a port
 

@@ -9,7 +9,7 @@ import os
 
 import psutil  # Safe to import because this implementation is dynamically loaded only when psutil is active.
 
-from .base import BaseInspector, PortBinding, ProcessInfo, ConnectionInfo
+from .base import BaseInspector, ConnectionInfo, PortBinding, ProcessInfo
 
 
 class PsutilInspector(BaseInspector):

@@ -1,7 +1,4 @@
-import os
-import sys
-from unittest.mock import patch, MagicMock
-import pytest
+from unittest.mock import MagicMock, patch
 
 from kport.cli import handle_connections
 from kport.inspectors.base import ConnectionInfo
@@ -224,11 +221,6 @@ def test_disappearing_process_does_not_crash():
 
     # A PID that is almost certainly not a real process
     ghost_pid = 999999
-    conn = ConnectionInfo(
-        pid=ghost_pid, process_name=None, proto="tcp",
-        local_address="127.0.0.1", local_port=9999,
-        remote_address="*", remote_port=None, state="LISTEN",
-    )
 
     # Simulate the psutil inspector encountering a NoSuchProcess mid-lookup
     with patch("psutil.net_connections") as mock_conns, \

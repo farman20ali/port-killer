@@ -1,10 +1,7 @@
 import os
 import sys
-import time
-from unittest.mock import patch, MagicMock
-import pytest
+from unittest.mock import MagicMock, patch
 
-from kport.inspectors import get_inspector
 from kport.inspectors.base import ProcessInfo
 from kport.inspectors.psutil_impl import PsutilInspector
 from kport.inspectors.system_impl import FallbackInspector

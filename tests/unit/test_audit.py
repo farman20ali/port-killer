@@ -1,10 +1,10 @@
 import json
-import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
 import pytest
 
-import kport.audit as audit
+from kport import audit
 
 
 @pytest.fixture

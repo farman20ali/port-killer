@@ -1,12 +1,15 @@
-import argparse
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
+
 import pytest
 
-from kport.cli import EXIT_OK, EXIT_PERMISSION, EXIT_PORT_FREE, EXIT_PORT_DOCKER, handle_product_command
-from kport.inspectors.base import PortBinding, ProcessInfo
+pytestmark = pytest.mark.cli
+
+from kport.cli import EXIT_OK, EXIT_PORT_DOCKER, EXIT_PORT_FREE, handle_product_command
 from kport.docker_engine import DockerPortMapping
-from tests.test_commands import FakeInspector, _args
+from kport.inspectors.base import PortBinding, ProcessInfo
+from tests.conftest import FakeInspector, _args
+
 
 def _binding(port: int, pid: int = 1234, name: str = "node", laddr: str = "127.0.0.1") -> PortBinding:
     return PortBinding(
@@ -211,7 +214,7 @@ def test_diagnose_observation_not_inference(capsys):
 
     with patch("kport.diagnostics.docker_mappings_for_host_port", return_value=[]), \
          patch("kport.diagnostics.detect_process_manager", return_value=pm_info):
-        rc = handle_product_command(args, inspector)
+        handle_product_command(args, inspector)
 
     envelope = json.loads(capsys.readouterr().out)
     data = envelope["data"]

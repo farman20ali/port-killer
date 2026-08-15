@@ -23,7 +23,11 @@ import sys
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
-from .docker_engine import docker_available, docker_mappings_for_host_port, list_docker_mappings
+from .docker_engine import (
+    docker_available,
+    docker_mappings_for_host_port,
+    list_docker_mappings,
+)
 from .process_manager import detect_process_manager
 from .project import resolve_project
 from .safety import resolve_protected_sets
@@ -38,7 +42,7 @@ if TYPE_CHECKING:
 
 def diagnose_port(
     port: int,
-    inspector: "BaseInspector",
+    inspector: BaseInspector,
     proto: str = "tcp",
     config: dict[str, Any] | None = None,
     bypass_safety: bool = False,
@@ -342,6 +346,7 @@ def diagnose_port(
 def _doctor_platform_info() -> dict:
     """Return a minimal, non-sensitive snapshot of the inspection environment."""
     import platform as _plat
+
     from . import inspectors as _insp
 
     using_psutil = _insp.USING_PSUTIL
@@ -469,7 +474,7 @@ def _doctor_connection_summary(conns: list) -> dict:
 
 def _doctor_process_findings(
     bindings: list,
-    inspector: "BaseInspector",
+    inspector: BaseInspector,
     findings: list[dict],
 ) -> list[dict]:
     """Collect enriched process info for each unique listener PID."""
@@ -607,7 +612,7 @@ def _doctor_docker_section(
     return {"available": True, "daemon_accessible": True, "containers": containers_out}
 
 
-def run_doctor(inspector: "BaseInspector") -> dict[str, Any]:
+def run_doctor(inspector: BaseInspector) -> dict[str, Any]:
     """Aggregate an environment-wide diagnostic report.
 
     Returns a plain dict with keys:
@@ -716,7 +721,7 @@ def run_doctor(inspector: "BaseInspector") -> dict[str, Any]:
 # Conflict Detection
 # ---------------------------------------------------------------------------
 
-def detect_conflicts(inspector: "BaseInspector") -> list[dict[str, Any]]:
+def detect_conflicts(inspector: BaseInspector) -> list[dict[str, Any]]:
     """Detect Docker/local port conflicts.
 
     Returns a list of conflict dicts, each with keys:
@@ -751,7 +756,7 @@ def detect_conflicts(inspector: "BaseInspector") -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 def filter_connections(
-    inspector: "BaseInspector",
+    inspector: BaseInspector,
     pid: int | None = None,
     process: str | None = None,
     port: int | None = None,

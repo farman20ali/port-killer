@@ -13,14 +13,11 @@ Tests cover:
 9. Credential sanitization in remote URL
 10. Git metadata failure must not raise
 """
+from __future__ import annotations
+
 import os
-import re
-import tempfile
-import shutil
-import pytest
 
-from kport.project import resolve_project, ProjectInfo, _sanitize_remote_url
-
+from kport.project import _sanitize_remote_url, resolve_project
 
 # ---------------------------------------------------------------------------
 # Helpers to build fake Git repository structures on disk
@@ -118,7 +115,7 @@ class TestResolveProject:
     def test_worktree_git_file(self, tmp_path):
         """5. .git file (worktree) is handled correctly."""
         main_repo_path = os.path.join(str(tmp_path), "main_repo")
-        repo = _make_repo(main_repo_path, branch="main")
+        _make_repo(main_repo_path, branch="main")
 
         # Simulate worktree: .git file pointing to main_repo/.git
         main_git_dir = os.path.join(main_repo_path, ".git")
