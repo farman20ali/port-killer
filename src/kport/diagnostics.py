@@ -86,14 +86,29 @@ def diagnose_port(
     for pid in pids:
         info = inspector.get_process_info(pid)
         if info:
-            obs_processes.append(asdict(info))
+            proc_dict = asdict(info)
+            # Enrich with parent process name for lineage context
+            if info.ppid:
+                parent_info = inspector.get_process_info(info.ppid)
+                proc_dict["parent_name"] = parent_info.name if parent_info else None
+            else:
+                proc_dict["parent_name"] = None
+            obs_processes.append(proc_dict)
         else:
             obs_processes.append(
-                {"pid": pid, "name": "unknown", "exe": None, "cmdline": None, "user": None}
+                {"pid": pid, "name": "unknown", "exe": None, "cmdline": None,
+                 "user": None, "ppid": None, "parent_name": None, "cwd": None,
+                 "start_time": None}
             )
 
     obs_docker = [asdict(m) for m in docker_hits]
     obs_bindings = [asdict(b) for b in local_bindings]
+
+    # Active connections on this port (bounded to 50 to keep response tight)
+    try:
+        port_connections = filter_connections(inspector, port=port, max_results=50)
+    except Exception:
+        port_connections = []
 
     observations = {
         "port": port,
@@ -102,6 +117,7 @@ def diagnose_port(
         "bindings": obs_bindings,
         "processes": obs_processes,
         "docker_containers": obs_docker,
+        "connections": port_connections,
     }
 
     # ------------------------------------------------------------------
@@ -740,6 +756,7 @@ def filter_connections(
     process: str | None = None,
     port: int | None = None,
     state: str | None = None,
+    max_results: int = 500,
 ) -> list[dict[str, Any]]:
     """Retrieve and filter active network connections.
 
@@ -757,6 +774,9 @@ def filter_connections(
         If given, connections where local_port or remote_port equals this.
     state:
         If given, exact case-insensitive state match (e.g. ``"ESTABLISHED"``).
+    max_results:
+        Hard cap on the number of results returned. Prevents unbounded responses
+        on machines with thousands of connections. Default: 500.
     """
     conns = inspector.list_connections()
 
@@ -780,7 +800,10 @@ def filter_connections(
         s_upper = state.upper()
         conns = [c for c in conns if c.state and c.state.upper() == s_upper]
 
-    return [
+    # Apply hard cap to prevent unbounded responses
+    conns = conns[:max_results]
+
+    result = [
         {
             "pid": c.pid,
             "process_name": c.process_name,
@@ -793,3 +816,4 @@ def filter_connections(
         }
         for c in conns
     ]
+    return result

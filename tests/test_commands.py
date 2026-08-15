@@ -41,11 +41,13 @@ class FakeInspector(BaseInspector):
         bindings_on_port=None,
         process_info=None,
         listening=None,
+        connections=None,
     ):
         self._pids = pids_on_port or {}
         self._bindings = bindings_on_port or {}
         self._info = process_info or {}
         self._listening = listening or []
+        self._connections = connections or []
 
     def find_pids_on_port(self, port: int, proto: str = "tcp"):
         return self._pids.get(port, [])
@@ -58,6 +60,9 @@ class FakeInspector(BaseInspector):
 
     def list_listening(self, proto: str = "tcp"):
         return self._listening
+
+    def list_connections(self):
+        return self._connections
 
     def find_ports_by_process_name(self, name, exact=False, proto: str = "tcp"):
         return []
@@ -88,6 +93,7 @@ class FakeInspector(BaseInspector):
         debug=False,
     ):
         return True, f"PID {pid} killed"
+
 
 
 def _args(**kwargs) -> argparse.Namespace:

@@ -79,7 +79,7 @@ def test_tools_list_returns_all_tools():
     )
     assert len(responses) == 1
     tool_names = {t["name"] for t in responses[0]["result"]["tools"]}
-    assert tool_names == {"list_ports", "inspect_port", "kill_port", "diagnose_port", "conflicts", "doctor"}
+    assert tool_names == {"list_ports", "inspect_port", "kill_port", "diagnose_port", "conflicts", "doctor", "list_connections"}
 
 
 def test_tools_have_required_schema_fields():

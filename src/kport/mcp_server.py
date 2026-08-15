@@ -26,6 +26,7 @@ from .safety import check_safety_policy, load_kport_config
 from .diagnostics import (
     diagnose_port as _diagnose_port_data,
     detect_conflicts as _detect_conflicts_data,
+    filter_connections as _filter_connections_data,
     run_doctor as _run_doctor_data,
 )
 
@@ -112,6 +113,45 @@ TOOLS = [
                 }
             },
             "required": ["port"],
+        },
+    },
+    {
+        "name": "list_connections",
+        "description": (
+            "Lists active network connections on the host, optionally filtered by PID, "
+            "process name, port, or connection state. Results are bounded by max_results "
+            "(default 500). If the returned count equals max_results the full set may be "
+            "larger — narrow the filter or reduce max_results to paginate."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pid": {
+                    "type": "integer",
+                    "description": "Only return connections owned by this PID.",
+                },
+                "process": {
+                    "type": "string",
+                    "description": "Case-insensitive substring match on process name.",
+                },
+                "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "description": "Return connections where local_port or remote_port equals this value.",
+                },
+                "state": {
+                    "type": "string",
+                    "description": "Exact case-insensitive connection state (e.g. ESTABLISHED, LISTEN, TIME_WAIT).",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2000,
+                    "default": 500,
+                    "description": "Hard cap on returned connections. Defaults to 500.",
+                },
+            },
         },
     },
     {
@@ -286,6 +326,33 @@ def handle_kill_port(
     return {"success": ok, "type": "local", "pids_targeted": pids, "message": msg}
 
 
+def handle_list_connections(
+    inspector,
+    pid: int | None = None,
+    process: str | None = None,
+    port: int | None = None,
+    state: str | None = None,
+    max_results: int = 500,
+) -> dict[str, Any]:
+    """Execute list_connections tool request."""
+    max_results = max(1, min(max_results, 2000))  # clamp to schema bounds
+    conns = _filter_connections_data(
+        inspector,
+        pid=pid,
+        process=process,
+        port=port,
+        state=state,
+        max_results=max_results,
+    )
+    return {
+        "connections": conns,
+        "count": len(conns),
+        # If we hit the cap exactly the full set may be larger — caller should
+        # narrow their filter rather than assume this is the complete set.
+        "capped": len(conns) >= max_results,
+    }
+
+
 def handle_diagnose_port(inspector, port: int, proto: str = "tcp") -> dict[str, Any]:
     """Execute diagnose_port tool request."""
     if not (1 <= port <= 65535):
@@ -358,6 +425,15 @@ def run_mcp_server() -> None:
                         result_data = handle_kill_port(
                             inspector, target_port, force_flag, docker_act
                         )
+                    elif tool_name == "list_connections":
+                        result_data = handle_list_connections(
+                            inspector,
+                            pid=arguments.get("pid"),
+                            process=arguments.get("process"),
+                            port=arguments.get("port"),
+                            state=arguments.get("state"),
+                            max_results=int(arguments.get("max_results", 500)),
+                        )
                     elif tool_name == "diagnose_port":
                         target_port = int(arguments.get("port"))
                         proto_val = str(arguments.get("proto", "tcp"))
@@ -379,9 +455,11 @@ def run_mcp_server() -> None:
                                     "text": json.dumps(result_data, indent=2),
                                 }
                             ],
-                            "isError": not result_data.get("success", True)
-                            if "success" in result_data
-                            else False,
+                            "isError": (
+                                not result_data.get("success", True)
+                                if isinstance(result_data, dict) and "success" in result_data
+                                else False
+                            ),
                         },
                     }
                 except Exception as ex:  # noqa: BLE001 - top-level tool execution handler (intentional)
