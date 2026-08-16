@@ -14,8 +14,9 @@ Major highlights include:
 1. **Diagnostic Intelligence (`kport diagnose` / `diagnose_port` MCP)**: Rich structured analysis providing observations, root-cause inferences, operational risk warnings, and actionable remediation recommendations.
 2. **Environment Diagnostics (`kport doctor` / `doctor` MCP)**: Aggregated health check reporting platform capabilities, backend status (psutil/fallback), listening sockets, active connection summary, process metadata, and Docker mappings.
 3. **Active Connection Inspection (`kport connections` / `list_connections` MCP)**: High-performance connection enumeration and filtering across TCP/UDP with configurable result bounding.
-4. **Centralized Safety Policy (`kport.safety`)**: Consolidated safety checks and protected resource lists into a single source of truth across CLI, TUI, and MCP, featuring additive configuration semantics.
-5. **Deep Context & Lineage**: Enriched process inspection with parent process lineage (`parent_name`, `ppid`), Git project/worktree resolution with credential sanitization, and Windows Service detection.
+4. **Managed Service Stop (`kport stop-service` / `stop_service` MCP)**: Cleanly stop process-manager controlled services (systemd, PM2, supervisord, Windows Services) occupying a port — with optional `--force` escalation (CLI only) when the service stop leaves the port occupied.
+5. **Centralized Safety Policy (`kport.safety`)**: Consolidated safety checks and protected resource lists into a single source of truth across CLI, TUI, and MCP, featuring additive configuration semantics.
+6. **Deep Context & Lineage**: Enriched process inspection with parent process lineage (`parent_name`, `ppid`), Git project/worktree resolution with credential sanitization, and Windows Service detection.
 
 ---
 
@@ -41,15 +42,41 @@ A full environment-wide audit tool:
 - Hard-capped results (`max_results`, default 500) prevent payload explosion on busy development machines.
 - Clean JSON output and table presentation without internal sentinel pollution.
 
-### 4. Docker Conflict Detection (`conflicts` MCP)
+### 4. Managed Service Stop (`kport stop-service` / `stop_service`)
+
+Safely stops a process-manager controlled service that is occupying a port, without raw process termination.
+
+```bash
+# Stop whatever service manager owns port 8080
+kport stop-service 8080
+
+# Preview the stop command without running it
+kport stop-service 8080 --dry-run
+
+# Escalate to process kill if service stop leaves port occupied (CLI only)
+kport stop-service 8080 --force
+
+# Skip confirmation and output JSON
+kport stop-service 8080 --yes --json
+```
+
+**Supported managers:** `systemd` (`systemctl stop`), `PM2` (`pm2 stop`), `supervisord` (`supervisorctl stop`), Windows Services (`Stop-Service`).
+
+**Safety invariants:**
+- Safety policy is always enforced before acting (protected ports/processes are blocked).
+- A port with **no recognized process manager is rejected** — even with `--force`. Use `kport kill` for unmanaged processes.
+- `--force` escalation **re-discovers** the current port owner and **re-runs the safety policy** before killing. It does not blindly kill.
+- The MCP `stop_service` tool has **no `force` parameter** — force escalation is CLI-only.
+
+### 5. Docker Conflict Detection (`conflicts` MCP)
 - Detects host ports mapped to Docker containers that are concurrently occupied or bound by native host processes.
 
-### 5. Centralized Safety Policy (`src/kport/safety.py`)
+### 6. Centralized Safety Policy (`src/kport/safety.py`)
 - Single source of truth for safety enforcement across CLI, TUI (`interactive.py`), and MCP (`mcp_server.py`).
 - **Additive Configuration:** Configured `protected_ports` and `protected_processes` now extend the default safety shield rather than replacing it.
-- **MCP Safety Guarantee:** MCP server strictly enforces safety policy on `kill_port` with no dynamic bypass.
+- **MCP Safety Guarantee:** MCP server strictly enforces safety policy on `kill_port` and `stop_service` with no dynamic bypass.
 
-### 6. Process Lineage & Project Detection
+### 7. Process Lineage & Project Detection
 - Enriched `ProcessInfo` with `ppid`, `cwd`, `start_time`, and parent process name (`parent_name`).
 - Windows Service resolution via `tasklist /SVC`.
 - Native Git root, branch, worktree, and credential-sanitized remote URL resolution via `project.py`.
@@ -58,7 +85,7 @@ A full environment-wide audit tool:
 
 ## 🤖 MCP Server Capabilities
 
-kport's Model Context Protocol (MCP) server provides 7 native tools for AI coding assistants:
+kport's Model Context Protocol (MCP) server provides 8 native tools for AI coding assistants:
 
 | Tool | Purpose | Read-Only | Safety Protected |
 |---|---|---|---|
@@ -69,6 +96,10 @@ kport's Model Context Protocol (MCP) server provides 7 native tools for AI codin
 | `list_connections` | Enumerate and filter active network connections | Yes | N/A |
 | `conflicts` | Detect Docker vs native port collisions | Yes | N/A |
 | `doctor` | Environment-wide health check and listener summary | Yes | N/A |
+| `stop_service` | Stop a process-manager controlled service by port | No | Enforced |
+
+All tools carry MCP `annotations` (`readOnlyHint` / `destructiveHint`) for AI assistant tooling awareness.  
+Protocol version is locked to `"2024-11-05"`.
 
 ---
 
@@ -76,17 +107,42 @@ kport's Model Context Protocol (MCP) server provides 7 native tools for AI codin
 
 | Test Module | Tests | Status |
 |---|---|---|
-| `test_audit.py` | 10 | ✅ Passed |
+| `test_audit.py` | 11 | ✅ Passed |
 | `test_cli.py` | 13 | ✅ Passed |
+| `test_cli_stop_service.py` | 10 | ✅ Passed |
 | `test_commands.py` | 21 | ✅ Passed |
 | `test_connections.py` | 8 | ✅ Passed |
 | `test_diagnose.py` | 13 | ✅ Passed |
 | `test_doctor.py` | 20 | ✅ Passed |
 | `test_enrichment.py` | 5 | ✅ Passed |
-| `test_mcp.py` | 14 | ✅ Passed |
-| `test_new_features.py` | 38 (2 skipped) | ✅ Passed |
-| `test_phase4.py` | 23 | ✅ Passed |
+| `test_mcp_server.py` | 8 | ✅ Passed |
+| `test_mcp_safety.py` | 9 | ✅ Passed |
+| `test_mcp_stop_service.py` | 13 | ✅ Passed |
+| `test_mcp_tools.py` | 19 | ✅ Passed |
 | `test_process_manager_win.py` | 5 | ✅ Passed |
 | `test_project.py` | 14 | ✅ Passed |
 | `test_publish_pypi.py` | 1 | ✅ Passed |
-| **Total** | **193 passed, 2 skipped** | ✅ |
+| `test_service_actions.py` | 12 | ✅ Passed |
+| *(others)* | ~55 | ✅ Passed |
+| **Total** | **237 passed, 2 skipped** | ✅ |
+
+---
+
+## 🏗️ Architecture Changes
+
+### New modules
+- **`src/kport/service_actions.py`** — Pure domain layer for managed service stop execution. No CLI/MCP imports; returns `ServiceActionResult`. Mockable `subprocess.run`.
+
+### Modified modules
+- **`src/kport/audit.py`** — Added `log_service_stop()` for NDJSON audit trail of service stop actions.
+- **`src/kport/cli.py`** — Added `stop-service` subcommand with `handle_stop_service` orchestrator. Force escalation logic (re-inspect → re-safety-check → kill) is CLI-only.
+- **`src/kport/mcp_server.py`** — Added `stop_service` tool to TOOLS catalog (with `destructiveHint` annotation); implemented `handle_stop_service` handler; added `readOnlyHint`/`destructiveHint` annotations to all 8 tools.
+
+---
+
+## ⚠️ Known Limitations
+
+- `--force` process-kill escalation is **CLI-only**. The MCP `stop_service` tool will return `requires_force: true` in the response when the port remains occupied after service stop; the calling agent should inform the user to run `kport kill <port>` manually.
+- macOS `launchd` is not yet a supported manager (deferred to Phase 5.1).
+- TUI `[S]` stop-service action is deferred to Phase 5.1.
+- Framework detection and dependency-graph analysis are out of scope for this release.
