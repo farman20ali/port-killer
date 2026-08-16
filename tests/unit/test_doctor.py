@@ -420,7 +420,7 @@ def test_json_schema_complete(capsys):
     """JSON output must contain all required top-level data keys."""
     inspector = FakeInspectorWithConnections()
     args = _doctor_args(json=True)
-    with patch("kport.cli.docker_available", return_value=False):
+    with patch("kport.cli_commands.docker_available", return_value=False):
         handle_doctor(args, inspector)
     out = capsys.readouterr().out
     env = json.loads(out)
@@ -437,7 +437,7 @@ def test_json_connection_summary_keys(capsys):
     """connection_summary must contain all documented state keys."""
     inspector = FakeInspectorWithConnections(connections=[_conn("ESTABLISHED")])
     args = _doctor_args(json=True)
-    with patch("kport.cli.docker_available", return_value=False):
+    with patch("kport.cli_commands.docker_available", return_value=False):
         handle_doctor(args, inspector)
     out = capsys.readouterr().out
     cs = json.loads(out)["data"]["connection_summary"]
@@ -449,7 +449,7 @@ def test_json_platform_keys(capsys):
     """platform dict must contain os and inspector_backend."""
     inspector = FakeInspectorWithConnections()
     args = _doctor_args(json=True)
-    with patch("kport.cli.docker_available", return_value=False):
+    with patch("kport.cli_commands.docker_available", return_value=False):
         handle_doctor(args, inspector)
     out = capsys.readouterr().out
     platform = json.loads(out)["data"]["platform"]
@@ -468,7 +468,7 @@ def test_listener_failure_does_not_crash(capsys):
         RuntimeError("Permission denied")
     )
     args = _doctor_args(json=True)
-    with patch("kport.cli.docker_available", return_value=False):
+    with patch("kport.cli_commands.docker_available", return_value=False):
         rc = handle_doctor(args, inspector)
     assert rc == EXIT_OK
     out = capsys.readouterr().out
@@ -485,7 +485,7 @@ def test_connection_failure_does_not_crash(capsys):
         RuntimeError("Access denied")
     )
     args = _doctor_args(json=True)
-    with patch("kport.cli.docker_available", return_value=False):
+    with patch("kport.cli_commands.docker_available", return_value=False):
         rc = handle_doctor(args, inspector)
     assert rc == EXIT_OK
     out = capsys.readouterr().out
@@ -502,9 +502,9 @@ def test_project_failure_does_not_crash(capsys):
         process_info={1234: pi},
     )
     args = _doctor_args(json=True)
-    with patch("kport.cli.docker_available", return_value=False), \
-         patch("kport.cli.detect_process_manager", return_value=None), \
-         patch("kport.cli.resolve_project", side_effect=OSError("disk error")):
+    with patch("kport.cli_commands.docker_available", return_value=False), \
+         patch("kport.cli_commands.detect_process_manager", return_value=None), \
+         patch("kport.cli_commands.resolve_project", side_effect=OSError("disk error")):
         rc = handle_doctor(args, inspector)
     assert rc == EXIT_OK
 
@@ -518,9 +518,9 @@ def test_process_info_failure_does_not_crash(capsys):
         PermissionError("access denied")
     )
     args = _doctor_args(json=True)
-    with patch("kport.cli.docker_available", return_value=False), \
-         patch("kport.cli.detect_process_manager", return_value=None), \
-         patch("kport.cli.resolve_project", return_value=None):
+    with patch("kport.cli_commands.docker_available", return_value=False), \
+         patch("kport.cli_commands.detect_process_manager", return_value=None), \
+         patch("kport.cli_commands.resolve_project", return_value=None):
         rc = handle_doctor(args, inspector)
     assert rc == EXIT_OK
     # process entry must still exist with pid

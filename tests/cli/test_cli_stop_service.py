@@ -40,7 +40,7 @@ def test_stop_service_free_port(capsys):
     inspector = FakeInspector()
     args = _args(command="stop-service", port=8080)
     
-    with patch("kport.cli._diagnose_port_data") as mock_diag:
+    with patch("kport.cli_commands._diagnose_port_data") as mock_diag:
         mock_diag.return_value = {"blocked": False}
         rc = handle_product_command(args, inspector)
         
@@ -54,7 +54,7 @@ def test_stop_service_free_port_json(capsys):
     inspector = FakeInspector()
     args = _args(command="stop-service", port=8080, json=True)
     
-    with patch("kport.cli._diagnose_port_data") as mock_diag:
+    with patch("kport.cli_commands._diagnose_port_data") as mock_diag:
         mock_diag.return_value = {"blocked": False}
         rc = handle_product_command(args, inspector)
         
@@ -75,7 +75,7 @@ def test_stop_service_no_manager_fails(capsys):
         "blocked": True,
         "inferences": []
     }
-    with patch("kport.cli._diagnose_port_data", return_value=diag_data):
+    with patch("kport.cli_commands._diagnose_port_data", return_value=diag_data):
         rc = handle_product_command(args, inspector)
         
     assert rc == EXIT_INVALID_INPUT
@@ -95,7 +95,7 @@ def test_stop_service_safety_policy_blocks(capsys):
     }
     
     # safety check blocks
-    with patch("kport.cli._diagnose_port_data", return_value=diag_data):
+    with patch("kport.cli_commands._diagnose_port_data", return_value=diag_data):
         rc = handle_product_command(args, inspector)
         
     assert rc == EXIT_PERMISSION
@@ -113,9 +113,9 @@ def test_stop_service_cancelled_by_user(capsys):
         "inferences": [{"type": "process_manager", "manager": "systemd", "name": "my-service"}]
     }
     
-    with patch("kport.cli._diagnose_port_data", return_value=diag_data), \
-         patch("kport.cli.check_safety_policy") as mock_safety, \
-         patch("kport.cli.confirm_prompt", return_value=False) as mock_prompt:
+    with patch("kport.cli_commands._diagnose_port_data", return_value=diag_data), \
+         patch("kport.cli_commands.check_safety_policy") as mock_safety, \
+         patch("kport.cli_commands.confirm_prompt", return_value=False) as mock_prompt:
         mock_safety.return_value.allowed = True
         rc = handle_product_command(args, inspector)
         
@@ -135,9 +135,9 @@ def test_stop_service_dry_run_only_displays(capsys):
         "inferences": [{"type": "process_manager", "manager": "systemd", "name": "my-service"}]
     }
     
-    with patch("kport.cli._diagnose_port_data", return_value=diag_data), \
-         patch("kport.cli.check_safety_policy") as mock_safety, \
-         patch("kport.cli.stop_service") as mock_stop:
+    with patch("kport.cli_commands._diagnose_port_data", return_value=diag_data), \
+         patch("kport.cli_commands.check_safety_policy") as mock_safety, \
+         patch("kport.cli_commands.stop_service") as mock_stop:
         mock_safety.return_value.allowed = True
         mock_stop.return_value = ServiceActionResult(
             success=True,
@@ -172,10 +172,10 @@ def test_stop_service_success_and_verified_free(capsys):
         "inferences": [{"type": "process_manager", "manager": "systemd", "name": "nginx.service"}]
     }
     
-    with patch("kport.cli._diagnose_port_data", return_value=diag_data), \
-         patch("kport.cli.check_safety_policy") as mock_safety, \
-         patch("kport.cli.stop_service") as mock_stop, \
-         patch("kport.cli._poll_until_free", return_value=True) as mock_poll, \
+    with patch("kport.cli_commands._diagnose_port_data", return_value=diag_data), \
+         patch("kport.cli_commands.check_safety_policy") as mock_safety, \
+         patch("kport.cli_commands.stop_service") as mock_stop, \
+         patch("kport.cli_commands._poll_until_free", return_value=True) as mock_poll, \
          patch("kport.audit.log_service_stop") as mock_audit:
         mock_safety.return_value.allowed = True
         mock_stop.return_value = ServiceActionResult(
@@ -206,10 +206,10 @@ def test_stop_service_success_but_still_occupied_without_force(capsys):
         "inferences": [{"type": "process_manager", "manager": "systemd", "name": "nginx.service"}]
     }
     
-    with patch("kport.cli._diagnose_port_data", return_value=diag_data), \
-         patch("kport.cli.check_safety_policy") as mock_safety, \
-         patch("kport.cli.stop_service") as mock_stop, \
-         patch("kport.cli._poll_until_free", return_value=False) as mock_poll, \
+    with patch("kport.cli_commands._diagnose_port_data", return_value=diag_data), \
+         patch("kport.cli_commands.check_safety_policy") as mock_safety, \
+         patch("kport.cli_commands.stop_service") as mock_stop, \
+         patch("kport.cli_commands._poll_until_free", return_value=False) as mock_poll, \
          patch("kport.audit.log_service_stop") as mock_audit:
         mock_safety.return_value.allowed = True
         mock_stop.return_value = ServiceActionResult(
@@ -241,10 +241,10 @@ def test_stop_service_escalation_force_success(capsys):
         "inferences": [{"type": "process_manager", "manager": "systemd", "name": "nginx.service"}]
     }
     
-    with patch("kport.cli._diagnose_port_data", return_value=diag_data), \
-         patch("kport.cli.check_safety_policy") as mock_safety, \
-         patch("kport.cli.stop_service") as mock_stop, \
-         patch("kport.cli._poll_until_free") as mock_poll, \
+    with patch("kport.cli_commands._diagnose_port_data", return_value=diag_data), \
+         patch("kport.cli_commands.check_safety_policy") as mock_safety, \
+         patch("kport.cli_commands.stop_service") as mock_stop, \
+         patch("kport.cli_commands._poll_until_free") as mock_poll, \
          patch("kport.audit.log_service_stop") as mock_audit_stop, \
          patch("kport.audit.log_kill_port") as mock_audit_kill:
          
@@ -295,10 +295,10 @@ def test_stop_service_escalation_force_blocked_by_safety(capsys):
         "inferences": [{"type": "process_manager", "manager": "systemd", "name": "nginx.service"}]
     }
     
-    with patch("kport.cli._diagnose_port_data", return_value=diag_data), \
-         patch("kport.cli.check_safety_policy") as mock_safety, \
-         patch("kport.cli.stop_service") as mock_stop, \
-         patch("kport.cli._poll_until_free") as mock_poll:
+    with patch("kport.cli_commands._diagnose_port_data", return_value=diag_data), \
+         patch("kport.cli_commands.check_safety_policy") as mock_safety, \
+         patch("kport.cli_commands.stop_service") as mock_stop, \
+         patch("kport.cli_commands._poll_until_free") as mock_poll:
          
         # safety check 1 allows, safety check 2 blocks
         mock_safety.side_effect = [
