@@ -363,3 +363,35 @@ class TestResolveProject:
         assert info.manifest_type == "package.json"
         assert info.framework == "Next.js"
 
+    def test_resolve_malformed_package_json(self, tmp_path):
+        """Verify malformed JSON in package.json does not raise exception and falls back."""
+        pkg_file = tmp_path / "package.json"
+        # Write invalid JSON content
+        pkg_file.write_text("{invalid json: no quotes")
+        info = resolve_project(str(tmp_path))
+        # Should still resolve project metadata (using fallback project name)
+        assert info is not None
+        assert info.project_name == os.path.basename(str(tmp_path))
+        assert info.manifest_type == "package.json"
+        assert info.framework is None
+
+    def test_resolve_unreadable_manifest(self, tmp_path):
+        """Verify unreadable package.json does not crash and falls back gracefully.
+
+        Skipped on Windows: chmod 0o000 does not restrict reads on Windows filesystems.
+        """
+        import sys
+        if sys.platform == "win32":
+            import pytest
+            pytest.skip("chmod permission restriction not enforced on Windows")
+        pkg_file = tmp_path / "package.json"
+        pkg_file.write_text('{"name": "unreadable"}')
+        try:
+            os.chmod(pkg_file, 0o000)
+            info = resolve_project(str(tmp_path))
+            assert info is not None
+            # Fallback name matches folder name since file was unreadable
+            assert info.project_name == os.path.basename(str(tmp_path))
+            assert info.framework is None
+        finally:
+            os.chmod(pkg_file, 0o644)
