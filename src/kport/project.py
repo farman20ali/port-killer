@@ -30,16 +30,19 @@ from dataclasses import dataclass
 
 @dataclass
 class ProjectInfo:
-    """Observed Git project metadata resolved from a filesystem path.
+    """Observed Git project metadata and manifest resolved from a filesystem path.
 
-    All fields except git_root are optional — set to None if unavailable.
+    All fields are optional — set to None if unavailable.
     Fields are OS facts (observations), not inferences.
     """
-    git_root: str
+    git_root: str | None = None
     project_name: str | None = None
     branch: str | None = None
     remote_origin: str | None = None   # always credential-sanitized
     is_worktree: bool = False
+    manifest_path: str | None = None
+    manifest_type: str | None = None
+    framework: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -206,15 +209,251 @@ def _read_remote_origin(git_path: str, is_worktree: bool, git_file_path: str) ->
 # Public resolver
 # ---------------------------------------------------------------------------
 
+import json
+
+
+def _detect_framework_node(data: dict) -> str | None:
+    deps = data.get("dependencies", {})
+    dev_deps = data.get("devDependencies", {})
+    all_deps = {**deps, **dev_deps}
+    if "next" in all_deps:
+        return "Next.js"
+    if "react" in all_deps:
+        return "React"
+    if "vue" in all_deps:
+        return "Vue"
+    if "nuxt" in all_deps:
+        return "Nuxt"
+    if "svelte" in all_deps:
+        return "Svelte"
+    if "express" in all_deps:
+        return "Express"
+    if "@nestjs/core" in all_deps:
+        return "NestJS"
+    if "vite" in all_deps:
+        return "Vite"
+    return None
+
+
+def _parse_package_json(path: str) -> tuple[str | None, str | None]:
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            data = json.load(f)
+        name = data.get("name")
+        framework = _detect_framework_node(data)
+        return name, framework
+    except Exception:
+        return None, None
+
+
+def _parse_pyproject_toml(path: str) -> tuple[str | None, str | None]:
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+        name_match = re.search(r'^\s*name\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
+        name = name_match.group(1) if name_match else None
+        
+        framework = None
+        content_lower = content.lower()
+        if "django" in content_lower:
+            framework = "Django"
+        elif "fastapi" in content_lower:
+            framework = "FastAPI"
+        elif "flask" in content_lower:
+            framework = "Flask"
+        elif "streamlit" in content_lower:
+            framework = "Streamlit"
+        return name, framework
+    except Exception:
+        return None, None
+
+
+def _parse_requirements_txt(path: str) -> tuple[str | None, str | None]:
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read().lower()
+        framework = None
+        if "django" in content:
+            framework = "Django"
+        elif "fastapi" in content:
+            framework = "FastAPI"
+        elif "flask" in content:
+            framework = "Flask"
+        elif "streamlit" in content:
+            framework = "Streamlit"
+        return None, framework
+    except Exception:
+        return None, None
+
+
+def _parse_go_mod(path: str) -> tuple[str | None, str | None]:
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+        mod_match = re.search(r'^module\s+(\S+)', content, re.MULTILINE)
+        name = None
+        if mod_match:
+            name = mod_match.group(1).split("/")[-1]
+        
+        framework = None
+        content_lower = content.lower()
+        if "github.com/gin-gonic/gin" in content_lower:
+            framework = "Gin"
+        elif "github.com/gofiber/fiber" in content_lower:
+            framework = "Fiber"
+        elif "github.com/astaxie/beego" in content_lower:
+            framework = "Beego"
+        elif "github.com/labstack/echo" in content_lower:
+            framework = "Echo"
+        return name, framework
+    except Exception:
+        return None, None
+
+
+def _parse_cargo_toml(path: str) -> tuple[str | None, str | None]:
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+        name_match = re.search(r'^\s*name\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
+        name = name_match.group(1) if name_match else None
+        
+        framework = None
+        content_lower = content.lower()
+        if "axum" in content_lower:
+            framework = "Axum"
+        elif "actix-web" in content_lower:
+            framework = "Actix Web"
+        elif "rocket" in content_lower:
+            framework = "Rocket"
+        elif "warp" in content_lower:
+            framework = "Warp"
+        return name, framework
+    except Exception:
+        return None, None
+
+
+def _parse_pom_xml(path: str) -> tuple[str | None, str | None]:
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+        art_match = re.search(r'<artifactId>([^<]+)</artifactId>', content)
+        name = art_match.group(1) if art_match else None
+        
+        framework = None
+        content_lower = content.lower()
+        if "spring-boot" in content_lower or "springboot" in content_lower or "springframework.boot" in content_lower:
+            framework = "Spring Boot"
+        elif "quarkus" in content_lower:
+            framework = "Quarkus"
+        elif "micronaut" in content_lower:
+            framework = "Micronaut"
+        return name, framework
+    except Exception:
+        return None, None
+
+
+def _parse_gradle(path: str) -> tuple[str | None, str | None]:
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+        name_match = re.search(r"rootProject\.name\s*=\s*['\"]([^'\"]+)['\"]", content)
+        name = name_match.group(1) if name_match else None
+        
+        framework = None
+        content_lower = content.lower()
+        if "spring-boot" in content_lower or "springboot" in content_lower or "springframework.boot" in content_lower:
+            framework = "Spring Boot"
+        elif "quarkus" in content_lower:
+            framework = "Quarkus"
+        elif "micronaut" in content_lower:
+            framework = "Micronaut"
+        return name, framework
+    except Exception:
+        return None, None
+
+
+def _parse_csproj(path: str) -> tuple[str | None, str | None]:
+    try:
+        name = os.path.basename(path)
+        if name.lower().endswith(".csproj"):
+            name = name[:-7]
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+        framework = None
+        if "Microsoft.NET.Sdk.Web" in content:
+            framework = "ASP.NET Core"
+        return name, framework
+    except Exception:
+        return None, None
+
+
+def _find_manifest_and_parse(
+    cwd: str, git_root: str | None
+) -> tuple[str | None, str | None, str | None, str | None] | None:
+    """Walk up the directory tree and find the first matching manifest.
+    
+    Returns (manifest_path, manifest_type, manifest_project_name, framework) or None.
+    """
+    current = os.path.abspath(cwd)
+    stop_dir = os.path.abspath(git_root) if git_root else None
+    
+    levels_limit = 5
+    level = 0
+    
+    while True:
+        manifests = [
+            ("package.json", _parse_package_json),
+            ("pyproject.toml", _parse_pyproject_toml),
+            ("requirements.txt", _parse_requirements_txt),
+            ("go.mod", _parse_go_mod),
+            ("Cargo.toml", _parse_cargo_toml),
+            ("pom.xml", _parse_pom_xml),
+            ("build.gradle", _parse_gradle),
+            ("build.gradle.kts", _parse_gradle),
+        ]
+        
+        csproj_files = []
+        try:
+            if os.path.isdir(current):
+                csproj_files = [f for f in os.listdir(current) if f.lower().endswith(".csproj")]
+        except Exception:
+            pass
+            
+        for csproj in csproj_files:
+            manifests.append((csproj, _parse_csproj))
+            
+        for fname, parser in manifests:
+            path = os.path.join(current, fname)
+            if os.path.isfile(path):
+                name, framework = parser(path)
+                return path, fname, name, framework
+                
+        if stop_dir and current == stop_dir:
+            break
+            
+        parent = os.path.dirname(current)
+        if parent == current:
+            break
+            
+        if not stop_dir:
+            level += 1
+            if level >= levels_limit:
+                break
+                
+        current = parent
+        
+    return None
+
+
 def resolve_project(cwd: str | None) -> ProjectInfo | None:
-    """Resolve Git project metadata from a working directory path.
+    """Resolve Git project and/or manifest metadata from a working directory path.
 
     Args:
         cwd: Filesystem path to start the search from (process cwd, or any path).
              May be None, a deleted path, or an inaccessible path.
 
     Returns:
-        ProjectInfo if a Git repository root was found, None otherwise.
+        ProjectInfo if a Git repository or manifest was found, None otherwise.
         Never raises.
     """
     if not cwd:
@@ -227,34 +466,63 @@ def resolve_project(cwd: str | None) -> ProjectInfo | None:
     except (OSError, ValueError):
         return None
 
+    git_res = None
     try:
-        result = _find_git_dir(cwd)
+        git_res = _find_git_dir(cwd)
     except Exception:
-        return None
+        pass
 
-    if result is None:
-        return None
-
-    git_root, git_path, is_worktree = result
-    project_name = os.path.basename(git_root) or None
-
+    git_root = None
+    git_path = None
+    is_worktree = False
+    project_name = None
     branch = None
+    remote_origin = None
+
+    if git_res is not None:
+        git_root, git_path, is_worktree = git_res
+        project_name = os.path.basename(git_root) or None
+        try:
+            branch = _read_branch(git_path, is_worktree, git_path)
+        except Exception:
+            pass
+        try:
+            remote_origin = _read_remote_origin(git_path, is_worktree, git_path)
+        except Exception:
+            pass
+
+    # Manifest resolution
+    manifest_path = None
+    manifest_type = None
+    manifest_name = None
+    framework = None
+    
     try:
-        branch = _read_branch(git_path, is_worktree, git_path)
+        manifest_res = _find_manifest_and_parse(cwd, git_root)
+        if manifest_res:
+            manifest_path, manifest_type, manifest_name, framework = manifest_res
     except Exception:
         pass
 
-    remote_origin = None
-    try:
-        # git_path is always the .git directory (or .git file for worktrees)
-        remote_origin = _read_remote_origin(git_path, is_worktree, git_path)
-    except Exception:
-        pass
+    # If we found neither a git repo nor a project manifest, return None
+    if git_root is None and manifest_path is None:
+        return None
+
+    # Use manifest name as project name if available, fallback to path basenames
+    effective_project_name = manifest_name or project_name
+    if not effective_project_name:
+        if manifest_path:
+            effective_project_name = os.path.basename(os.path.dirname(manifest_path)) or None
+        elif git_root:
+            effective_project_name = os.path.basename(git_root) or None
 
     return ProjectInfo(
         git_root=git_root,
-        project_name=project_name,
+        project_name=effective_project_name,
         branch=branch,
         remote_origin=remote_origin,
         is_worktree=is_worktree,
+        manifest_path=manifest_path,
+        manifest_type=manifest_type,
+        framework=framework,
     )

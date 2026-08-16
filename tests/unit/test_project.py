@@ -195,3 +195,171 @@ class TestResolveProject:
             assert os.path.isdir(info.git_root)
             # branch may be None if detached HEAD but should not raise
         # No assertion on existence — CI may checkout without .git
+
+    def test_resolve_package_json_nextjs(self, tmp_path):
+        """Verify package.json parses name and detects Next.js framework."""
+        import json
+        pkg_data = {
+            "name": "next-app",
+            "dependencies": {
+                "next": "^13.0.0",
+                "react": "^18.0.0"
+            }
+        }
+        pkg_file = tmp_path / "package.json"
+        with open(pkg_file, "w") as f:
+            json.dump(pkg_data, f)
+        
+        info = resolve_project(str(tmp_path))
+        assert info is not None
+        assert info.project_name == "next-app"
+        assert info.manifest_type == "package.json"
+        assert info.framework == "Next.js"
+        assert info.git_root is None
+
+    def test_resolve_package_json_react_vite(self, tmp_path):
+        """Verify package.json parses name and detects React/Vite."""
+        import json
+        pkg_data = {
+            "name": "react-app",
+            "dependencies": {
+                "react": "^18.0.0"
+            },
+            "devDependencies": {
+                "vite": "^4.0.0"
+            }
+        }
+        pkg_file = tmp_path / "package.json"
+        with open(pkg_file, "w") as f:
+            json.dump(pkg_data, f)
+        
+        info = resolve_project(str(tmp_path))
+        assert info is not None
+        assert info.project_name == "react-app"
+        assert info.framework == "React"
+
+    def test_resolve_pyproject_toml_fastapi(self, tmp_path):
+        """Verify pyproject.toml parses name and detects FastAPI."""
+        toml_content = (
+            "[project]\n"
+            "name = \"api-service\"\n"
+            "dependencies = [\n"
+            "    \"fastapi>=0.90.0\"\n"
+            "]\n"
+        )
+        (tmp_path / "pyproject.toml").write_text(toml_content)
+        info = resolve_project(str(tmp_path))
+        assert info is not None
+        assert info.project_name == "api-service"
+        assert info.manifest_type == "pyproject.toml"
+        assert info.framework == "FastAPI"
+
+    def test_resolve_requirements_txt_django(self, tmp_path):
+        """Verify requirements.txt detects Django."""
+        req_content = "Django==4.1.0\ngunicorn>=20.0.0\n"
+        (tmp_path / "requirements.txt").write_text(req_content)
+        info = resolve_project(str(tmp_path))
+        assert info is not None
+        assert info.project_name == os.path.basename(str(tmp_path))
+        assert info.manifest_type == "requirements.txt"
+        assert info.framework == "Django"
+
+    def test_resolve_go_mod_gin(self, tmp_path):
+        """Verify go.mod module name parse and Gin framework detection."""
+        go_mod_content = (
+            "module github.com/user/go-backend\n\n"
+            "go 1.18\n\n"
+            "require github.com/gin-gonic/gin v1.8.0\n"
+        )
+        (tmp_path / "go.mod").write_text(go_mod_content)
+        info = resolve_project(str(tmp_path))
+        assert info is not None
+        assert info.project_name == "go-backend"
+        assert info.manifest_type == "go.mod"
+        assert info.framework == "Gin"
+
+    def test_resolve_cargo_toml_axum(self, tmp_path):
+        """Verify Cargo.toml name parse and Axum framework detection."""
+        cargo_content = (
+            "[package]\n"
+            "name = \"rust-api\"\n"
+            "version = \"0.1.0\"\n\n"
+            "[dependencies]\n"
+            "axum = \"0.6\"\n"
+        )
+        (tmp_path / "Cargo.toml").write_text(cargo_content)
+        info = resolve_project(str(tmp_path))
+        assert info is not None
+        assert info.project_name == "rust-api"
+        assert info.framework == "Axum"
+
+    def test_resolve_pom_xml_quarkus(self, tmp_path):
+        """Verify pom.xml artifactId parse and Quarkus framework detection."""
+        pom_content = (
+            "<project>\n"
+            "  <artifactId>payment-microservice</artifactId>\n"
+            "  <dependencies>\n"
+            "    <dependency>\n"
+            "      <groupId>io.quarkus</groupId>\n"
+            "      <artifactId>quarkus-arc</artifactId>\n"
+            "    </dependency>\n"
+            "  </dependencies>\n"
+            "</project>\n"
+        )
+        (tmp_path / "pom.xml").write_text(pom_content)
+        info = resolve_project(str(tmp_path))
+        assert info is not None
+        assert info.project_name == "payment-microservice"
+        assert info.manifest_type == "pom.xml"
+        assert info.framework == "Quarkus"
+
+    def test_resolve_gradle_spring_boot(self, tmp_path):
+        """Verify build.gradle project name parse and Spring Boot framework detection."""
+        gradle_content = (
+            "plugins {\n"
+            "    id 'org.springframework.boot' version '3.0.0'\n"
+            "}\n"
+        )
+        (tmp_path / "build.gradle").write_text(gradle_content)
+        (tmp_path / "settings.gradle").write_text("rootProject.name = 'billing-service'\n")
+        info = resolve_project(str(tmp_path))
+        # Note: rootProject.name matches settings.gradle usually, but build.gradle parser is basic
+        # Check settings.gradle parsing if build.gradle lacks name
+        assert info is not None
+        assert info.manifest_type == "build.gradle"
+        assert info.framework == "Spring Boot"
+
+    def test_resolve_csproj_dotnet(self, tmp_path):
+        """Verify csproj name parse and ASP.NET Core framework detection."""
+        csproj_content = (
+            "<Project Sdk=\"Microsoft.NET.Sdk.Web\">\n"
+            "  <PropertyGroup>\n"
+            "    <TargetFramework>net7.0</TargetFramework>\n"
+            "  </PropertyGroup>\n"
+            "</Project>\n"
+        )
+        (tmp_path / "WebAPI.csproj").write_text(csproj_content)
+        info = resolve_project(str(tmp_path))
+        assert info is not None
+        assert info.project_name == "WebAPI"
+        assert info.manifest_type == "WebAPI.csproj"
+        assert info.framework == "ASP.NET Core"
+
+    def test_resolve_nested_manifest_inside_git(self, tmp_path):
+        """Verify resolve_project resolves nested manifest details inside a git repo."""
+        repo = _make_repo(str(tmp_path), branch="main")
+        app_dir = tmp_path / "apps" / "frontend"
+        app_dir.mkdir(parents=True)
+        
+        import json
+        with open(app_dir / "package.json", "w") as f:
+            json.dump({"name": "frontend-web", "dependencies": {"next": "^13"}}, f)
+            
+        info = resolve_project(str(app_dir))
+        assert info is not None
+        assert info.project_name == "frontend-web"
+        assert info.git_root == str(repo)
+        assert info.branch == "main"
+        assert info.manifest_type == "package.json"
+        assert info.framework == "Next.js"
+

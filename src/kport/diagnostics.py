@@ -149,6 +149,17 @@ def diagnose_port(
         cwd = p.get("cwd")
         project = resolve_project(cwd)
         if project is not None:
+            context_desc = []
+            if project.framework:
+                context_desc.append(f"{project.framework} project")
+            else:
+                context_desc.append("project")
+            context_desc.append(f"'{project.project_name}'")
+            if project.branch:
+                context_desc.append(f"on branch '{project.branch}'")
+
+            reason_str = f"Process {pid} cwd ({cwd!r}) is inside {' '.join(context_desc)}"
+
             inferences.append({
                 "type": "project_context",
                 "pid": pid,
@@ -157,12 +168,11 @@ def diagnose_port(
                 "branch": project.branch,
                 "remote_origin": project.remote_origin,
                 "is_worktree": project.is_worktree,
-                "confidence": "medium",
-                "reason": (
-                    f"Process {pid} cwd ({cwd!r}) is inside Git repository "
-                    f"'{project.project_name or project.git_root}'"
-                    + (f" on branch '{project.branch}'" if project.branch else "")
-                ),
+                "manifest_path": project.manifest_path,
+                "manifest_type": project.manifest_type,
+                "framework": project.framework,
+                "confidence": "high" if project.manifest_path else "medium",
+                "reason": reason_str,
             })
 
     for d in obs_docker:
@@ -538,14 +548,23 @@ def _doctor_process_findings(
                 "branch": proj.branch,
                 "remote_origin": proj.remote_origin,
                 "is_worktree": proj.is_worktree,
+                "manifest_path": proj.manifest_path,
+                "manifest_type": proj.manifest_type,
+                "framework": proj.framework,
             }
+            context_desc = []
+            if proj.framework:
+                context_desc.append(f"framework {proj.framework}")
+            context_desc.append(f"'{proj.project_name or proj.git_root}'")
+            if proj.branch:
+                context_desc.append(f"on branch '{proj.branch}'")
+
             findings.append({
                 "severity": "INFO",
                 "category": "project",
                 "message": (
-                    f"PID {pid} ({proc_entry['name']}) is associated with project "
-                    f"'{proj.project_name or proj.git_root}'"
-                    + (f" on branch '{proj.branch}'" if proj.branch else "")
+                    f"PID {pid} ({proc_entry['name']}) is associated with "
+                    f"{' '.join(context_desc)}"
                 ),
             })
 
