@@ -11,7 +11,6 @@ import traceback
 from typing import Any
 
 from . import __version__, audit
-from .cli_utils import _poll_until_free
 from .diagnostics import (
     detect_conflicts as _detect_conflicts_data,
 )
@@ -30,6 +29,7 @@ from .docker_engine import (
     list_docker_mappings,
 )
 from .inspectors import get_inspector
+from .port_utils import poll_until_free as _poll_until_free
 from .project import resolve_project
 from .safety import check_safety_policy, load_kport_config
 

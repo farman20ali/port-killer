@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Centralized Safety Policy (`kport.safety`)**: Consolidated safety checks, configuration loading, and protected resource lists into a single source of truth used identically across CLI, TUI, and MCP.
+- **Decoupled Kill Confirmation**: Refactored core process termination logic in `BaseInspector` to accept an injectable `confirm_fn` callback. Removed presentation-layer dependencies on `confirm_prompt` and console interactivity from the domain/infrastructure layer, allowing headless execution environments to safely refuse/abort when no bypass is given.
+- **Relocated Port Polling Utility**: Moved the neutral socket polling helper `_poll_until_free` to a dedicated `port_utils.py` module. Maintained backward compatibility via a deprecated delegation alias in `cli_utils`.
 - **Additive Configuration Semantics**: `protected_ports` and `protected_processes` defined in configuration files now extend the hard-coded safety defaults rather than overwriting them.
 - **MCP Server Optimization**: Reuses a single inspector instance per server session with clean cache invalidation instead of instantiating new inspectors per RPC call.
 

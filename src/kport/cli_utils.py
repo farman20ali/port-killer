@@ -17,9 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
-import time
 from typing import Any
 
 from .exceptions import InvalidPortError, KPortError
@@ -354,24 +352,20 @@ def confirm_docker_rm(
 def _poll_until_free(
     port: int, timeout: float, inspector: BaseInspector, interval: float = 0.2
 ) -> bool:
+    """Compatibility alias — delegates to :func:`kport.port_utils.poll_until_free`.
+
+    The polling implementation has been relocated to ``port_utils`` so that it
+    can be consumed by any layer (CLI, MCP, domain) without a presentation-layer
+    dependency.  This alias preserves backward compatibility for code that still
+    imports ``_poll_until_free`` from ``cli_utils``.
+
+    .. deprecated::
+        Import :func:`~kport.port_utils.poll_until_free` from
+        ``kport.port_utils`` directly.
     """
-    Poll the port until it has no active bindings, up to `timeout` seconds.
-    Returns True if the port becomes free, False on timeout.
-    """
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        try:
-            bindings = inspector.find_bindings_on_port(port)
-        except (OSError, ValueError, IndexError, subprocess.SubprocessError):
-            bindings = []
-        if not bindings:
-            return True
-        time.sleep(interval)
-    try:
-        bindings = inspector.find_bindings_on_port(port)
-    except (OSError, ValueError, IndexError, subprocess.SubprocessError):
-        bindings = []
-    return len(bindings) == 0
+    from .port_utils import poll_until_free
+
+    return poll_until_free(port, timeout, inspector, interval)
 
 
 # ---------------------------------------------------------------------------

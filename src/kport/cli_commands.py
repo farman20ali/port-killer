@@ -1315,6 +1315,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                 assume_yes=args.yes,
                 kill_tree=getattr(args, "kill_tree", False),
                 proto=getattr(args, "proto", "tcp"),
+                confirm_fn=confirm_prompt,
             )
 
             # Audit log
@@ -1424,6 +1425,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                     force=args.force,
                     dry_run=args.dry_run,
                     assume_yes=args.yes,
+                    confirm_fn=confirm_prompt,
                 )
             else:
                 ok, msg = inspector.kill_pid(
@@ -1432,6 +1434,7 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                     force=args.force,
                     dry_run=args.dry_run,
                     assume_yes=args.yes,
+                    confirm_fn=confirm_prompt,
                 )
 
             # Audit log
@@ -2133,6 +2136,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                                 force=args.force,
                                 dry_run=args.dry_run,
                                 assume_yes=args.yes,
+                                confirm_fn=confirm_prompt,
                             )
                         else:
                             ok, msg = inspector.kill_pid(
@@ -2141,6 +2145,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                                 force=args.force,
                                 dry_run=args.dry_run,
                                 assume_yes=args.yes,
+                                confirm_fn=confirm_prompt,
                             )
 
                         if ok:
@@ -2179,6 +2184,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                                 force=args.force,
                                 dry_run=args.dry_run,
                                 assume_yes=args.yes,
+                                confirm_fn=confirm_prompt,
                             )
                         else:
                             ok, msg = inspector.kill_pid(
@@ -2187,6 +2193,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                                 force=args.force,
                                 dry_run=args.dry_run,
                                 assume_yes=args.yes,
+                                confirm_fn=confirm_prompt,
                             )
 
                         if ok:
@@ -2406,6 +2413,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                     debug=args.debug,
                     assume_yes=args.yes,
                     kill_tree=getattr(args, "kill_tree", False),
+                    confirm_fn=confirm_prompt,
                 )
 
                 wait_ok = True
@@ -2471,6 +2479,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                         debug=args.debug,
                         assume_yes=args.yes,
                         kill_tree=getattr(args, "kill_tree", False),
+                        confirm_fn=confirm_prompt,
                     )
 
                     wait_ok = True
@@ -2583,6 +2592,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                         debug=args.debug,
                         assume_yes=args.yes,
                         kill_tree=getattr(args, "kill_tree", False),
+                        confirm_fn=confirm_prompt,
                     )
 
                     if ok:
@@ -2700,6 +2710,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                         debug=args.debug,
                         assume_yes=args.yes,
                         kill_tree=getattr(args, "kill_tree", False),
+                        confirm_fn=confirm_prompt,
                     )
 
                     if ok:

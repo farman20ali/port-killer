@@ -13,12 +13,12 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from typing import Callable
+
+# Fallback for Windows where signal.SIGKILL is not defined in standard library
+SIGKILL = getattr(signal, "SIGKILL", 9)
 
 from kport.constants import RUNTIME_ENRICHMENT_NAMES
-
-# Top-level import — avoids circular import that existed when this was done
-# lazily inside kill_pid().
-from kport.formatter import confirm_prompt
 
 # ---------------------------------------------------------------------------
 # Process name enrichment
@@ -140,21 +140,25 @@ class ConnectionInfo:
 
 
 def _escalate_kill_unix(
-    pid: int, sig: int, assume_yes: bool, debug: bool = False
+    pid: int,
+    sig: int,
+    assume_yes: bool,
+    debug: bool = False,
+    confirm_fn: Callable[[str], bool] | None = None,
 ) -> bool:
     """
     Attempt a privilege-escalated kill on Unix via sudo.
     Returns True if the process disappeared after the sudo kill, False otherwise.
     """
-    sig_name = "KILL" if sig == signal.SIGKILL else "TERM"
+    sig_name = "KILL" if sig == SIGKILL else "TERM"
     prompt = (
         f"\nPID {pid} requires elevated privileges (sudo) to terminate. "
         f"Attempt 'sudo kill -{sig_name} {pid}'?"
     )
     if not assume_yes:
-        if not sys.stdin.isatty() or not sys.stdout.isatty():
+        if confirm_fn is None:
             return False
-        if not confirm_prompt(prompt, assume_yes=False):
+        if not confirm_fn(prompt):
             return False
 
     sudo = shutil.which("sudo")
@@ -176,7 +180,12 @@ def _escalate_kill_unix(
         return False
 
 
-def _escalate_kill_windows(pid: int, assume_yes: bool, debug: bool = False) -> bool:
+def _escalate_kill_windows(
+    pid: int,
+    assume_yes: bool,
+    debug: bool = False,
+    confirm_fn: Callable[[str], bool] | None = None,
+) -> bool:
     """
     Attempt a privilege-escalated kill on Windows via UAC-elevated taskkill.
     Returns True if taskkill reports success.
@@ -185,8 +194,11 @@ def _escalate_kill_windows(pid: int, assume_yes: bool, debug: bool = False) -> b
         f"\nPID {pid} requires elevated privileges (Administrator) to terminate. "
         "Attempt UAC-elevated taskkill?"
     )
-    if not assume_yes and not confirm_prompt(prompt, assume_yes=False):
-        return False
+    if not assume_yes:
+        if confirm_fn is None:
+            return False
+        if not confirm_fn(prompt):
+            return False
 
     ps = shutil.which("powershell") or shutil.which("pwsh")
     if not ps:
@@ -274,6 +286,7 @@ class BaseInspector:
         dry_run: bool = False,
         assume_yes: bool = False,
         debug: bool = False,
+        confirm_fn: Callable[[str], bool] | None = None,
     ) -> tuple[bool, str]:
         """Terminate *pid* and all of its descendant processes.
 
@@ -297,6 +310,7 @@ class BaseInspector:
                 dry_run=dry_run,
                 assume_yes=assume_yes,
                 debug=debug,
+                confirm_fn=confirm_fn,
             )
             (killed if ok else failed).append((child_pid, msg))
 
@@ -308,6 +322,7 @@ class BaseInspector:
             dry_run=dry_run,
             assume_yes=assume_yes,
             debug=debug,
+            confirm_fn=confirm_fn,
         )
         (killed if ok else failed).append((pid, msg))
 
@@ -330,16 +345,21 @@ class BaseInspector:
     # ------------------------------------------------------------------
 
     def _try_escalate(
-        self, pid: int, sig: int, assume_yes: bool, debug: bool = False
+        self,
+        pid: int,
+        sig: int,
+        assume_yes: bool,
+        debug: bool = False,
+        confirm_fn: Callable[[str], bool] | None = None,
     ) -> bool:
         """
         Attempt privilege-escalated termination.
         Returns True if escalation succeeded (process is gone), False otherwise.
         """
         if platform.system() == "Windows":
-            ok = _escalate_kill_windows(pid, assume_yes, debug=debug)
+            ok = _escalate_kill_windows(pid, assume_yes, debug=debug, confirm_fn=confirm_fn)
         else:
-            ok = _escalate_kill_unix(pid, sig, assume_yes, debug=debug)
+            ok = _escalate_kill_unix(pid, sig, assume_yes, debug=debug, confirm_fn=confirm_fn)
         if ok:
             # Allow OS scheduler time to reap the process
             time.sleep(0.3)
@@ -358,6 +378,7 @@ class BaseInspector:
         dry_run: bool = False,
         assume_yes: bool = False,
         debug: bool = False,
+        confirm_fn: Callable[[str], bool] | None = None,
     ) -> tuple[bool, str]:
         """
         Attempt to terminate a process by PID.
@@ -383,7 +404,7 @@ class BaseInspector:
                     f"[debug] PermissionError on SIGTERM for PID {pid}, attempting escalation",
                     file=sys.stderr,
                 )
-            if self._try_escalate(pid, signal.SIGTERM, assume_yes, debug=debug):
+            if self._try_escalate(pid, signal.SIGTERM, assume_yes, debug=debug, confirm_fn=confirm_fn):
                 return True, "Terminated via privilege escalation"
             return (
                 False,
@@ -407,12 +428,11 @@ class BaseInspector:
                 # operator has explicitly passed --yes (assume_yes=True). This prevents CI/agent
                 # pipelines from silently gaining root-level kill capability without explicit opt-in.
                 # Do not relax this check without a corresponding audit-log feature (see roadmap).
-                if sys.stdin.isatty() and sys.stdout.isatty():
+                if confirm_fn is not None:
                     info = self.get_process_info(pid)
                     pname = f" ({info.name})" if info else ""
-                    if confirm_prompt(
-                        f"\nPID {pid}{pname} is still running after graceful timeout. Force kill?",
-                        assume_yes=assume_yes,
+                    if confirm_fn(
+                        f"\nPID {pid}{pname} is still running after graceful timeout. Force kill?"
                     ):
                         force = True
                 elif assume_yes:
@@ -426,7 +446,7 @@ class BaseInspector:
 
         # Stage 3: Forceful SIGKILL
         try:
-            self.send_signal(pid, signal.SIGKILL)
+            self.send_signal(pid, SIGKILL)
             time.sleep(0.3)
             if not self.is_process_alive(pid):
                 return True, "Killed (force)"
@@ -439,7 +459,7 @@ class BaseInspector:
                     f"[debug] PermissionError on SIGKILL for PID {pid}, attempting escalation",
                     file=sys.stderr,
                 )
-            if self._try_escalate(pid, signal.SIGKILL, assume_yes, debug=debug):
+            if self._try_escalate(pid, SIGKILL, assume_yes, debug=debug, confirm_fn=confirm_fn):
                 return True, "Force-killed via privilege escalation"
             return False, "Permission denied on force kill — could not escalate."
         except Exception as e:  # noqa: BLE001 - catch arbitrary exceptions during signal dispatch
@@ -459,6 +479,7 @@ class BaseInspector:
         assume_yes: bool = False,
         kill_tree: bool = False,
         proto: str = "tcp",
+        confirm_fn: Callable[[str], bool] | None = None,
     ) -> tuple[bool, str]:
         """
         Kill all processes using a specific port.
@@ -490,6 +511,7 @@ class BaseInspector:
                     dry_run=dry_run,
                     assume_yes=assume_yes,
                     debug=debug,
+                    confirm_fn=confirm_fn,
                 )
             else:
                 ok, msg = self.kill_pid(
@@ -499,6 +521,7 @@ class BaseInspector:
                     dry_run=dry_run,
                     assume_yes=assume_yes,
                     debug=debug,
+                    confirm_fn=confirm_fn,
                 )
             if ok:
                 killed_count += 1
