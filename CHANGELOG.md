@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Relocated Port Polling Utility**: Moved the neutral socket polling helper `_poll_until_free` to a dedicated `port_utils.py` module. Maintained backward compatibility via a deprecated delegation alias in `cli_utils`.
 - **Additive Configuration Semantics**: `protected_ports` and `protected_processes` defined in configuration files now extend the hard-coded safety defaults rather than overwriting them.
 - **MCP Server Optimization**: Reuses a single inspector instance per server session with clean cache invalidation instead of instantiating new inspectors per RPC call.
+- **Audit Log Completeness**: TUI (`kport interactive`) kill operations and MCP `kill_port` calls now emit `audit.log_kill_port` records, matching the existing CLI audit behavior. No CLI/MCP protocol behavior changes.
 
 ### Security
 - **Strict MCP Safety Shield**: The MCP server strictly enforces safety shields on destructive actions (`kill_port`) and cannot be requested to bypass safety.
@@ -31,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Testing
 - Comprehensive test coverage across all new modules: `test_diagnose.py`, `test_doctor.py`, `test_connections.py`, `test_project.py`, `test_process_manager_win.py`, `test_audit.py`, `test_mcp.py`, and `test_phase4.py` bringing the test suite to 193 passing tests.
+- Phase 9: Added `test_audit_completeness.py` with 10 targeted tests verifying audit record emission from the TUI and MCP kill paths (success, failure, dry-run, safety-blocked, docker-row, and pid-None cases).
 
 ---
 

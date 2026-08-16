@@ -10,6 +10,7 @@ from __future__ import annotations
 import sys
 from typing import Any
 
+from . import audit
 from .docker_engine import docker_action_on_container, list_docker_mappings
 from .formatter import Colors, colorize, confirm_prompt
 from .inspectors import BaseInspector
@@ -199,13 +200,24 @@ def _execute_kills(
                 errors += 1
         else:
             kill_tree = getattr(args, "kill_tree", False)
+            dry_run = getattr(args, "dry_run", False)
             ok, msg = inspector.kill_port(
                 r["port"],
                 force=getattr(args, "force", False),
-                dry_run=getattr(args, "dry_run", False),
+                dry_run=dry_run,
                 assume_yes=True,
                 kill_tree=kill_tree,
                 proto=r.get("proto", "tcp"),
+            )
+            # Emit audit record for every local kill attempt (success or failure).
+            # r["pid"] is the integer PID displayed in the TUI row for local entries.
+            tui_pids = [r["pid"]] if isinstance(r.get("pid"), int) else []
+            audit.log_kill_port(
+                port=r["port"],
+                pids=tui_pids,
+                dry_run=dry_run,
+                success=ok,
+                message=msg,
             )
             if ok:
                 print(

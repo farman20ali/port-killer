@@ -404,6 +404,14 @@ def handle_kill_port(
         debug=True,
         assume_yes=True,
     )
+    # Emit audit record for every MCP-triggered local port kill (success or failure).
+    audit.log_kill_port(
+        port=port,
+        pids=pids,
+        dry_run=False,
+        success=ok,
+        message=msg,
+    )
     return {"success": ok, "type": "local", "pids_targeted": pids, "message": msg}
 
 
