@@ -143,3 +143,35 @@ def test_audit_write_failure_is_nonfatal(temp_audit_log):
         )
 
     assert not temp_audit_log.exists()
+
+
+def test_log_service_stop_writes_correct_shape(temp_audit_log):
+    """log_service_stop should correctly log managed service stop attempts."""
+    audit.log_service_stop(
+        port=8080,
+        manager="systemd",
+        service_name="nginx.service",
+        command="systemctl stop nginx.service",
+        dry_run=False,
+        success=True,
+        verified_free=True,
+        message="Service stopped and port verified free",
+    )
+
+    assert temp_audit_log.exists()
+    lines = temp_audit_log.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+
+    record = json.loads(lines[0])
+    assert record["action"] == "stop_service"
+    assert record["target"] == {
+        "port": 8080,
+        "manager": "systemd",
+        "service_name": "nginx.service",
+        "command": "systemctl stop nginx.service",
+        "verified_free": True,
+    }
+    assert record["dry_run"] is False
+    assert record["success"] is True
+    assert record["message"] == "Service stopped and port verified free"
+

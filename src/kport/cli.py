@@ -68,6 +68,7 @@ from .safety import (
 from .safety import (
     check_safety_policy as _core_check_safety_policy,
 )
+from .service_actions import stop_service
 
 # Exit codes
 EXIT_OK = 0
@@ -534,6 +535,243 @@ def handle_diagnose(args: argparse.Namespace, inspector: BaseInspector) -> int:
     return EXIT_PORT_DOCKER if obs_type == "docker" else (EXIT_OK if is_blocked else EXIT_PORT_FREE)
 
 
+def handle_stop_service(args: argparse.Namespace, inspector: BaseInspector) -> int:
+    """Orchestrate stopping a process-manager controlled service occupying a port."""
+    port = args.port
+    validate_port(port)
+
+    # 1. Resolve initial state (PIDs, manager)
+    proto = getattr(args, "proto", "tcp")
+    pids = inspector.find_pids_on_port(port, proto=proto)
+
+    config: dict = {}
+    config_ports = getattr(args, "protected_ports", None)
+    if isinstance(config_ports, list):
+        config["protected_ports"] = config_ports
+    config_procs = getattr(args, "protected_processes", None)
+    if isinstance(config_procs, list):
+        config["protected_processes"] = config_procs
+
+    bypass = getattr(args, "bypass_safety", False)
+    data = _diagnose_port_data(
+        port=port,
+        inspector=inspector,
+        proto=proto,
+        config=config if config else None,
+        bypass_safety=bypass,
+    )
+
+    is_blocked = data["blocked"]
+    if not is_blocked:
+        if args.json:
+            print(_json_out("stop-service", {
+                "success": True,
+                "port": port,
+                "message": f"Port {port} is already free.",
+                "verified_free": True
+            }))
+        else:
+            print(colorize(f"Port {port} is already free.", Colors.GREEN))
+        return EXIT_PORT_FREE
+
+    inferences = data["inferences"]
+    pm_managed = [inf for inf in inferences if inf["type"] == "process_manager"]
+    if not pm_managed:
+        if args.json:
+            print(_json_out("stop-service", {
+                "success": False,
+                "port": port,
+                "message": f"No supported process manager detected for port {port}."
+            }))
+        else:
+            print(colorize(f"No supported process manager detected for port {port}.", Colors.RED), file=sys.stderr)
+            print(f"You can use:\n  kport kill {port}", file=sys.stderr)
+        return EXIT_INVALID_INPUT
+
+    pm = pm_managed[0]
+    manager = pm["manager"]
+    service_name = pm["name"]
+
+    # 2. Safety check on current PIDs
+    decision = check_safety_policy(port, pids, args, inspector)
+    if not decision.allowed:
+        if args.json:
+            print(_json_out("stop-service", {"success": False, "message": decision.reason}))
+        else:
+            print(colorize(decision.reason, Colors.RED), file=sys.stderr)
+        return EXIT_PERMISSION
+
+    # Generate print command
+    if manager == "systemd":
+        cmd = f"systemctl stop {service_name}"
+    elif manager == "pm2":
+        cmd = f"pm2 stop {service_name}"
+    elif manager == "supervisor":
+        cmd = f"supervisorctl stop {service_name}"
+    elif manager == "windows-service":
+        services = [s.strip() for s in service_name.split(",") if s.strip()]
+        if len(services) == 1:
+            cmd = f"Stop-Service -Name {services[0]}"
+        else:
+            cmd = " ; ".join(f"Stop-Service -Name {s}" for s in services)
+    else:
+        cmd = ""
+
+    # 3. Print stop service context card (human-only)
+    if not args.json:
+        print(colorize(f"=== STOPPING SERVICE FOR PORT {port} ===", Colors.CYAN + Colors.BOLD))
+        print()
+        print(colorize("DETECTION", Colors.BOLD + Colors.WHITE))
+        print(f"  Manager:  {manager}")
+        print(f"  Service:  {service_name}")
+        print(f"  Command:  {cmd}")
+        print()
+        print(colorize("  ⚠️  Stopping via service manager prevents auto-restart.", Colors.YELLOW))
+        print()
+
+    # 4. Confirmation Prompt
+    if not args.json:
+        prompt_msg = f"Stop service '{service_name}' via {manager}?"
+        if not confirm_prompt(prompt_msg, assume_yes=args.yes):
+            print(colorize("Operation cancelled.", Colors.YELLOW))
+            return EXIT_GENERAL_ERROR
+
+    # 5. Execute action via service_actions domain layer
+    timeout = getattr(args, "timeout", 30.0) or 30.0
+    dry_run = getattr(args, "dry_run", False)
+
+    res = stop_service(
+        manager=manager,
+        service_name=service_name,
+        timeout=timeout,
+        dry_run=dry_run,
+    )
+
+    # 6. Verify port status after service action
+    verified_free = False
+    if res.success and not dry_run:
+        verified_free = _poll_until_free(port, 3.0, inspector)
+    elif dry_run:
+        verified_free = False
+
+    # 7. Check force escalation logic
+    escalation_triggered = False
+    escalation_success = False
+    escalation_message = ""
+    second_decision_allowed = True
+    new_pids = []
+
+    if not verified_free and getattr(args, "force", False) and not dry_run:
+        escalation_triggered = True
+        new_pids = inspector.find_pids_on_port(port, proto=proto)
+        if new_pids:
+            # Re-run safety policy check on current PIDs (safety check again)
+            second_decision = check_safety_policy(port, new_pids, args, inspector)
+            if not second_decision.allowed:
+                second_decision_allowed = False
+                escalation_message = f"Escalation safety check failed: {second_decision.reason}"
+            else:
+                if not args.json:
+                    print(colorize(f"Service stop did not free port {port}. Escalating to process kill...", Colors.YELLOW))
+                kill_ok, kill_msg = inspector.kill_port(
+                    port,
+                    graceful_timeout=3.0,
+                    force=True,
+                    dry_run=False,
+                    debug=bool(getattr(args, "debug", False)),
+                    assume_yes=True,
+                )
+                escalation_success = kill_ok
+                escalation_message = kill_msg
+                verified_free = _poll_until_free(port, 3.0, inspector)
+        else:
+            verified_free = _poll_until_free(port, 3.0, inspector)
+            escalation_success = verified_free
+            escalation_message = "Port went free during escalation check."
+
+    # 8. Log audit log entries
+    audit.log_service_stop(
+        port=port,
+        manager=manager,
+        service_name=service_name,
+        command=res.command_executed,
+        dry_run=dry_run,
+        success=res.success,
+        verified_free=verified_free,
+        message=res.message,
+    )
+
+    if escalation_triggered and second_decision_allowed:
+        audit.log_kill_port(
+            port=port,
+            pids=new_pids,
+            dry_run=False,
+            success=escalation_success,
+            message=f"Escalation kill: {escalation_message}",
+        )
+
+    # 9. Output/return result
+    overall_success = verified_free or (res.success and dry_run)
+
+    if args.json:
+        out_data = {
+            "success": res.success,
+            "port": port,
+            "manager": manager,
+            "service_name": service_name,
+            "command": res.command_executed,
+            "verified_free": verified_free,
+            "dry_run": dry_run,
+            "message": res.message,
+        }
+        if escalation_triggered:
+            out_data["escalation"] = {
+                "triggered": True,
+                "success": escalation_success,
+                "message": escalation_message,
+            }
+        print(_json_out("stop-service", out_data))
+        return EXIT_OK if overall_success else EXIT_GENERAL_ERROR
+
+    if dry_run:
+        print(colorize(f"[DRY RUN] Would execute: {res.command_executed}", Colors.YELLOW))
+        print(colorize("[DRY RUN] No changes made.", Colors.YELLOW))
+        return EXIT_OK
+
+    if res.success:
+        if verified_free:
+            if escalation_triggered:
+                print(colorize(f"✓ Port {port} successfully freed via process kill escalation.", Colors.GREEN))
+            else:
+                print(colorize(f"✓ Service '{service_name}' stopped and port {port} is now free.", Colors.GREEN))
+            return EXIT_OK
+        else:
+            print(colorize(f"⚠ Service '{service_name}' stopped but port {port} is still blocked.", Colors.YELLOW), file=sys.stderr)
+            if escalation_triggered:
+                if not second_decision_allowed:
+                    print(colorize(f"⚠ Escalation blocked by safety: {escalation_message}", Colors.RED), file=sys.stderr)
+                elif escalation_success:
+                    print(colorize(f"✓ Port {port} successfully freed via process kill escalation.", Colors.GREEN))
+                    return EXIT_OK
+                else:
+                    print(colorize(f"Error: Escalation kill failed. {escalation_message}", Colors.RED), file=sys.stderr)
+            else:
+                print(colorize("Run stop-service with --force to attempt process termination.", Colors.YELLOW), file=sys.stderr)
+            return EXIT_GENERAL_ERROR
+    else:
+        print(colorize(f"Error: Stop command failed: {res.message}", Colors.RED), file=sys.stderr)
+        if escalation_triggered:
+            if not second_decision_allowed:
+                print(colorize(f"⚠ Escalation blocked by safety: {escalation_message}", Colors.RED), file=sys.stderr)
+            elif escalation_success:
+                print(colorize(f"✓ Port {port} successfully freed via process kill escalation.", Colors.GREEN))
+                return EXIT_OK
+            else:
+                print(colorize(f"Error: Escalation kill failed. {escalation_message}", Colors.RED), file=sys.stderr)
+        return EXIT_GENERAL_ERROR
+
+
+
 def handle_connections(args: argparse.Namespace, inspector: BaseInspector) -> int:
     """Display active network connections with optional filters.
 
@@ -842,6 +1080,9 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
 
     if args.command == "diagnose":
         return handle_diagnose(args, inspector)
+
+    if args.command == "stop-service":
+        return handle_stop_service(args, inspector)
 
     if args.command == "doctor":
         return handle_doctor(args, inspector)
@@ -2204,6 +2445,17 @@ Examples:
         "explain", parents=[parent_parser], help="Explain why a port is blocked"
     )
     sp_explain.add_argument("port", type=int)
+
+    sp_stop_service = sub.add_parser(
+        "stop-service", parents=[parent_parser], help="Cleanly stop the service manager controlling a port"
+    )
+    sp_stop_service.add_argument("port", type=int)
+    sp_stop_service.add_argument(
+        "--force", action="store_true", help="Escalate to process kill if service stop fails or port remains blocked"
+    )
+    sp_stop_service.add_argument(
+        "--timeout", type=float, default=30.0, help="Command timeout in seconds"
+    )
 
     sp_diagnose = sub.add_parser(
         "diagnose", parents=[parent_parser], help="Structured analysis and fix recommendations for a port"

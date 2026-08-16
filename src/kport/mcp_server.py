@@ -10,7 +10,7 @@ import sys
 import traceback
 from typing import Any
 
-from . import __version__
+from . import __version__, audit
 from .diagnostics import (
     detect_conflicts as _detect_conflicts_data,
 )
@@ -49,11 +49,13 @@ TOOLS = [
     {
         "name": "list_ports",
         "description": "Lists all active listening ports on the host machine, including both local processes and Docker containers with their PIDs, names, and states.",
+        "annotations": {"readOnlyHint": True},
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "inspect_port",
         "description": "Returns detailed information about the local process or Docker container holding a specific port.",
+        "annotations": {"readOnlyHint": True},
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -70,6 +72,7 @@ TOOLS = [
     {
         "name": "kill_port",
         "description": "Frees up a port by terminating the local process or executing a Docker container action if the port is owned by Docker.",
+        "annotations": {"destructiveHint": True},
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -97,6 +100,7 @@ TOOLS = [
     {
         "name": "diagnose_port",
         "description": "Runs a detailed semantic diagnostic analysis on a specific port, providing structured observations, inferred service relationships/manager context, process risks, and remediation recommendations.",
+        "annotations": {"readOnlyHint": True},
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -124,6 +128,7 @@ TOOLS = [
             "(default 500). If the returned count equals max_results the full set may be "
             "larger — narrow the filter or reduce max_results to paginate."
         ),
+        "annotations": {"readOnlyHint": True},
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -158,12 +163,36 @@ TOOLS = [
     {
         "name": "conflicts",
         "description": "Runs conflict detection on the host machine to identify ports mapped to Docker containers that are also bound/occupied by native host processes.",
+        "annotations": {"readOnlyHint": True},
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
         "name": "doctor",
         "description": "Runs an environment-wide diagnostic check, summarizing platform/capabilities, active listening sockets, connection counts, process/service context, and high-level configuration/risk findings.",
+        "annotations": {"readOnlyHint": True},
         "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "stop_service",
+        "description": "Cleanly stops a process-manager controlled service (systemd, PM2, supervisor, Windows Service) occupying a port. Does not support force process termination.",
+        "annotations": {"destructiveHint": True},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "description": "The port number to stop the controlling service for.",
+                },
+                "dry_run": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Show stop command without running it.",
+                }
+            },
+            "required": ["port"],
+        },
     },
 ]
 
@@ -372,6 +401,106 @@ def handle_doctor(inspector) -> dict[str, Any]:
     return _run_doctor_data(inspector)
 
 
+def handle_stop_service(inspector, port: int, dry_run: bool = False) -> dict[str, Any]:
+    """Execute stop_service tool request under safety shield validations."""
+    if not (1 <= port <= 65535):
+        raise ValueError(f"Port {port} is out of bounds (1-65535)")
+
+    # 1. Resolve initial state (PIDs, manager)
+    cfg = load_mcp_config()
+    data = _diagnose_port_data(port, inspector, config=cfg)
+    pids = inspector.find_pids_on_port(port)
+
+    # 2. Safety policy check
+    # MCP server NEVER bypasses safety (bypass_safety=False).
+    allowed, reason = check_safety_policy(
+        port=port,
+        pids=pids,
+        inspector=inspector,
+        bypass_safety=False,
+        config=cfg if cfg else None,
+    )
+    if not allowed:
+        return {
+            "success": False,
+            "message": reason,
+            "verified_free": False,
+            "requires_force": False,
+        }
+
+    is_blocked = data["blocked"]
+    if not is_blocked:
+        return {
+            "success": True,
+            "port": port,
+            "manager": "none",
+            "service_name": "",
+            "command": "",
+            "verified_free": True,
+            "dry_run": dry_run,
+            "message": f"Port {port} is already free.",
+        }
+
+    inferences = data["inferences"]
+    pm_managed = [inf for inf in inferences if inf["type"] == "process_manager"]
+    if not pm_managed:
+        return {
+            "success": False,
+            "port": port,
+            "manager": "none",
+            "service_name": "",
+            "command": "",
+            "verified_free": False,
+            "requires_force": True,
+            "message": f"No supported process manager detected for port {port}.",
+        }
+
+    pm = pm_managed[0]
+    manager = pm["manager"]
+    service_name = pm["name"]
+
+    # 3. Call stop_service domain layer
+    from .service_actions import stop_service
+    res = stop_service(
+        manager=manager,
+        service_name=service_name,
+        timeout=30.0,
+        dry_run=dry_run,
+    )
+
+    # 4. Verify post-action state
+    verified_free = False
+    if res.success and not dry_run:
+        from .cli import _poll_until_free
+        verified_free = _poll_until_free(port, 3.0, inspector)
+    elif dry_run:
+        verified_free = False
+
+    # 5. Audit log
+    audit.log_service_stop(
+        port=port,
+        manager=manager,
+        service_name=service_name,
+        command=res.command_executed,
+        dry_run=dry_run,
+        success=res.success,
+        verified_free=verified_free,
+        message=res.message,
+    )
+
+    return {
+        "success": res.success,
+        "port": port,
+        "manager": manager,
+        "service_name": service_name,
+        "command": res.command_executed,
+        "verified_free": verified_free,
+        "dry_run": dry_run,
+        "message": res.message,
+        "requires_force": res.success and not verified_free and not dry_run,
+    }
+
+
 def run_mcp_server() -> None:
     """Run standard stdio MCP JSON-RPC execution loop."""
     log("kport MCP Server successfully started.")
@@ -443,6 +572,10 @@ def run_mcp_server() -> None:
                         result_data = handle_conflicts(inspector)
                     elif tool_name == "doctor":
                         result_data = handle_doctor(inspector)
+                    elif tool_name == "stop_service":
+                        target_port = int(arguments.get("port"))
+                        dry_run_flag = bool(arguments.get("dry_run", False))
+                        result_data = handle_stop_service(inspector, target_port, dry_run_flag)
                     else:
                         raise ValueError(f"Unknown tool: {tool_name}")
 

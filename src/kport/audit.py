@@ -135,3 +135,28 @@ def log_docker_action(
         "docker_action": action,
     }
     _write(record)
+
+
+def log_service_stop(
+    port: int,
+    manager: str,
+    service_name: str,
+    command: str,
+    *,
+    dry_run: bool,
+    success: bool,
+    verified_free: bool,
+    message: str,
+) -> None:
+    """Record a managed service stop attempt."""
+    record = _base(dry_run=dry_run, success=success, message=message)
+    record["action"] = "stop_service"
+    record["target"] = {
+        "port": port,
+        "manager": manager,
+        "service_name": service_name,
+        "command": command,
+        "verified_free": verified_free,
+    }
+    _write(record)
+

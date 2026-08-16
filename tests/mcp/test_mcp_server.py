@@ -50,7 +50,7 @@ class TestMCPProtocol:
         assert "protocolVersion" in init["result"]
         assert "capabilities" in init["result"]
 
-    def test_tools_list_returns_all_seven_tools(self):
+    def test_tools_list_returns_all_eight_tools(self):
         responses = _send(
             {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
         )
@@ -59,6 +59,7 @@ class TestMCPProtocol:
         expected = {
             "list_ports", "inspect_port", "kill_port",
             "diagnose_port", "list_connections", "conflicts", "doctor",
+            "stop_service",
         }
         assert expected == names
 
