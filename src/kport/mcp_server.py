@@ -11,6 +11,7 @@ import traceback
 from typing import Any
 
 from . import __version__, audit
+from .cli_utils import _poll_until_free
 from .diagnostics import (
     detect_conflicts as _detect_conflicts_data,
 )
@@ -29,6 +30,7 @@ from .docker_engine import (
     list_docker_mappings,
 )
 from .inspectors import get_inspector
+from .project import resolve_project
 from .safety import check_safety_policy, load_kport_config
 
 # R10 fix: use shared constants from kport.constants (single source of truth).
@@ -190,6 +192,55 @@ TOOLS = [
                     "default": False,
                     "description": "Show stop command without running it.",
                 }
+            },
+            "required": ["port"],
+        },
+    },
+    {
+        "name": "find_project",
+        "description": (
+            "Resolves Git project metadata (name, root, branch, remote origin) "
+            "from a PID's working directory or a directly supplied filesystem path. "
+            "Credentials are never exposed in the returned remote_origin field."
+        ),
+        "annotations": {"readOnlyHint": True},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pid": {
+                    "type": "integer",
+                    "description": "Resolve the working directory from this PID.",
+                },
+                "path": {
+                    "type": "string",
+                    "description": "Resolve directly from this filesystem path.",
+                },
+            },
+        },
+    },
+    {
+        "name": "suggest_resolution",
+        "description": (
+            "Returns structured remediation recommendations for a port without executing "
+            "any destructive operation. Use this before kill_port or stop_service to "
+            "understand the safest remediation path for a blocked port."
+        ),
+        "annotations": {"readOnlyHint": True},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "description": "The port number to generate recommendations for.",
+                },
+                "proto": {
+                    "type": "string",
+                    "enum": ["tcp", "udp", "both"],
+                    "default": "tcp",
+                    "description": "Protocol filter for the underlying diagnostic.",
+                },
             },
             "required": ["port"],
         },
@@ -391,6 +442,57 @@ def handle_diagnose_port(inspector, port: int, proto: str = "tcp") -> dict[str, 
     return _diagnose_port_data(port, inspector, proto=proto, config=cfg)
 
 
+def handle_find_project(
+    inspector, pid: int | None = None, path: str | None = None
+) -> dict[str, Any]:
+    """Execute find_project tool request.
+
+    Resolves Git project metadata from a PID's working directory or a directly
+    supplied filesystem path.  Read-only — no destructive operations.
+    """
+    from dataclasses import asdict
+
+    cwd: str | None = path
+    if pid is not None:
+        try:
+            info = inspector.get_process_info(pid)
+            cwd = info.cwd if info else None
+        except Exception:  # noqa: BLE001
+            cwd = None
+
+    if not cwd:
+        return {"project": None, "reason": "No working directory available"}
+
+    try:
+        proj = resolve_project(cwd)
+    except Exception:  # noqa: BLE001
+        proj = None
+
+    if proj is None:
+        return {"project": None, "reason": f"No Git repository found in {cwd!r}"}
+
+    return {"project": asdict(proj)}
+
+
+def handle_suggest_resolution(
+    inspector, port: int, proto: str = "tcp"
+) -> dict[str, Any]:
+    """Execute suggest_resolution tool request.
+
+    Returns structured remediation recommendations for a blocked port without
+    executing any destructive operation.  Read-only.
+    """
+    if not (1 <= port <= 65535):
+        raise ValueError(f"Port {port} is out of bounds (1-65535)")
+    cfg = load_mcp_config()
+    data = _diagnose_port_data(port, inspector, proto=proto, config=cfg)
+    return {
+        "port": port,
+        "blocked": data["blocked"],
+        "recommendations": data["recommendations"],
+    }
+
+
 def handle_conflicts(inspector) -> list[dict[str, Any]]:
     """Execute conflicts tool request."""
     return _detect_conflicts_data(inspector)
@@ -471,7 +573,6 @@ def handle_stop_service(inspector, port: int, dry_run: bool = False) -> dict[str
     # 4. Verify post-action state
     verified_free = False
     if res.success and not dry_run:
-        from .cli import _poll_until_free
         verified_free = _poll_until_free(port, 3.0, inspector)
     elif dry_run:
         verified_free = False
@@ -525,7 +626,7 @@ def run_mcp_server() -> None:
                     "jsonrpc": "2.0",
                     "id": req_id,
                     "result": {
-                        "protocolVersion": "2024-11-05",
+                        "protocolVersion": "2026-07-28",
                         "capabilities": {"tools": {}},
                         "serverInfo": {"name": "kport", "version": __version__},
                     },
@@ -576,6 +677,20 @@ def run_mcp_server() -> None:
                         target_port = int(arguments.get("port"))
                         dry_run_flag = bool(arguments.get("dry_run", False))
                         result_data = handle_stop_service(inspector, target_port, dry_run_flag)
+                    elif tool_name == "find_project":
+                        pid_arg = arguments.get("pid")
+                        path_arg = arguments.get("path")
+                        result_data = handle_find_project(
+                            inspector,
+                            pid=int(pid_arg) if pid_arg is not None else None,
+                            path=str(path_arg) if path_arg is not None else None,
+                        )
+                    elif tool_name == "suggest_resolution":
+                        target_port = int(arguments.get("port"))
+                        proto_val = str(arguments.get("proto", "tcp"))
+                        result_data = handle_suggest_resolution(
+                            inspector, target_port, proto_val
+                        )
                     else:
                         raise ValueError(f"Unknown tool: {tool_name}")
 

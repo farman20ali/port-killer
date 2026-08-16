@@ -50,7 +50,18 @@ class TestMCPProtocol:
         assert "protocolVersion" in init["result"]
         assert "capabilities" in init["result"]
 
-    def test_tools_list_returns_all_eight_tools(self):
+    def test_initialize_protocol_version_is_current(self):
+        """Server must advertise the current MCP protocol version (2026-07-28)."""
+        responses = _send(
+            {"jsonrpc": "2.0", "id": 10, "method": "initialize", "params": {
+                "protocolVersion": "2026-07-28",
+                "clientInfo": {"name": "test"},
+                "capabilities": {},
+            }},
+        )
+        assert responses[0]["result"]["protocolVersion"] == "2026-07-28"
+
+    def test_tools_list_returns_all_ten_tools(self):
         responses = _send(
             {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
         )
@@ -59,7 +70,7 @@ class TestMCPProtocol:
         expected = {
             "list_ports", "inspect_port", "kill_port",
             "diagnose_port", "list_connections", "conflicts", "doctor",
-            "stop_service",
+            "stop_service", "find_project", "suggest_resolution",
         }
         assert expected == names
 

@@ -109,7 +109,7 @@ class TestProtocolVersion:
                 },
             }
         )
-        assert responses[0]["result"]["protocolVersion"] == "2024-11-05"
+        assert responses[0]["result"]["protocolVersion"] == "2026-07-28"
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +234,7 @@ class TestMCPStopServiceExecution:
              patch("kport.mcp_server.check_safety_policy", return_value=(True, "")), \
              patch("kport.service_actions.stop_service", return_value=mock_result), \
              patch("kport.mcp_server.audit"), \
-             patch("kport.cli._poll_until_free", return_value=False):
+             patch("kport.mcp_server._poll_until_free", return_value=False):
             resp = _call_stop_service(port=9000, dry_run=False)
 
         result = resp["result"]
