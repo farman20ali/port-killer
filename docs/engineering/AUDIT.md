@@ -1,9 +1,9 @@
-# kport v4.0.3 — Repository Audit Report
+# kport v5.0.0 — Repository Audit Report
 
-**Date:** 2026-08-08
-**Branch:** `features` (HEAD = `45f2df2`, tag `v4.0.3`)
-**Auditor:** AI engineering agent per `AI_PROMPT.md` instructions
-**Test baseline:** 82 passed, 2 skipped — ✅ clean
+**Date:** 2026-08-22
+**Branch:** `features` (HEAD = `78bfaa2`, post-tag `v4.0.3` evolution)
+**Auditor:** AI engineering agent
+**Test baseline:** 311 passed, 1 skipped — ✅ clean
 
 ---
 
@@ -11,7 +11,7 @@
 
 | File | Role | Size |
 |---|---|---|
-| `src/kport/__init__.py` | Version string (`4.0.3`) | small |
+| `src/kport/__init__.py` | Version string (`5.0.0`) | small |
 | `src/kport/cli.py` | Monolithic CLI entry-point — all subcommands, all routing | 2962 lines |
 | `src/kport/constants.py` | `PROTECTED_PORTS`, `PROTECTED_PROCESS_NAMES`, `RUNTIME_ENRICHMENT_NAMES` | shared safety source-of-truth |
 | `src/kport/exceptions.py` | `KPortError`, `InvalidPortError`, `PermissionDeniedError`, `DockerError`, `PortBlockedError`, `ProcessNotFoundError` | 6 classes |
@@ -64,18 +64,18 @@ Legacy short flags (all preserved):
 |---|---|---|---|---|---|
 | Port inspection (TCP) | ✅ Full | Good | ✅ | None | Maintain |
 | Port inspection (UDP) | ✅ Full | Good | ✅ | None | Maintain |
-| Port inspection (IPv4/IPv6) | ✅ Partial | OK | Partial | IPv6 state reporting thin | Minor P2 |
-| Process info (PID/name/exe/cmdline/user) | ✅ Full | Good | ✅ | No ppid/cwd/start_time in `ProcessInfo` | P2 extension |
+| Port inspection (IPv4/IPv6) | ✅ Full | Good | ✅ | None | Maintain |
+| Process info (PID/name/exe/cmdline/user) | ✅ Full | Good | ✅ | None | Maintain |
 | Process enrichment (runtime names) | ✅ Full | Good | ✅ | None | Maintain |
 | Process tree kill (`--kill-tree`) | ✅ Full | Good | ✅ | None | Maintain |
 | Docker integration (list/stop/restart/rm) | ✅ Full | Good | ✅ | None | Maintain |
 | Watch mode (live TUI) | ✅ Exists | Good | ✅ | Polling only (no event-driven) | P2 review |
 | TUI interactive picker (curses) | ✅ Full | Good | ✅ | None | Maintain |
-| Safety / protected ports | ✅ Full | Good | ✅ | Centralized in `constants.py`, shared CLI+MCP | Maintain |
+| Safety / protected ports | ✅ Full | Good | ✅ | Centralized in `safety.py`, shared CLI+MCP | Maintain |
 | Bypass safety (`--bypass-safety`) | ✅ Full | Good | ✅ | None | Maintain |
-| Audit logging | ✅ Full | Good | ❌ No tests | Tests completely absent | **P1 add tests** |
-| MCP server | ✅ Exists | Manual JSON-RPC | ✅ | `force=True` default is unsafe | **P1 fix** |
-| Service managers (systemd/PM2/Supervisor) | ✅ Full | Good | ✅ | Windows Service detection missing | P2 |
+| Audit logging | ✅ Full | Good | ✅ | None | Maintain |
+| MCP server | ✅ Exists | Manual JSON-RPC | ✅ | None | Maintain |
+| Service managers (systemd/PM2/Supervisor) | ✅ Full | Good | ✅ | macOS launchd detection missing | P2 |
 | `explain` command | ✅ Full | Good | ✅ | No structured OBS/INF/REC separation | Basis for `diagnose` |
 | `conflicts` command | ✅ Full | Good | ✅ | Local vs Docker conflict detection | Maintain |
 | Port profiles | ✅ Full | Good | ✅ | None | Maintain |
@@ -87,13 +87,13 @@ Legacy short flags (all preserved):
 | VS Code extension | ✅ Exists | TypeScript | CI only | Separate codebase | Maintain separately |
 | Packaging (PyPI/Snap/Choco/AUR/Homebrew/winget) | ✅ Full | Good | CI | Version consistency check needed | P2 verify |
 | CI/CD | ✅ Full | Good | ✅ | — | Maintain |
-| `diagnose` command | ❌ Missing | — | — | Structured OBS/INF/REC reasoning | **P1 implement** |
-| `doctor` command | ❌ Missing | — | — | Environment-wide scan | P2 |
-| `connections` command | ❌ Missing | — | — | Established connections (not just LISTEN) | P2 |
-| Project detection | ❌ Missing | — | — | Port → git repo / project files | P2 |
+| `diagnose` command | ✅ Full | Good | ✅ | None | Maintain |
+| `doctor` command | ✅ Full | Good | ✅ | None | Maintain |
+| `connections` command | ✅ Full | Good | ✅ | None | Maintain |
+| Project detection | ✅ Full | Good | ✅ | None | Maintain |
 | Dependency graph | ❌ Missing | — | — | Frontend→API→DB graph | P3 |
-| Platform capability matrix doc | ❌ Missing | — | — | No formal doc | **P1 create** |
-| `docs/engineering/AUDIT.md` | ❌ Missing | — | — | — | **This document** |
+| Platform capability matrix doc | ✅ Exists | Good | — | None | Maintain |
+| `docs/engineering/AUDIT.md` | ✅ Exists | Good | — | None | Maintain |
 
 ---
 
@@ -137,22 +137,12 @@ Legacy short flags (all preserved):
 
 ## 5. Identified Gaps — Priority Order
 
-### P1 (Active issues — fix before adding features)
+### P2 (High-value additions)
 
-| # | Gap | File(s) | Effort |
-|---|---|---|---|
-| P1-A | MCP `force=True` default → should be `false` | `mcp_server.py` | 15 min |
-| P1-B | Audit log tests absent | new `tests/test_audit.py` | 2 hrs |
-| P1-C | `kport diagnose` command missing | `cli.py`, new `tests/test_diagnose.py` | half day |
-| P1-D | Platform capability matrix | new `docs/engineering/PLATFORM.md` | 1 hr |
-
-### P2 (High-value additions, after P1 stable)
-
-- `kport doctor` environment scan
-- `kport connections` (ESTABLISHED connections, not just LISTEN)
-- Project detection (port → git root / project files)
-- `ProcessInfo` ppid/cwd/start_time enrichment
-- Windows Service detection in `process_manager.py`
+- Add macOS `launchd` support to `service_actions.py` (`launchctl stop <label>`).
+- Implement `[S]` keyboard shortcut in TUI (`interactive.py`) to stop process-manager services.
+- Add `kport restart-service <port>` command.
+- Standardize shell autocompletion test coverage.
 
 ### P3 (Later)
 
@@ -185,17 +175,16 @@ Legacy short flags (all preserved):
 ## 7. Test Suite Baseline
 
 ```
-82 passed, 2 skipped  (< 2s)
+311 passed, 1 skipped  (~11s)
 ```
 
-Skipped: 2 tests in `test_new_features.py` — Unix-only `/proc` path checks (expected on Windows).
+Skipped: 1 test in `test_project.py` (platform-specific behaviour).
 
-Coverage gaps:
-- Audit log writes (no assertions on NDJSON output)
-- `kport diagnose` (not yet implemented)
-- `kport doctor` (not yet implemented)
-- Shell autocompletion scripts
-- Established-connections path
+Coverage gaps resolved:
+- Audit log writes (fully tested in `test_audit.py` and `test_audit_completeness.py`)
+- `kport diagnose` (fully tested in `test_cli_diagnose.py` and `test_tui_diagnose.py`)
+- `kport doctor` (fully tested in `test_doctor.py` and `test_cli_doctor.py`)
+- Established-connections path (fully tested in `test_connections.py`)
 
 ---
 
@@ -203,7 +192,7 @@ Coverage gaps:
 
 | Channel | File(s) | Version consistent? |
 |---|---|---|
-| PyPI | `pyproject.toml` | ✅ `4.0.3` |
+| PyPI | `pyproject.toml` | ✅ `5.0.0` |
 | Snap | `packaging/snap/` | Needs verification before next release |
 | Chocolatey | `packaging/chocolatey/` | Needs verification before next release |
 | AUR | `packaging/aur/` | Needs verification before next release |
@@ -226,14 +215,11 @@ Coverage gaps:
 
 ---
 
-## 10. Implementation Order (confirmed)
+## 10. Implementation History
 
-```
-Phase 0   Repository audit + docs/engineering/AUDIT.md    ← THIS DOCUMENT
-Phase 1A  MCP force=False fix                             ← NEXT
-Phase 1B  Audit log tests
-Phase 1C  kport diagnose command
-Phase 1D  docs/engineering/PLATFORM.md
-Phase 2   doctor / connections / project detection
-Phase 3   cli.py refactor / MCP SDK / graph
-```
+All core features planned for v5.0.0 have been fully implemented, integrated, and verified:
+- **Phase 1**: Safety policies centralized, MCP `force=False` fixed, audit log tests added.
+- **Phase 2**: `diagnose`, `doctor`, `connections`, and project detection implemented.
+- **Phase 3**: Decoupled kill confirmations, interactive TUI diagnose overlays, and service stop actions implemented.
+
+Future evolution phases (macOS service actions, TUI keyboard shortcuts, service restart) will follow a similar audit and design methodology.

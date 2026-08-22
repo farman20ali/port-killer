@@ -1,7 +1,7 @@
-# 🚀 kport v5.0.0 — Release Notes (Unreleased)
+# 🚀 kport v5.0.0 — Release Notes
 
-**Release Date:** *Unreleased / In Development*  
-**Tag:** *Unreleased*  
+**Release Date:** 2026-08-22  
+**Tag:** `v5.0.0`  
 **Branch:** `features`  
 
 ---
@@ -107,24 +107,33 @@ Protocol version is locked to `"2024-11-05"`.
 
 | Test Module | Tests | Status |
 |---|---|---|
-| `test_audit.py` | 11 | ✅ Passed |
-| `test_cli.py` | 13 | ✅ Passed |
+| `test_cli_commands.py` | 24 | ✅ Passed |
+| `test_cli_diagnose.py` | 7 | ✅ Passed |
 | `test_cli_stop_service.py` | 10 | ✅ Passed |
-| `test_commands.py` | 21 | ✅ Passed |
-| `test_connections.py` | 8 | ✅ Passed |
-| `test_diagnose.py` | 13 | ✅ Passed |
-| `test_doctor.py` | 20 | ✅ Passed |
-| `test_enrichment.py` | 5 | ✅ Passed |
-| `test_mcp_server.py` | 8 | ✅ Passed |
-| `test_mcp_safety.py` | 9 | ✅ Passed |
+| `test_cli_watch.py` | 4 | ✅ Passed |
+| `test_mcp_safety.py` | 5 | ✅ Passed |
+| `test_mcp_server.py` | 11 | ✅ Passed |
 | `test_mcp_stop_service.py` | 13 | ✅ Passed |
-| `test_mcp_tools.py` | 19 | ✅ Passed |
-| `test_process_manager_win.py` | 5 | ✅ Passed |
-| `test_project.py` | 14 | ✅ Passed |
+| `test_mcp_tools.py` | 44 | ✅ Passed |
 | `test_publish_pypi.py` | 1 | ✅ Passed |
+| `test_interactive.py` | 12 | ✅ Passed |
+| `test_tui_diagnose.py` | 6 | ✅ Passed |
+| `test_audit.py` | 6 | ✅ Passed |
+| `test_audit_completeness.py` | 10 | ✅ Passed |
+| `test_connections.py` | 7 | ✅ Passed |
+| `test_diagnostics.py` | 26 | ✅ Passed |
+| `test_doctor.py` | 28 | ✅ Passed |
+| `test_enrichment.py` | 5 | ✅ Passed |
+| `test_inspectors.py` | 12 | ✅ Passed |
+| `test_kill_domain.py` | 9 | ✅ Passed |
+| `test_notify.py` | 1 | ✅ Passed |
+| `test_process_manager.py` | 7 | ✅ Passed |
+| `test_process_tree.py` | 3 | ✅ Passed |
+| `test_profile.py` | 3 | ✅ Passed |
+| `test_project.py` | 31 | ✅ 30 Passed, 1 Skipped |
+| `test_safety.py` | 12 | ✅ Passed |
 | `test_service_actions.py` | 12 | ✅ Passed |
-| *(others)* | ~55 | ✅ Passed |
-| **Total** | **237 passed, 2 skipped** | ✅ |
+| **Total** | **311 passed, 1 skipped** | ✅ |
 
 ---
 

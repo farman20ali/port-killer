@@ -24,21 +24,26 @@ tests/
 │   ├── test_enrichment.py        # ProcessInfo metadata enrichment
 │   ├── test_profile.py           # Named port profile resolution
 │   ├── test_notify.py            # Desktop notification dispatching
-│   └── test_audit.py             # NDJSON audit log generation and rotation
+│   ├── test_audit.py             # NDJSON audit log generation and rotation
+│   ├── test_audit_completeness.py # Audit record emission from TUI/MCP kill paths
+│   └── test_service_actions.py   # Managed service stop commands (systemd, PM2, supervisord, Windows)
 │
 ├── cli/                          # Command-line interface tests
 │   ├── test_cli_commands.py      # Subcommand routing, exit codes, JSON envelopes
 │   ├── test_cli_diagnose.py      # diagnose CLI rendering and format checks
 │   ├── test_cli_doctor.py        # doctor CLI report rendering
+│   ├── test_cli_stop_service.py  # Service stop CLI integration tests
 │   └── test_cli_watch.py         # watch mode state transitions and timeouts
 │
 ├── mcp/                          # Model Context Protocol stdio server tests
 │   ├── test_mcp_server.py        # JSON-RPC framing, initialize, tools/list, isError consistency
-│   ├── test_mcp_tools.py         # All 7 MCP tools call verification
-│   └── test_mcp_safety.py        # MCP safety shield enforcement and config additivity
+│   ├── test_mcp_tools.py         # All MCP tools call verification
+│   ├── test_mcp_safety.py        # MCP safety shield enforcement and config additivity
+│   └── test_mcp_stop_service.py  # stop_service MCP tool validation
 │
 ├── tui/                          # Curses TUI and text fallback picker tests
-│   └── test_interactive.py       # Selection picker, numbered menu, confirmation gates
+│   ├── test_interactive.py       # Selection picker, numbered menu, confirmation gates
+│   └── test_tui_diagnose.py      # TUI diagnose overlays and key handling
 │
 └── packaging/                    # Packaging validation
     └── test_publish_pypi.py      # License metadata check in PyPI script

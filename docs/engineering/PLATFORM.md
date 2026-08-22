@@ -1,7 +1,7 @@
 # kport — Platform Capability Matrix
 
-**Version:** v4.0.3
-**Date:** 2026-08-08
+**Version:** v5.0.0
+**Date:** 2026-08-22
 **Source:** Derived from direct code inspection of `src/kport/`
 
 > **Legend:**
