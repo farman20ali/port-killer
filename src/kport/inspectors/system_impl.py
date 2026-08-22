@@ -1573,9 +1573,7 @@ class FallbackInspector(BaseInspector):
             return sorted(pids)
         else:
             if shutil.which("pgrep"):
-                # pgrep -f matches the full command line including kport itself.
-                # Filter self-PID from results (R5).
-                args = ["pgrep", "-f", name] if not exact else ["pgrep", "-x", name]
+                args = ["pgrep", "-i", name] if not exact else ["pgrep", "-x", name]
                 proc = self._run_subprocess(args)
                 out = proc.stdout or ""
                 pids = []
@@ -1592,11 +1590,22 @@ class FallbackInspector(BaseInspector):
                 out = proc.stdout or ""
                 pids = []
                 for line in out.splitlines():
-                    if name in line if exact else name.lower() in line.lower():
-                        parts = re.split(r"\s+", line.strip())
-                        if len(parts) >= 2:
+                    if line.strip().startswith("UID"):
+                        continue
+                    parts = re.split(r"\s+", line.strip(), maxsplit=7)
+                    if len(parts) >= 8:
+                        pid_str = parts[1]
+                        cmd_field = parts[7]
+                        cmd_word = cmd_field.split()[0] if cmd_field.split() else ""
+                        pname = os.path.basename(cmd_word).strip("[]()")
+                        match = (
+                            (pname == name)
+                            if exact
+                            else (name.lower() in pname.lower())
+                        )
+                        if match:
                             try:
-                                pid = int(parts[1])
+                                pid = int(pid_str)
                                 if pid != self_pid:
                                     pids.append(pid)
                             except ValueError:

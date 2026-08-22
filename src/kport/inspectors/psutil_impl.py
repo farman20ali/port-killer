@@ -238,26 +238,25 @@ class PsutilInspector(BaseInspector):
     def find_pids_by_name(self, name: str, exact: bool = False) -> list[int]:
         out = []
         name_lower = name.lower()
-        for p in psutil.process_iter(["pid", "name", "cmdline"]):
+        self_pid = os.getpid()
+        for p in psutil.process_iter(["pid", "name"]):
             try:
+                pid = p.info["pid"]
+                if pid == self_pid:
+                    continue
                 pname = p.info["name"] or ""
                 compare = pname.lower()
                 match = (
                     (compare == name_lower)
                     if exact
-                    else (
-                        name_lower in compare
-                        or any(
-                            name_lower in (c or "").lower()
-                            for c in (p.info.get("cmdline") or [])
-                        )
-                    )
+                    else (name_lower in compare)
                 )
                 if match:
-                    out.append(p.info["pid"])
+                    out.append(pid)
             except psutil.Error:
                 continue
         return sorted(set(out))
+
 
     def find_ports_by_process_name(
         self, name: str, exact: bool = False, proto: str = "tcp"

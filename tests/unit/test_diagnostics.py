@@ -300,3 +300,39 @@ class TestDetectConflicts:
         assert "port" in conflict
         assert "docker" in conflict
         assert conflict["docker"]["container_name"] == "web"
+
+
+@pytest.mark.unit
+class TestDiagnosticsArchitecture:
+    """Ensure diagnostics module maintains correct architectural dependency direction."""
+
+    def test_diagnostics_imports_boundary_regression(self):
+        """Regression test ensuring diagnostics.py does not import presentation/TUI/CLI/MCP layers."""
+        import ast
+
+        import kport.diagnostics
+
+        diag_path = kport.diagnostics.__file__
+
+        assert diag_path is not None
+
+        with open(diag_path, "r", encoding="utf-8") as f:
+            tree = ast.parse(f.read(), filename=diag_path)
+
+        forbidden = {"interactive", "formatter", "cli", "cli_commands", "cli_utils", "mcp_server"}
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    name_parts = alias.name.split(".")
+                    for part in name_parts:
+                        assert part not in forbidden, f"Forbidden import found in diagnostics.py: import {alias.name}"
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    module_parts = node.module.split(".")
+                    for part in module_parts:
+                        assert part not in forbidden, f"Forbidden import found in diagnostics.py: from {node.module} import ..."
+                if node.level > 0:
+                    for alias in node.names:
+                        assert alias.name not in forbidden, f"Forbidden relative import found in diagnostics.py: from . import {alias.name}"
+

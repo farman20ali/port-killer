@@ -181,3 +181,37 @@ class TestCursesKeyHandling:
              patch("curses.color_pair"):
             rc = run_interactive_picker(inspector, args)
         assert rc == 0
+
+
+@pytest.mark.tui
+class TestCursesWrapperExceptionHandling:
+    """Tests for curses.wrapper exception and interruption boundaries."""
+
+    def test_keyboard_interrupt_exits_gracefully_with_zero(self):
+        inspector = FakeInspector()
+        args = _args(command="interactive")
+
+        with patch("sys.stdin.isatty", return_value=True), \
+             patch("sys.stdout.isatty", return_value=True), \
+             patch("curses.wrapper", side_effect=KeyboardInterrupt), \
+             patch("kport.interactive._fallback_numbered_menu") as mock_fallback, \
+             patch("builtins.print") as mock_print:
+            rc = run_interactive_picker(inspector, args)
+
+        assert rc == 0
+        mock_print.assert_any_call("\nCancelled.")
+        mock_fallback.assert_not_called()
+
+    def test_generic_exception_triggers_fallback_menu(self):
+        inspector = FakeInspector()
+        args = _args(command="interactive")
+
+        with patch("sys.stdin.isatty", return_value=True), \
+             patch("sys.stdout.isatty", return_value=True), \
+             patch("curses.wrapper", side_effect=RuntimeError("Terminal broken")), \
+             patch("kport.interactive._fallback_numbered_menu", return_value=42) as mock_fallback:
+            rc = run_interactive_picker(inspector, args)
+
+        assert rc == 42
+        mock_fallback.assert_called_once_with(inspector, args)
+

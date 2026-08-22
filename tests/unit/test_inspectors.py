@@ -142,3 +142,77 @@ class TestFallbackInspectorProtoFiltering:
         assert all(b.proto == "tcp" for b in tcp_only)
         assert all(b.proto == "udp" for b in udp_only)
         assert len(both) == 2
+
+
+@pytest.mark.unit
+class TestInspectorProcessNameMatching:
+    """Tests for find_pids_by_name() matching correctness and self-exclusion."""
+
+    def test_psutil_find_pids_by_name(self):
+        inspector = PsutilInspector()
+
+        p1 = MagicMock()
+        p1.info = {"pid": 101, "name": "java"}
+        p2 = MagicMock()
+        p2.info = {"pid": 102, "name": "java-helper"}
+        p3 = MagicMock()
+        p3.info = {"pid": 103, "name": "sh"}
+        p4 = MagicMock()
+        p4.info = {"pid": 104, "name": "kport"}
+
+        mock_iter = [p1, p2, p3, p4]
+
+        # 1. Non-exact match (matches name, name-helper, excludes sh/kport)
+        with patch("psutil.process_iter", return_value=mock_iter), \
+             patch("os.getpid", return_value=9999):
+            pids = inspector.find_pids_by_name("java", exact=False)
+        assert pids == [101, 102]
+
+        # 2. Exact match
+        with patch("psutil.process_iter", return_value=mock_iter), \
+             patch("os.getpid", return_value=9999):
+            pids = inspector.find_pids_by_name("java", exact=True)
+        assert pids == [101]
+
+        # 3. Self-PID exclusion
+        with patch("psutil.process_iter", return_value=mock_iter), \
+             patch("os.getpid", return_value=101):
+            pids = inspector.find_pids_by_name("java", exact=False)
+        assert pids == [102]
+
+    def test_fallback_pgrep_find_pids_by_name(self):
+        inspector = FallbackInspector()
+        inspector.system = "Linux"
+
+        mock_proc = MagicMock()
+        mock_proc.stdout = "101\n102\n"
+
+        with patch("shutil.which", return_value="/usr/bin/pgrep"), \
+             patch.object(inspector, "_run_subprocess", return_value=mock_proc) as mock_run, \
+             patch("os.getpid", return_value=9999):
+            pids = inspector.find_pids_by_name("java", exact=False)
+
+        assert pids == [101, 102]
+        mock_run.assert_called_once_with(["pgrep", "-i", "java"])
+
+    def test_fallback_ps_ef_find_pids_by_name(self):
+        inspector = FallbackInspector()
+        inspector.system = "Linux"
+
+        ps_output = (
+            "UID        PID  PPID  C STIME TTY          TIME CMD\n"
+            "root       101     1  0 12:00 ?        00:00:00 java -jar app.jar\n"
+            "root       102   101  0 12:00 ?        00:00:00 java-helper\n"
+            "root       103   100  0 12:00 ?        00:00:00 sh -c java\n"
+            "root       104   100  0 12:00 ?        00:00:00 kport -kp java\n"
+        )
+        mock_proc = MagicMock()
+        mock_proc.stdout = ps_output
+
+        with patch("shutil.which", return_value=None), \
+             patch.object(inspector, "_run_subprocess", return_value=mock_proc), \
+             patch("os.getpid", return_value=9999):
+            pids = inspector.find_pids_by_name("java", exact=False)
+
+        assert pids == [101, 102]
+
