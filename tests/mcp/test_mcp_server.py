@@ -61,7 +61,7 @@ class TestMCPProtocol:
         )
         assert responses[0]["result"]["protocolVersion"] == "2026-07-28"
 
-    def test_tools_list_returns_all_ten_tools(self):
+    def test_tools_list_returns_all_thirteen_tools(self):
         responses = _send(
             {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
         )
@@ -71,6 +71,7 @@ class TestMCPProtocol:
             "list_ports", "inspect_port", "kill_port",
             "diagnose_port", "list_connections", "conflicts", "doctor",
             "stop_service", "find_project", "suggest_resolution",
+            "inspect_pid", "kill_pid", "kill_process",
         }
         assert expected == names
 

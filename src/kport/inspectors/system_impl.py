@@ -1739,8 +1739,9 @@ class FallbackInspector(BaseInspector):
                 # Layer 2: per-process network namespace (/proc/<pid>/net/tcp)
                 # This handles snap-packaged / container processes whose sockets
                 # don't appear in the host /proc/net/tcp view.
-                if not results:
-                    for pid in pids_by_name:
+                seen_pids = {b.pid for b in results if b.pid}
+                for pid in pids_by_name:
+                    if pid not in seen_pids:
                         ns_bindings = _list_listening_proc_pid_net(pid)
                         for b in ns_bindings:
                             b.pid = pid

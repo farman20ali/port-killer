@@ -209,6 +209,13 @@ Examples:
         action="store_true",
         help="Start the MCP JSON-RPC server on stdio (alias for 'kport mcp')",
     )
+    parser.add_argument(
+        "-p",
+        "--pid",
+        type=int,
+        metavar="PID",
+        help="Specify process ID (PID) for inspection or killing",
+    )
 
     # FIX: pass parser_class=_QuietParser so ALL subparsers inherit quiet error formatting
     sub = parser.add_subparsers(dest="command", parser_class=_QuietParser)
@@ -248,6 +255,13 @@ Examples:
     sp_inspect.add_argument("port", type=int, nargs="?")
     sp_inspect.add_argument(
         "--profile", type=str, help="Named port profile from config"
+    )
+    sp_inspect.add_argument(
+        "-p",
+        "--pid",
+        type=int,
+        metavar="PID",
+        help="Process ID to inspect",
     )
 
     sp_explain = sub.add_parser(
@@ -295,6 +309,13 @@ Examples:
         "--kill-tree",
         action="store_true",
         help="Kill the process and all of its descendants",
+    )
+    sp_kill.add_argument(
+        "-p",
+        "--pid",
+        type=int,
+        metavar="PID",
+        help="Process ID to kill",
     )
 
     sp_kp = sub.add_parser(
@@ -448,6 +469,7 @@ Examples:
                 args.kill_process,
                 args.kill_all,
                 args.kill_range,
+                args.pid is not None,
             ]
         ):
             parser.print_help()

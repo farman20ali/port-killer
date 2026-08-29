@@ -245,7 +245,208 @@ TOOLS = [
             "required": ["port"],
         },
     },
+    {
+        "name": "inspect_pid",
+        "description": "Returns detailed information about a specific local process by PID, including its name, command line, user, parent PID, working directory, and active network port bindings.",
+        "annotations": {"readOnlyHint": True},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pid": {
+                    "type": "integer",
+                    "description": "The process ID (PID) to inspect.",
+                }
+            },
+            "required": ["pid"],
+        },
+    },
+    {
+        "name": "kill_pid",
+        "description": "Terminates a specific local process by PID. Includes safety checks to prevent terminating critical system processes.",
+        "annotations": {"destructiveHint": True},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "pid": {
+                    "type": "integer",
+                    "description": "The process ID (PID) to terminate.",
+                },
+                "force": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Whether to force-kill (SIGKILL) the process if graceful SIGTERM fails.",
+                },
+                "kill_tree": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Whether to kill the process and all of its descendants.",
+                },
+            },
+            "required": ["pid"],
+        },
+    },
+    {
+        "name": "kill_process",
+        "description": "Kills processes by name. Safety checks are performed on all target PIDs.",
+        "annotations": {"destructiveHint": True},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "The process name to match.",
+                },
+                "exact": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Whether to require an exact process name match.",
+                },
+                "force": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Whether to force-kill matching processes.",
+                },
+                "kill_tree": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Whether to kill matching processes and all descendants.",
+                },
+            },
+            "required": ["name"],
+        },
+    },
 ]
+
+
+def handle_inspect_pid(inspector, pid: int) -> dict[str, Any]:
+    """Execute inspect_pid tool request (read-only)."""
+    info = inspector.get_process_info(pid)
+    if not info:
+        raise ValueError(f"Process with PID {pid} not found or details unavailable.")
+
+    # Find active port bindings for this PID
+    all_bindings = inspector.list_listening(proto="both")
+    pid_bindings = [
+        {
+            "port": b.port,
+            "proto": b.proto,
+            "state": b.state or "LISTEN",
+            "address": b.laddr
+        }
+        for b in all_bindings
+        if b.pid == pid
+    ]
+
+    from dataclasses import asdict
+    return {
+        "pid": pid,
+        "process": asdict(info) if info else None,
+        "active_ports": pid_bindings
+    }
+
+
+def handle_kill_pid(inspector, pid: int, force: bool = False, kill_tree: bool = False) -> dict[str, Any]:
+    """Execute kill_pid tool request (destructive) under safety shield validations."""
+    cfg = load_mcp_config()
+    allowed, reason = check_safety_policy(
+        port=None,
+        pids=[pid],
+        inspector=inspector,
+        bypass_safety=False,
+        config=cfg if cfg else None,
+    )
+    if not allowed:
+        return {
+            "success": False,
+            "message": reason,
+        }
+
+    info = inspector.get_process_info(pid)
+    pname = info.name if info else "Unknown"
+
+    if kill_tree:
+        ok, msg = inspector.kill_process_tree(
+            pid,
+            graceful_timeout=3.0,
+            force=force,
+            dry_run=False,
+            assume_yes=True,
+        )
+    else:
+        ok, msg = inspector.kill_pid(
+            pid,
+            graceful_timeout=3.0,
+            force=force,
+            dry_run=False,
+            assume_yes=True,
+        )
+
+    audit.log_kill_pid(
+        pid, pname, dry_run=False, success=ok, message=msg
+    )
+
+    return {"success": ok, "pid": pid, "message": msg}
+
+
+def handle_kill_process(
+    inspector, name: str, exact: bool = False, force: bool = False, kill_tree: bool = False
+) -> dict[str, Any]:
+    """Execute kill_process tool request (destructive) under safety shield validations."""
+    pids = inspector.find_pids_by_name(name, exact=exact)
+    if not pids:
+        return {"success": True, "message": f"No processes found matching '{name}'."}
+
+    cfg = load_mcp_config()
+    allowed, reason = check_safety_policy(
+        port=None,
+        pids=pids,
+        inspector=inspector,
+        bypass_safety=False,
+        config=cfg if cfg else None,
+    )
+    if not allowed:
+        return {
+            "success": False,
+            "message": reason,
+        }
+
+    killed = []
+    failed = []
+    for pid in pids:
+        info = inspector.get_process_info(pid)
+        pname = info.name if info else name
+
+        if kill_tree:
+            ok, msg = inspector.kill_process_tree(
+                pid,
+                graceful_timeout=3.0,
+                force=force,
+                dry_run=False,
+                assume_yes=True,
+            )
+        else:
+            ok, msg = inspector.kill_pid(
+                pid,
+                graceful_timeout=3.0,
+                force=force,
+                dry_run=False,
+                assume_yes=True,
+            )
+
+        audit.log_kill_pid(
+            pid, pname, dry_run=False, success=ok, message=msg
+        )
+
+        if ok:
+            killed.append({"pid": pid, "msg": msg})
+        else:
+            failed.append({"pid": pid, "msg": msg})
+
+    return {
+        "success": len(failed) == 0,
+        "killed": killed,
+        "failed": failed,
+    }
 
 
 def handle_list_ports(inspector) -> dict[str, Any]:
@@ -699,6 +900,20 @@ def run_mcp_server() -> None:
                         result_data = handle_suggest_resolution(
                             inspector, target_port, proto_val
                         )
+                    elif tool_name == "inspect_pid":
+                        target_pid = int(arguments.get("pid"))
+                        result_data = handle_inspect_pid(inspector, target_pid)
+                    elif tool_name == "kill_pid":
+                        target_pid = int(arguments.get("pid"))
+                        force_flag = bool(arguments.get("force", False))
+                        tree_flag = bool(arguments.get("kill_tree", False))
+                        result_data = handle_kill_pid(inspector, target_pid, force_flag, tree_flag)
+                    elif tool_name == "kill_process":
+                        p_name = str(arguments.get("name"))
+                        exact_flag = bool(arguments.get("exact", False))
+                        force_flag = bool(arguments.get("force", False))
+                        tree_flag = bool(arguments.get("kill_tree", False))
+                        result_data = handle_kill_process(inspector, p_name, exact_flag, force_flag, tree_flag)
                     else:
                         raise ValueError(f"Unknown tool: {tool_name}")
 

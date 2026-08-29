@@ -648,6 +648,190 @@ def handle_doctor(args: argparse.Namespace, inspector: BaseInspector) -> int:
     return EXIT_OK
 
 
+def handle_inspect_pid_cli(args: argparse.Namespace, inspector: BaseInspector) -> int:
+    pid = args.pid
+    info = inspector.get_process_info(pid)
+    if not info:
+        if getattr(args, "json", False):
+            print(_json_out(args.command or "inspect", {"pid": pid, "error": f"Process {pid} not found or details unavailable"}))
+        else:
+            print(colorize(f"Error: Process {pid} not found or details unavailable", Colors.RED), file=sys.stderr)
+        return EXIT_INVALID_INPUT
+
+    # Find port bindings matching this PID
+    proto = getattr(args, "proto", "both")
+    all_bindings = inspector.list_listening(proto=proto)
+    pid_bindings = [b for b in all_bindings if b.pid == pid]
+
+    if getattr(args, "json", False):
+        bindings_json = []
+        for b in pid_bindings:
+            bindings_json.append({
+                "port": b.port,
+                "proto": b.proto,
+                "state": b.state or "LISTEN",
+                "laddr": b.laddr
+            })
+        out = {
+            "pid": pid,
+            "type": "process",
+            "process": asdict(info) if info else None,
+            "active_ports": bindings_json
+        }
+        print(_json_out(args.command or "inspect", out))
+    else:
+        print(colorize(f"\n🔍 Inspecting PID {pid}\n", Colors.CYAN + Colors.BOLD))
+        print(f"PID:         {pid}")
+        print(f"Process:     {info.name}")
+        if info.cmdline:
+            print(f"Command:     {' '.join(info.cmdline)}")
+        if info.user:
+            print(f"User:        {info.user}")
+        if info.ppid:
+            print(f"Parent PID:  {info.ppid}")
+        if info.cwd:
+            print(f"CWD:         {info.cwd}")
+        
+        print("\nActive Port Bindings:")
+        if not pid_bindings:
+            print("  None")
+        else:
+            for b in pid_bindings:
+                state_str = f" ({b.state})" if b.state else ""
+                print(f"  - Port {b.port} ({b.proto}{state_str})")
+        print()
+
+    return EXIT_OK
+
+
+def handle_kill_pid_cli(args: argparse.Namespace, inspector: BaseInspector) -> int:
+    pid = args.pid
+    info = inspector.get_process_info(pid)
+    if not info:
+        if getattr(args, "json", False):
+            print(_json_out(args.command or "kill", {"pid": pid, "success": False, "message": f"Process {pid} not found"}))
+        else:
+            print(colorize(f"Error: Process {pid} not found", Colors.RED), file=sys.stderr)
+        return EXIT_INVALID_INPUT
+
+    # Check safety policy
+    safe, safety_msg = check_safety_policy(None, [pid], args, inspector)
+    if not safe:
+        if getattr(args, "json", False):
+            print(_json_out(args.command or "kill", {"pid": pid, "success": False, "message": safety_msg}))
+        else:
+            print(colorize(safety_msg, Colors.RED), file=sys.stderr)
+        return EXIT_PERMISSION
+
+    # Confirm unless yes/assume_yes is specified
+    assume_yes = getattr(args, "yes", False)
+    if not assume_yes and not getattr(args, "json", False):
+        print(colorize("Action plan:", Colors.CYAN))
+        print(colorize(f"1. Terminate local PID: {pid} ({info.name})", Colors.CYAN))
+        if not confirm_prompt("Proceed?", assume_yes=False):
+            print(colorize("Operation cancelled.", Colors.YELLOW))
+            return EXIT_GENERAL_ERROR
+
+    kill_tree = getattr(args, "kill_tree", False)
+    dry_run = getattr(args, "dry_run", False)
+    
+    if kill_tree:
+        ok, msg = inspector.kill_process_tree(
+            pid,
+            graceful_timeout=_resolve_timeout(args),
+            force=getattr(args, "force", False),
+            dry_run=dry_run,
+            assume_yes=assume_yes,
+            confirm_fn=confirm_prompt,
+        )
+    else:
+        ok, msg = inspector.kill_pid(
+            pid,
+            graceful_timeout=_resolve_timeout(args),
+            force=getattr(args, "force", False),
+            dry_run=dry_run,
+            assume_yes=assume_yes,
+            confirm_fn=confirm_prompt,
+        )
+
+    # Log audit event
+    audit.log_kill_pid(
+        pid, info.name, dry_run=dry_run, success=ok, message=msg
+    )
+
+    if getattr(args, "json", False):
+        print(_json_out(args.command or "kill", {
+            "pid": pid,
+            "success": ok,
+            "message": msg,
+            "dry_run": dry_run
+        }))
+    else:
+        if ok:
+            print(colorize(f"✓ PID {pid}: {msg}", Colors.GREEN))
+        else:
+            print(colorize(f"✗ PID {pid}: {msg}", Colors.RED))
+
+    return EXIT_OK if ok else EXIT_GENERAL_ERROR
+
+
+def _select_pids_interactively(
+    pids: list[int], pname: str, args: argparse.Namespace, inspector: BaseInspector
+) -> list[int] | None:
+    # Resolve ports for each PID
+    try:
+        all_bindings = inspector.list_listening(proto=getattr(args, "proto", "both"))
+    except Exception:
+        all_bindings = []
+    
+    pid_to_ports = {}
+    for b in all_bindings:
+        if b.pid:
+            pid_to_ports.setdefault(b.pid, []).append(b.port)
+
+    print(colorize(f"Found {len(pids)} process(es) matching '{pname}':", Colors.YELLOW))
+    for idx, pid in enumerate(pids, 1):
+        info = inspector.get_process_info(pid)
+        ports_held = pid_to_ports.get(pid, [])
+        ports_str = f"ports: {', '.join(map(str, sorted(set(ports_held))))}" if ports_held else "no active ports"
+        p_display = f"[{idx}] PID {pid}: {info.name if info else 'Unknown'} ({ports_str})"
+        print(colorize(f"  {p_display}", Colors.WHITE))
+
+    # If --yes is specified or non-interactive (no TTY), default to all
+    if getattr(args, "yes", False) or not sys.stdin.isatty() or not sys.stdout.isatty():
+        return pids
+
+    try:
+        inp = input(
+            colorize(
+                f"\nSelect processes to kill (indices/comma-separated, 'all' to kill all, 'q' to cancel) [default: all]: ",
+                Colors.YELLOW,
+            )
+        ).strip()
+        if inp.lower() in ("q", "quit", "none", "n", "no", "cancel"):
+            return None
+        
+        if not inp or inp.lower() in ("all", "y", "yes"):
+            return pids
+        
+        selected_pids = []
+        for token in inp.split(","):
+            token = token.strip()
+            if token.isdigit():
+                val = int(token)
+                if 1 <= val <= len(pids):
+                    selected_pids.append(pids[val - 1])
+        
+        if not selected_pids:
+            print(colorize("No valid selection.", Colors.YELLOW))
+            return None
+        
+        return selected_pids
+    except (KeyboardInterrupt, EOFError):
+        print()
+        return None
+
+
 def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -> int:
     """Implement subcommands defined in the product specification."""
     debug = bool(getattr(args, "debug", False))
@@ -720,6 +904,8 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
         return EXIT_OK
 
     if args.command == "inspect":
+        if getattr(args, "pid", None) is not None:
+            return handle_inspect_pid_cli(args, inspector)
         ports = _resolve_ports_for_args(args)
         if not ports:
             print(
@@ -1090,6 +1276,8 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
         return EXIT_OK
 
     if args.command == "kill":
+        if getattr(args, "pid", None) is not None:
+            return handle_kill_pid_cli(args, inspector)
         ports = _resolve_ports_for_args(args)
         if not ports:
             print(
@@ -1409,15 +1597,17 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
                 print(colorize(safety_msg, Colors.RED), file=sys.stderr)
             return EXIT_PERMISSION
 
-        if not args.json and not confirm_prompt(
-            f"Proceed to terminate {len(pids)} process(es)?", assume_yes=args.yes
-        ):
-            print(colorize("Operation cancelled.", Colors.YELLOW))
-            return EXIT_GENERAL_ERROR
+        if not args.json:
+            target_pids = _select_pids_interactively(pids, pname, args, inspector)
+            if target_pids is None:
+                print(colorize("Operation cancelled.", Colors.YELLOW))
+                return EXIT_GENERAL_ERROR
+        else:
+            target_pids = pids
 
         killed = []
         failed = []
-        for pid in pids:
+        for pid in target_pids:
             if getattr(args, "kill_tree", False):
                 ok, msg = inspector.kill_process_tree(
                     pid,
@@ -1754,6 +1944,8 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
 
 def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) -> int:
     """Execute business workflows for legacy flags."""
+    if getattr(args, "pid", None) is not None:
+        return handle_inspect_pid_cli(args, inspector)
 
     # List ports
     if args.list:
@@ -2158,25 +2350,13 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                     if failed:
                         return EXIT_GENERAL_ERROR
             else:
-                print(
-                    colorize(
-                        f"Found {len(pids)} process(es) matching '{pname}':",
-                        Colors.YELLOW,
-                    )
-                )
-                for pid in pids:
-                    info = inspector.get_process_info(pid)
-                    display = f"PID {pid}: {info.name if info else 'Unknown'}"
-                    print(colorize("  " + display, Colors.WHITE))
-                if not confirm_prompt(
-                    f"\nAre you sure you want to kill {len(pids)} process(es)?",
-                    assume_yes=args.yes,
-                ):
+                target_pids = _select_pids_interactively(pids, pname, args, inspector)
+                if target_pids is None:
                     print(colorize("Operation cancelled.", Colors.YELLOW))
                 else:
                     killed_count = 0
                     failed_count = 0
-                    for pid in pids:
+                    for pid in target_pids:
                         if getattr(args, "kill_tree", False):
                             ok, msg = inspector.kill_process_tree(
                                 pid,
@@ -2215,7 +2395,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                     if failed_count > 0:
                         print(
                             colorize(
-                                f"\n✗ Failed to kill {failed_count}/{len(pids)} process(es)",
+                                f"\n✗ Failed to kill {failed_count}/{len(target_pids)} process(es)",
                                 Colors.RED + Colors.BOLD,
                             )
                         )
@@ -2223,7 +2403,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                     else:
                         print(
                             colorize(
-                                f"\n✓ Successfully killed {killed_count}/{len(pids)} process(es)",
+                                f"\n✓ Successfully killed {killed_count}/{len(target_pids)} process(es)",
                                 Colors.GREEN + Colors.BOLD,
                             )
                         )

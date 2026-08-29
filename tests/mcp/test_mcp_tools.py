@@ -519,12 +519,12 @@ class TestMCPToolMetadata:
     READ_ONLY_TOOLS: ClassVar[set[str]] = {
         "list_ports", "inspect_port", "diagnose_port",
         "list_connections", "conflicts", "doctor",
-        "find_project", "suggest_resolution",
+        "find_project", "suggest_resolution", "inspect_pid",
     }
-    DESTRUCTIVE_TOOLS: ClassVar[set[str]] = {"kill_port", "stop_service"}
+    DESTRUCTIVE_TOOLS: ClassVar[set[str]] = {"kill_port", "stop_service", "kill_pid", "kill_process"}
 
-    def test_total_tool_count_is_ten(self):
-        assert len(TOOLS) == 10
+    def test_total_tool_count_is_thirteen(self):
+        assert len(TOOLS) == 13
 
     def test_read_only_tools_have_read_only_hint(self):
         tool_map = {t["name"]: t for t in TOOLS}
