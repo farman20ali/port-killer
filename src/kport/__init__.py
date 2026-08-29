@@ -2,7 +2,7 @@
 kport: Cross-platform port inspector and killer package.
 """
 
-__version__ = "5.0.0"
+__version__ = "5.0.0.2"
 
 from .exceptions import (
     DockerError,

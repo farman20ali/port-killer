@@ -1004,6 +1004,42 @@ class FallbackInspector(BaseInspector):
                     bindings = [b for b in bindings if b.proto == "udp"]
             return bindings
 
+    def find_bindings_for_pid(self, pid: int) -> list[PortBinding]:
+        """Find all listening port bindings owned by *pid*.
+
+        On Linux, without elevated privileges the global inode→PID map
+        (_get_linux_inode_to_pid_map) cannot read /proc/<pid>/fd/ for
+        processes owned by other users (e.g. root daemons).  In that case
+        the binding appears in /proc/net/tcp with pid=None, so filtering
+        list_listening() by pid returns nothing.
+
+        Fallback: read /proc/<pid>/net/tcp[6] directly.  These files reflect
+        the process's own network-namespace view and are typically readable
+        without root in standard Linux configurations (not locked-down
+        containers or hardened namespaces).
+        """
+        # Stage 1: standard path — works when we own the process or are root
+        bindings = [b for b in self.list_listening(proto="both") if b.pid == pid]
+        if bindings:
+            return bindings
+
+        # Stage 2: Linux-only /proc/<pid>/net fallback
+        if self.system == "Linux":
+            try:
+                ns_bindings = _list_listening_proc_pid_net(pid)
+                if ns_bindings:
+                    # Attach process name from get_process_info so callers
+                    # get a populated process_name field.
+                    info = self.get_process_info(pid)
+                    pname = info.name if info else None
+                    for b in ns_bindings:
+                        b.process_name = pname
+                    return ns_bindings
+            except Exception:  # noqa: BLE001
+                pass
+
+        return bindings
+
     def find_bindings_on_port(self, port: int, proto: str = "tcp") -> list[PortBinding]:
         self._clear_cache()  # C1
         if self.system == "Windows":

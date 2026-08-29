@@ -254,6 +254,19 @@ class BaseInspector:
         """Find listening bindings for a specific port."""
         return [b for b in self.list_listening(proto=proto) if b.port == port]
 
+    def find_bindings_for_pid(self, pid: int) -> list[PortBinding]:
+        """Find all listening port bindings owned by *pid*.
+
+        The default implementation filters ``list_listening(proto="both")`` by
+        pid.  On Linux this will miss sockets belonging to root-owned or
+        sandboxed processes when running unprivileged (the inode→PID map built
+        from /proc/<pid>/fd/ is only readable by the owning user or root).
+        Subclasses should override this to apply a per-process /proc/<pid>/net/
+        fallback in that case.
+        """
+        return [b for b in self.list_listening(proto="both") if b.pid == pid]
+
+
     def get_process_info(self, pid: int) -> ProcessInfo | None:
         """Get details about a specific process PID."""
         raise NotImplementedError()

@@ -658,10 +658,11 @@ def handle_inspect_pid_cli(args: argparse.Namespace, inspector: BaseInspector) -
             print(colorize(f"Error: Process {pid} not found or details unavailable", Colors.RED), file=sys.stderr)
         return EXIT_INVALID_INPUT
 
-    # Find port bindings matching this PID
-    proto = getattr(args, "proto", "both")
-    all_bindings = inspector.list_listening(proto=proto)
-    pid_bindings = [b for b in all_bindings if b.pid == pid]
+    # Find port bindings matching this PID.
+    # On Linux without root, list_listening() may not resolve the PID for
+    # root-owned sockets (inode→PID map requires fd access).
+    # find_bindings_for_pid() applies a /proc/<pid>/net fallback in that case.
+    pid_bindings = inspector.find_bindings_for_pid(pid)
 
     if getattr(args, "json", False):
         bindings_json = []
@@ -778,16 +779,17 @@ def handle_kill_pid_cli(args: argparse.Namespace, inspector: BaseInspector) -> i
 def _select_pids_interactively(
     pids: list[int], pname: str, args: argparse.Namespace, inspector: BaseInspector
 ) -> list[int] | None:
-    # Resolve ports for each PID
-    try:
-        all_bindings = inspector.list_listening(proto=getattr(args, "proto", "both"))
-    except Exception:
-        all_bindings = []
-    
-    pid_to_ports = {}
-    for b in all_bindings:
-        if b.pid:
-            pid_to_ports.setdefault(b.pid, []).append(b.port)
+    # Resolve ports for each PID using find_bindings_for_pid so that the
+    # Linux /proc/<pid>/net fallback is applied for root-owned processes whose
+    # sockets are not visible in the global inode→PID map without privileges.
+    pid_to_ports: dict[int, list[int]] = {}
+    for pid in pids:
+        try:
+            bindings = inspector.find_bindings_for_pid(pid)
+            if bindings:
+                pid_to_ports[pid] = [b.port for b in bindings]
+        except Exception:
+            pass
 
     print(colorize(f"Found {len(pids)} process(es) matching '{pname}':", Colors.YELLOW))
     for idx, pid in enumerate(pids, 1):
