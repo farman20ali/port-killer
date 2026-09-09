@@ -72,6 +72,7 @@ class TestMCPProtocol:
             "diagnose_port", "list_connections", "conflicts", "doctor",
             "stop_service", "find_project", "suggest_resolution",
             "inspect_pid", "kill_pid", "kill_process",
+            "find_alternative_port", "get_audit_history",
         }
         assert expected == names
 

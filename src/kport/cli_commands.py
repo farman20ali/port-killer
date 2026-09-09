@@ -35,6 +35,7 @@ from .cli_utils import (
     _resolve_timeout,
     check_safety_policy,
     confirm_docker_rm,
+    handle_setup_sudo,
     parse_port_range,
     validate_port,
 )
@@ -788,7 +789,7 @@ def _select_pids_interactively(
             bindings = inspector.find_bindings_for_pid(pid)
             if bindings:
                 pid_to_ports[pid] = [b.port for b in bindings]
-        except Exception:
+        except (OSError, AttributeError, ValueError):  # noqa: S110 - best-effort port resolution
             pass
 
     print(colorize(f"Found {len(pids)} process(es) matching '{pname}':", Colors.YELLOW))
@@ -806,7 +807,7 @@ def _select_pids_interactively(
     try:
         inp = input(
             colorize(
-                f"\nSelect processes to kill (indices/comma-separated, 'all' to kill all, 'q' to cancel) [default: all]: ",
+                "\nSelect processes to kill (indices/comma-separated, 'all' to kill all, 'q' to cancel) [default: all]: ",
                 Colors.YELLOW,
             )
         ).strip()
@@ -834,9 +835,126 @@ def _select_pids_interactively(
         return None
 
 
+def handle_hold(args: argparse.Namespace, inspector: BaseInspector) -> int:
+    """Hold / reserve a port by binding a TCP socket until user cancels or timeout occurs."""
+    import select
+    import socket
+    import time
+
+    port = args.port
+    validate_port(port)
+
+    pids = inspector.find_pids_on_port(port)
+    bindings = inspector.find_bindings_on_port(port)
+    docker_hits = docker_mappings_for_host_port(port)
+
+    if pids or bindings or docker_hits:
+        msg = f"Cannot hold port {port}: port is currently occupied."
+        if getattr(args, "json", False):
+            print(_json_out("hold", {"port": port, "held": False, "error": msg}))
+        else:
+            print(colorize(f"Error: {msg}", Colors.RED), file=sys.stderr)
+        return EXIT_GENERAL_ERROR
+
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("0.0.0.0", port))
+        sock.listen(1)
+    except OSError as e:
+        msg = f"Failed to bind port {port}: {e}"
+        if getattr(args, "json", False):
+            print(_json_out("hold", {"port": port, "held": False, "error": msg}))
+        else:
+            print(colorize(f"Error: {msg}", Colors.RED), file=sys.stderr)
+        return EXIT_PERMISSION if "permission" in str(e).lower() else EXIT_GENERAL_ERROR
+
+    timeout = getattr(args, "timeout", None)
+    timeout_str = f" for {timeout} seconds" if timeout else ""
+
+    if getattr(args, "json", False):
+        print(_json_out("hold", {"port": port, "held": True, "timeout": timeout}))
+
+    print(
+        colorize(
+            f"🔒 Port {port} is reserved{timeout_str}. Press Enter or Ctrl+C to release...",
+            Colors.CYAN + Colors.BOLD,
+        )
+    )
+
+    try:
+        if timeout:
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                if sys.stdin in select.select([sys.stdin], [], [], 0.2)[0]:
+                    sys.stdin.readline()
+                    break
+        else:
+            try:
+                input()
+            except (EOFError, KeyboardInterrupt):
+                pass
+    except Exception:
+        pass
+    finally:
+        sock.close()
+        print(colorize(f"🔓 Port {port} released.", Colors.GREEN))
+
+    return EXIT_OK
+
+
+def handle_audit(args: argparse.Namespace) -> int:
+    """Display recent audit log history."""
+    limit = getattr(args, "limit", 20)
+    entries = audit.read_recent_audit_events(limit=limit)
+
+    if getattr(args, "json", False):
+        print(_json_out("audit", {"entries": entries}))
+        return EXIT_OK
+
+    if not entries:
+        print(colorize("No audit log entries found in ~/.kport/audit.log", Colors.YELLOW))
+        return EXIT_OK
+
+    print(
+        colorize(
+            f"=== kport Audit History (last {len(entries)} events) ===",
+            Colors.CYAN + Colors.BOLD,
+        )
+    )
+    for entry in entries:
+        ts = entry.get("ts", "")[:19].replace("T", " ")
+        action = entry.get("action", "unknown")
+        user = entry.get("user", "unknown")
+        target = entry.get("target", {})
+        msg = entry.get("message", "")
+        status = (
+            colorize("SUCCESS", Colors.GREEN)
+            if entry.get("success")
+            else colorize("FAILED", Colors.RED)
+        )
+        if entry.get("dry_run"):
+            status += colorize(" [DRY-RUN]", Colors.YELLOW)
+        print(f"[{ts}] {action.upper()} by {user} — {status}")
+        print(f"  Target: {target}")
+        print(f"  Details: {msg}\n")
+
+    return EXIT_OK
+
+
 def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -> int:
     """Implement subcommands defined in the product specification."""
     debug = bool(getattr(args, "debug", False))
+
+    if args.command == "setup-sudo":
+        target = getattr(args, "target", "/usr/local/bin/kport")
+        return handle_setup_sudo(target=target)
+
+    if args.command == "hold":
+        return handle_hold(args, inspector)
+
+    if args.command == "audit":
+        return handle_audit(args)
 
     if args.command == "diagnose":
         return handle_diagnose(args, inspector)
@@ -1722,9 +1840,11 @@ def handle_product_command(args: argparse.Namespace, inspector: BaseInspector) -
         states: dict[int, dict[str, Any]] = {}
 
         def get_port_state(port: int) -> dict[str, Any]:
-            local_bindings = inspector.find_bindings_on_port(port)
+            _proto = getattr(args, "proto", "tcp")
+            inspector._clear_cache(ttl=min(interval, 1.5))
+            local_bindings = inspector.find_bindings_on_port(port, proto=_proto)
             docker_hits = docker_mappings_for_host_port(port, debug=debug)
-            pids = inspector.find_pids_on_port(port)
+            pids = inspector.find_pids_on_port(port, proto=_proto)
 
             if docker_hits:
                 m = docker_hits[0]
@@ -1953,7 +2073,8 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
     if args.list:
         bindings = inspector.list_listening(proto=getattr(args, "proto", "tcp"))
         if args.json:
-            print(jsonify_bindings(bindings))
+            from dataclasses import asdict as _asdict
+            print(_json_out("list", {"bindings": [_asdict(b) for b in bindings]}))
         else:
             print(colorize("\n📋 Listening ports\n", Colors.CYAN + Colors.BOLD))
             print_table_listen(bindings)
@@ -1973,7 +2094,8 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                 m = docker_hits[0]
                 if args.json:
                     print(
-                        json.dumps(
+                        _json_out(
+                            "inspect",
                             {
                                 "port": args.inspect,
                                 "type": "docker",
@@ -1983,7 +2105,6 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                                 "container_port": m.container_port,
                                 "status": m.status,
                             },
-                            indent=2,
                         )
                     )
                 else:
@@ -2002,14 +2123,14 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                 msg = "Port is in use, but the owning PID is not visible (try running with sudo/admin)."
                 if args.json:
                     print(
-                        json.dumps(
+                        _json_out(
+                            "inspect",
                             {
                                 "port": args.inspect,
                                 "type": "local-unknown",
                                 "message": msg,
                                 "bindings": [asdict(b) for b in local_bindings],
                             },
-                            indent=2,
                         )
                     )
                 else:
@@ -2017,7 +2138,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
             else:
                 msg = f"No processes found using port {args.inspect}"
                 if args.json:
-                    print(json.dumps({"port": args.inspect, "pids": []}))
+                    print(_json_out("inspect", {"port": args.inspect, "pids": []}))
                 else:
                     print(colorize("❌ " + msg, Colors.RED))
         else:
@@ -2031,7 +2152,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                 out = {"port": args.inspect, "pids": info_list}
                 if docker_hits:
                     out["docker"] = [asdict(m) for m in docker_hits]
-                print(json.dumps(out, indent=2))
+                print(_json_out("inspect", out))
             else:
                 print(
                     colorize(
@@ -2081,7 +2202,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                     }
                 )
         if args.json:
-            print(json.dumps(results, indent=2))
+            print(_json_out("inspect-multiple", {"ports": ports, "results": results}))
         else:
             print(
                 colorize(
@@ -2128,7 +2249,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                     }
                 )
         if args.json:
-            print(json.dumps(results, indent=2))
+            print(_json_out("inspect-range", {"range": args.inspect_range, "results": results}))
         else:
             print(
                 colorize(
@@ -2167,7 +2288,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
             pname, exact=args.exact, proto=getattr(args, "proto", "tcp")
         )
         if args.json:
-            print(jsonify_bindings(bindings))
+            print(_json_out("inspect-process", {"process": pname, "bindings": [asdict(b) for b in bindings]}))
             if not bindings:
                 pids = inspector.find_pids_by_name(pname, exact=args.exact)
                 if pids:
@@ -2276,7 +2397,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
         pids = inspector.find_pids_by_name(pname, exact=args.exact)
         if not pids:
             if args.json:
-                print(json.dumps({"name": pname, "pids": []}, indent=2))
+                print(_json_out("kill-process", {"name": pname, "pids": []}))
             else:
                 print(
                     colorize(
@@ -2289,13 +2410,13 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
             if not safe:
                 if args.json:
                     print(
-                        json.dumps(
+                        _json_out(
+                            "kill-process",
                             {
                                 "name": pname,
                                 "success": False,
                                 "message": safety_msg,
                             },
-                            indent=2,
                         )
                     )
                 else:
@@ -2310,13 +2431,13 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                             {"pid": pid, "process": asdict(info) if info else None}
                         )
                     print(
-                        json.dumps(
+                        _json_out(
+                            "kill-process",
                             {
                                 "name": pname,
                                 "pids": out,
                                 "message": "Note: Use --yes to actually perform kills.",
                             },
-                            indent=2,
                         )
                     )
                 else:
@@ -2346,9 +2467,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                             killed.append({"pid": pid, "msg": msg})
                         else:
                             failed.append({"pid": pid, "msg": msg})
-                    print(
-                        json.dumps({"killed": killed, "failed": failed}, indent=2)
-                    )
+                    print(_json_out("kill-process", {"killed": killed, "failed": failed}))
                     if failed:
                         return EXIT_GENERAL_ERROR
             else:
@@ -2422,13 +2541,13 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
         if not safe:
             if args.json:
                 print(
-                    json.dumps(
+                    _json_out(
+                        "kill",
                         {
                             "port": args.kill,
                             "success": False,
                             "message": safety_msg,
                         },
-                        indent=2,
                     )
                 )
             else:
@@ -2444,7 +2563,8 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                 m = docker_hits[0]
                 if args.json and not args.yes and not args.dry_run:
                     print(
-                        json.dumps(
+                        _json_out(
+                            "kill",
                             {
                                 "port": args.kill,
                                 "type": "docker",
@@ -2452,7 +2572,6 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                                 "container_id": m.container_id,
                                 "message": "Refusing to act without --yes in JSON mode",
                             },
-                            indent=2,
                         )
                     )
                 else:
@@ -2477,7 +2596,8 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                     ):
                             if args.json:
                                 print(
-                                    json.dumps(
+                                    _json_out(
+                                        "kill",
                                         {
                                             "port": args.kill,
                                             "type": "docker",
@@ -2487,7 +2607,6 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                                             "ok": False,
                                             "message": "Removing a Docker container is irreversible. Use --force in addition to --yes to bypass interactive confirmation.",
                                         },
-                                        indent=2,
                                     )
                                 )
                             return EXIT_PERMISSION
@@ -2541,7 +2660,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                             }
                             if getattr(args, "wait_for_exit", None) is not None:
                                 out["wait_for_exit_ok"] = wait_ok
-                            print(json.dumps(out, indent=2))
+                            print(_json_out("kill", out))
                         else:
                             if ok and wait_ok:
                                 print(
@@ -2557,14 +2676,14 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                 msg = "Port is in use but PID is not visible; cannot kill safely. Try sudo/admin."
                 if args.json:
                     print(
-                        json.dumps(
+                        _json_out(
+                            "kill",
                             {
                                 "port": args.kill,
                                 "ok": False,
                                 "message": msg,
                                 "bindings": [asdict(b) for b in local_bindings],
                             },
-                            indent=2,
                         )
                     )
                 else:
@@ -2572,12 +2691,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                 return EXIT_PERMISSION
             else:
                 if args.json:
-                    print(
-                        json.dumps(
-                            {"port": args.kill, "killed": [], "failed": []},
-                            indent=2,
-                        )
-                    )
+                    print(_json_out("kill", {"port": args.kill, "killed": [], "failed": []}))
                 else:
                     print(
                         colorize(
@@ -2617,7 +2731,7 @@ def handle_legacy_command(args: argparse.Namespace, inspector: BaseInspector) ->
                     out["docker"] = [asdict(m) for m in docker_hits]
                 if getattr(args, "wait_for_exit", None) is not None:
                     out["wait_for_exit_ok"] = wait_ok
-                print(json.dumps(out, indent=2))
+                print(_json_out("kill", out))
                 return EXIT_OK if (ok and wait_ok) else EXIT_GENERAL_ERROR
 
             else:

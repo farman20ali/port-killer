@@ -336,3 +336,13 @@ class TestDiagnosticsArchitecture:
                     for alias in node.names:
                         assert alias.name not in forbidden, f"Forbidden relative import found in diagnostics.py: from . import {alias.name}"
 
+
+@pytest.mark.unit
+def test_suggest_next_free_port():
+    from kport.diagnostics import suggest_next_free_port
+
+    inspector = FakeInspector(listening=[_binding(3000)])
+    with patch("kport.diagnostics.docker_mappings_for_host_port", return_value=[]):
+        res = suggest_next_free_port(start_port=3000, count=2, inspector=inspector)
+        assert res == [3001, 3002]
+

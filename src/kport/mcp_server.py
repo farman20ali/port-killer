@@ -315,6 +315,47 @@ TOOLS = [
             "required": ["name"],
         },
     },
+    {
+        "name": "find_alternative_port",
+        "description": "Finds the next available free port(s) starting from a specified port number. Useful when a port is occupied.",
+        "annotations": {"readOnlyHint": True},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "description": "The starting port number to search after.",
+                },
+                "count": {
+                    "type": "integer",
+                    "default": 1,
+                    "minimum": 1,
+                    "maximum": 10,
+                    "description": "Number of alternative free ports to return.",
+                },
+            },
+            "required": ["port"],
+        },
+    },
+    {
+        "name": "get_audit_history",
+        "description": "Returns recent audit log history of destructive operations performed by kport.",
+        "annotations": {"readOnlyHint": True},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "default": 20,
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "Maximum number of audit entries to return.",
+                }
+            },
+        },
+    },
 ]
 
 
@@ -712,6 +753,29 @@ def handle_doctor(inspector) -> dict[str, Any]:
     return _run_doctor_data(inspector)
 
 
+def handle_find_alternative_port(
+    inspector, port: int, count: int = 1
+) -> dict[str, Any]:
+    """Execute find_alternative_port tool request."""
+    from .diagnostics import suggest_next_free_port
+
+    alt = suggest_next_free_port(start_port=port, count=count, inspector=inspector)
+    return {
+        "start_port": port,
+        "alternative_ports": alt,
+        "found": len(alt) > 0,
+    }
+
+
+def handle_get_audit_history(limit: int = 20) -> dict[str, Any]:
+    """Execute get_audit_history tool request."""
+    entries = audit.read_recent_audit_events(limit=limit)
+    return {
+        "count": len(entries),
+        "entries": entries,
+    }
+
+
 def handle_stop_service(inspector, port: int, dry_run: bool = False) -> dict[str, Any]:
     """Execute stop_service tool request under safety shield validations."""
     if not (1 <= port <= 65535):
@@ -914,6 +978,13 @@ def run_mcp_server() -> None:
                         force_flag = bool(arguments.get("force", False))
                         tree_flag = bool(arguments.get("kill_tree", False))
                         result_data = handle_kill_process(inspector, p_name, exact_flag, force_flag, tree_flag)
+                    elif tool_name == "find_alternative_port":
+                        target_port = int(arguments.get("port"))
+                        cnt_val = int(arguments.get("count", 1))
+                        result_data = handle_find_alternative_port(inspector, target_port, cnt_val)
+                    elif tool_name == "get_audit_history":
+                        lim_val = int(arguments.get("limit", 20))
+                        result_data = handle_get_audit_history(lim_val)
                     else:
                         raise ValueError(f"Unknown tool: {tool_name}")
 

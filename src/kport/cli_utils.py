@@ -73,12 +73,12 @@ def debug_log(enabled: bool, msg: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Privilege detection
+# Privilege detection & self-escalation
 # ---------------------------------------------------------------------------
 
 
 def _is_elevated() -> bool:
-    """P1 fix: detect if the current process is running with root/admin privileges."""
+    """Detect if the current process is running with root/admin privileges."""
     if sys.platform == "win32":
         try:
             import ctypes
@@ -87,6 +87,220 @@ def _is_elevated() -> bool:
         except (AttributeError, OSError):
             return False
     return (os.geteuid() == 0) if hasattr(os, "geteuid") else False
+
+
+def get_elevation_hint() -> str:
+    """Return a one-line actionable hint when a permission error occurs.
+
+    Detects whether kport was installed via pip/pipx (i.e. not in a standard
+    system PATH location) and tailors the advice accordingly.
+    """
+    import shutil
+
+    exe = sys.executable  # e.g. /home/user/.venv/bin/python
+    sudo = shutil.which("sudo")
+
+    if sys.platform == "win32":
+        return (
+            "Run your terminal as Administrator: "
+            "right-click the terminal icon → 'Run as administrator'."
+        )
+
+    if not sudo:
+        return (
+            "'sudo' not found in PATH.\n"
+            "  • Run:  kport setup-sudo   — installs a /usr/local/bin/kport wrapper.\n"
+            f"  • Or:   sudo -E env PATH=\"$PATH\" {exe} -m kport ..."
+        )
+
+    # Check if kport entry point is outside standard system paths
+    kport_bin = shutil.which("kport")
+    system_prefixes = ("/usr/bin", "/usr/local/bin", "/usr/sbin", "/bin", "/sbin")
+    is_userland = kport_bin and not any(
+        kport_bin.startswith(p) for p in system_prefixes
+    )
+
+    if is_userland:
+        return (
+            f"'kport' is installed in a user/virtual-env path ({kport_bin})\n"
+            "  which sudo's secure_path does not include.  Options:\n"
+            f"  • Run:  kport setup-sudo   — creates /usr/local/bin/kport (one-time).\n"
+            f"  • Or:   sudo -E env PATH=\"$PATH\" {exe} -m kport ..."
+        )
+
+    return (
+        "Insufficient privileges. Re-run with:\n"
+        f"  sudo {' '.join(sys.argv)}"
+    )
+
+
+def re_exec_with_sudo(argv: list[str] | None = None, *, assume_yes: bool = False) -> int:
+    """Re-execute the current kport command with elevated privileges.
+
+    Preserves the active Python interpreter and virtualenv so the same
+    kport installation runs under sudo, bypassing secure_path restrictions.
+
+    Strategy:
+        sudo -E env PATH="$PATH" <sys.executable> -m kport <original-args>
+
+    Args:
+        argv: Argument list to pass (defaults to sys.argv[1:]).
+        assume_yes: If True, skip interactive confirmation prompt.
+
+    Returns:
+        The exit code of the elevated subprocess, or EXIT_PERMISSION if
+        the user declines or sudo is unavailable.
+    """
+    import shutil
+    import subprocess
+
+    sudo = shutil.which("sudo")
+    if not sudo:
+        print(
+            colorize(
+                "⚠  Cannot escalate: 'sudo' not found in PATH.\n"
+                "   Run:  kport setup-sudo   to install a system-wide launcher.",
+                Colors.YELLOW,
+            ),
+            file=sys.stderr,
+        )
+        return EXIT_PERMISSION
+
+    if not assume_yes:
+        try:
+            resp = input(
+                colorize(
+                    "\n🔐 Root privileges required. Re-run with sudo? [y/N]: ",
+                    Colors.YELLOW,
+                )
+            ).strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            print()
+            return EXIT_GENERAL_ERROR
+        if resp not in ("y", "yes"):
+            print(colorize("Escalation declined.", Colors.YELLOW))
+            return EXIT_PERMISSION
+
+    args_to_pass = argv if argv is not None else sys.argv[1:]
+    cmd = [
+        sudo,
+        "-E",          # preserve environment (keeps VIRTUAL_ENV, PYTHONPATH, etc.)
+        f"PATH={os.environ.get('PATH', '')}",
+        sys.executable,  # exact same Python interpreter (venv/pipx/system)
+        "-m",
+        "kport",
+    ] + args_to_pass
+
+    try:
+        result = subprocess.run(cmd, check=False)
+        return result.returncode
+    except (subprocess.SubprocessError, OSError) as e:
+        print(colorize(f"Escalation failed: {e}", Colors.RED), file=sys.stderr)
+        return EXIT_GENERAL_ERROR
+
+
+def handle_setup_sudo(target: str = "/usr/local/bin/kport") -> int:
+    """Install a /usr/local/bin/kport wrapper so 'sudo kport' always works.
+
+    Creates a small shell wrapper that re-invokes the same Python interpreter
+    (venv/pipx/system) as root.  Running this once fixes the sudo PATH gap
+    permanently for the current installation.
+
+    Args:
+        target: Filesystem path for the wrapper (default: /usr/local/bin/kport).
+
+    Returns:
+        EXIT_OK on success, EXIT_PERMISSION or EXIT_GENERAL_ERROR on failure.
+    """
+    import shutil
+    import stat
+
+    if sys.platform == "win32":
+        print(
+            colorize(
+                "setup-sudo is not supported on Windows.\n"
+                "Run your terminal as Administrator instead.",
+                Colors.YELLOW,
+            ),
+            file=sys.stderr,
+        )
+        return EXIT_GENERAL_ERROR
+
+    exe = sys.executable
+    wrapper = (
+        "#!/bin/sh\n"
+        f"# kport system launcher — generated by 'kport setup-sudo'\n"
+        f"# Interpreter: {exe}\n"
+        f'exec "{exe}" -m kport "$@"\n'
+    )
+
+    # Try writing directly first (works if already root or target is writable)
+    try:
+        with open(target, "w", encoding="utf-8") as fh:
+            fh.write(wrapper)
+        os.chmod(target, os.stat(target).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        print(
+            colorize(f"✓ Installed kport launcher at {target}", Colors.GREEN)
+        )
+        print(
+            colorize(
+                f"  'sudo kport' will now use: {exe}",
+                Colors.WHITE,
+            )
+        )
+        return EXIT_OK
+    except PermissionError:
+        pass  # Fall through to sudo-assisted write
+
+    # Need elevated write access — use sudo tee
+    sudo = shutil.which("sudo")
+    if not sudo:
+        print(
+            colorize(
+                f"Cannot write to {target}: permission denied and 'sudo' not available.\n"
+                f"Manually create the wrapper:\n\n{wrapper}",
+                Colors.RED,
+            ),
+            file=sys.stderr,
+        )
+        return EXIT_PERMISSION
+
+    print(
+        colorize(
+            f"Writing to {target} requires sudo (you may be prompted for your password):",
+            Colors.YELLOW,
+        )
+    )
+    try:
+        import subprocess
+
+        proc = subprocess.run(
+            [sudo, "tee", target],
+            input=wrapper,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if proc.returncode != 0:
+            print(
+                colorize(f"sudo tee failed: {proc.stderr.strip()}", Colors.RED),
+                file=sys.stderr,
+            )
+            return EXIT_PERMISSION
+
+        # Make executable via sudo chmod
+        subprocess.run(
+            [sudo, "chmod", "+x", target],
+            check=False,
+            capture_output=True,
+        )
+        print(colorize(f"✓ Installed kport launcher at {target}", Colors.GREEN))
+        print(colorize(f"  'sudo kport' will now use: {exe}", Colors.WHITE))
+        return EXIT_OK
+    except (subprocess.SubprocessError, OSError) as e:
+        print(colorize(f"Failed to install launcher: {e}", Colors.RED), file=sys.stderr)
+        return EXIT_GENERAL_ERROR
+
 
 
 # ---------------------------------------------------------------------------

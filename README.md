@@ -1,6 +1,6 @@
 # 🔪 kport - Cross-Platform Port Inspector and Killer
 
-[![Version](https://img.shields.io/badge/version-5.0.0-blue.svg)](https://github.com/farman20ali/port-killer)
+[![Version](https://img.shields.io/badge/version-5.1.0-blue.svg)](https://github.com/farman20ali/port-killer)
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/farman20ali/port-killer)
@@ -122,7 +122,17 @@ kport docker
 
 # Detect port conflicts (docker + local)
 kport conflicts
+
+# Reserve/hold a port to block other processes temporarily
+kport hold 8080 --timeout 60
+
+# Install system-wide launcher so 'sudo kport' works from pip/pipx installs
+kport setup-sudo
+
+# Inspect destructive action history from ~/.kport/audit.log
+kport audit --limit 20
 ```
+
 
 > Note: `--json`, `--dry-run`, `--yes`, and `--debug` work with all subcommands.
 
@@ -184,6 +194,8 @@ python -m kport.mcp_server
 - `list_connections` — Enumerate and filter active network connections (by PID, process, port, state)
 - `conflicts` — Detect Docker container vs native host process port collisions
 - `doctor` — Environment-wide diagnostics and system health check
+- `find_alternative_port` — Recommend next available free port(s) when `EADDRINUSE` occurs
+- `get_audit_history` — Inspect audit log history of destructive operations
 
 Configure in Claude Desktop / Cursor / VS Code Copilot:
 

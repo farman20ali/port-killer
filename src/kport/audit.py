@@ -160,3 +160,23 @@ def log_service_stop(
     }
     _write(record)
 
+
+def read_recent_audit_events(limit: int = 20) -> list[dict[str, Any]]:
+    """Return up to limit most recent audit entries from ~/.kport/audit.log (newest first)."""
+    if not _LOG_FILE.exists():
+        return []
+    entries: list[dict[str, Any]] = []
+    try:
+        with open(_LOG_FILE, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entries.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    except OSError:
+        return []
+    return entries[-limit:][::-1]
+

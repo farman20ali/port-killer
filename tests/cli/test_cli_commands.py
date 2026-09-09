@@ -383,3 +383,47 @@ def test_process_info_no_enrichment_for_unknown_runtime():
 def test_process_info_enrichment_skipped_for_short_cmdline():
     pi = ProcessInfo(pid=5, name="node", cmdline=["node"])
     assert pi.name == "node"
+
+
+@pytest.mark.cli
+def test_setup_sudo_command_routing(tmp_path):
+    target = str(tmp_path / "kport")
+    args = _args(command="setup-sudo", target=target)
+    inspector = FakeInspector()
+    with patch("sys.platform", "linux"):
+        rc = handle_product_command(args, inspector)
+        assert rc == EXIT_OK
+        assert (tmp_path / "kport").exists()
+
+
+@pytest.mark.cli
+def test_setup_sudo_windows_returns_error(capsys):
+    args = _args(command="setup-sudo", target="/usr/local/bin/kport")
+    inspector = FakeInspector()
+    with patch("sys.platform", "win32"):
+        rc = handle_product_command(args, inspector)
+        assert rc != EXIT_OK
+        err = capsys.readouterr().err
+        assert "not supported on Windows" in err
+
+
+@pytest.mark.cli
+def test_audit_command_json_output(capsys):
+    args = _args(command="audit", json=True, limit=5)
+    with patch("kport.audit.read_recent_audit_events", return_value=[{"action": "kill_port"}]):
+        rc = handle_product_command(args, FakeInspector())
+        assert rc == EXIT_OK
+        out = json.loads(capsys.readouterr().out)
+        assert out["schema_version"] == 1
+        assert out["command"] == "audit"
+        assert len(out["data"]["entries"]) == 1
+
+
+@pytest.mark.cli
+def test_hold_command_occupied_returns_error(capsys):
+    inspector = FakeInspector(listening=[_binding(9999)])
+    args = _args(command="hold", port=9999, json=True)
+    with patch("kport.cli_commands.docker_mappings_for_host_port", return_value=[]):
+        rc = handle_product_command(args, inspector)
+        assert rc != EXIT_OK
+

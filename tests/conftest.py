@@ -84,10 +84,14 @@ class FakeInspector(BaseInspector):
         self._connections = connections or []
 
     def find_pids_on_port(self, port: int, proto: str = "tcp"):
-        return self._pids.get(port, [])
+        if port in self._pids:
+            return self._pids[port]
+        return sorted({b.pid for b in self._listening if getattr(b, "port", None) == port and getattr(b, "pid", None)})
 
     def find_bindings_on_port(self, port: int, proto: str = "tcp"):
-        return self._bindings.get(port, [])
+        if port in self._bindings:
+            return self._bindings[port]
+        return [b for b in self._listening if getattr(b, "port", None) == port]
 
     def get_process_info(self, pid: int):
         return self._info.get(pid)

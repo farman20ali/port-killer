@@ -30,8 +30,11 @@ from .cli_utils import (
     apply_config_defaults,
     check_safety_policy,
     confirm_docker_rm,
+    get_elevation_hint,
+    handle_setup_sudo,
     load_config,
     parse_port_range,
+    re_exec_with_sudo,
     validate_port,
 )
 from .exceptions import InvalidPortError, KPortError, PermissionDeniedError
@@ -418,6 +421,45 @@ Examples:
         "shell", choices=["bash", "zsh", "fish", "powershell"], help="Target shell"
     )
 
+    sp_setup_sudo = sub.add_parser(
+        "setup-sudo",
+        parents=[parent_parser],
+        help="Install a /usr/local/bin/kport launcher so 'sudo kport' works from pip/pipx installs",
+    )
+    sp_setup_sudo.add_argument(
+        "--target",
+        type=str,
+        default="/usr/local/bin/kport",
+        metavar="PATH",
+        help="Destination path for the wrapper script (default: /usr/local/bin/kport)",
+    )
+
+    sp_hold = sub.add_parser(
+        "hold",
+        parents=[parent_parser],
+        help="Temporarily bind and reserve a port to block other applications",
+    )
+    sp_hold.add_argument("port", type=int, help="Port number to hold/reserve")
+    sp_hold.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help="Automatically release port after N seconds",
+    )
+
+    sp_audit = sub.add_parser(
+        "audit",
+        parents=[parent_parser],
+        help="Inspect audit log history of destructive kport actions",
+    )
+    sp_audit.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Number of recent entries to show (default: 20)",
+    )
+
     args = parser.parse_args(argv)
 
     if getattr(args, "mcp", False):
@@ -483,25 +525,31 @@ Examples:
         print(colorize(f"Error: {e}", Colors.RED), file=sys.stderr)
         return EXIT_INVALID_INPUT
     except PermissionDeniedError as e:
+        hint = get_elevation_hint()
         print(
             colorize(
-                f"Permission denied: {e}. Try running with administrative privileges (sudo/admin).",
+                f"Permission denied: {e}\n\n{hint}",
                 Colors.RED,
             ),
             file=sys.stderr,
         )
+        if sys.platform != "win32" and sys.stdin.isatty():
+            return re_exec_with_sudo()
         return EXIT_PERMISSION
     except KPortError as e:
         print(colorize(f"kport error: {e}", Colors.RED), file=sys.stderr)
         return EXIT_GENERAL_ERROR
     except PermissionError:
+        hint = get_elevation_hint()
         print(
             colorize(
-                "Permission denied. Try running with elevated privileges (sudo/admin).",
+                f"Permission denied.\n\n{hint}",
                 Colors.RED,
             ),
             file=sys.stderr,
         )
+        if sys.platform != "win32" and sys.stdin.isatty():
+            return re_exec_with_sudo()
         return EXIT_PERMISSION
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")

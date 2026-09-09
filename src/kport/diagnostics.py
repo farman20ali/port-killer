@@ -339,6 +339,8 @@ def diagnose_port(
                 "safe": True,
             })
 
+    suggested_alt = suggest_next_free_port(port, count=1, inspector=inspector, proto=proto) if is_blocked else []
+
     return {
         "port": port,
         "blocked": is_blocked,
@@ -346,7 +348,33 @@ def diagnose_port(
         "inferences": inferences,
         "risks": risks,
         "recommendations": recommendations,
+        "alternative_port": suggested_alt[0] if suggested_alt else None,
     }
+
+
+def suggest_next_free_port(
+    start_port: int,
+    count: int = 1,
+    max_attempts: int = 20,
+    inspector: BaseInspector | None = None,
+    proto: str = "tcp",
+) -> list[int]:
+    """Find the next available port(s) starting from start_port + 1 up to start_port + max_attempts."""
+    if inspector is None:
+        from .inspectors import get_inspector
+
+        inspector = get_inspector()
+
+    available: list[int] = []
+    for candidate in range(start_port + 1, min(start_port + max_attempts + 1, 65536)):
+        pids = inspector.find_pids_on_port(candidate, proto=proto)
+        bindings = inspector.find_bindings_on_port(candidate, proto=proto)
+        docker_hits = docker_mappings_for_host_port(candidate)
+        if not pids and not bindings and not docker_hits:
+            available.append(candidate)
+            if len(available) >= count:
+                break
+    return available
 
 
 # ---------------------------------------------------------------------------

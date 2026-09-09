@@ -163,18 +163,41 @@ def _escalate_kill_unix(
 
     sudo = shutil.which("sudo")
     if not sudo:
+        # Provide actionable hint when sudo is not in PATH (common with pip/pipx installs)
+        _YELLOW = "\033[93m"
+        _RESET = "\033[0m"
+        print(
+            f"{_YELLOW}\n⚠  'sudo' not found in PATH. If kport was installed via pip or pipx,\n"
+            f"   run:  kport setup-sudo   to create a system-wide launcher.\n"
+            f"   Or re-run as:  sudo -E env PATH=\"$PATH\" kport ...{_RESET}",
+            file=sys.stderr,
+        )
         return False
 
     try:
         if debug:
             print(f"[debug] sudo kill -{sig_name} {pid}", file=sys.stderr)
-        result = subprocess.run(
-            [sudo, "kill", f"-{sig_name}", str(pid)],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
+
+        # When running in an interactive terminal, inherit stdin/stdout so sudo
+        # can display its password prompt.  In non-interactive contexts (pipes,
+        # CI, JSON mode) we capture output to avoid garbled output.
+        interactive = sys.stdin.isatty() and sys.stdout.isatty()
+        if interactive:
+            result = subprocess.run(
+                [sudo, "kill", f"-{sig_name}", str(pid)],
+                timeout=30,  # longer: user needs time to type password
+                check=False,
+            )
+        else:
+            result = subprocess.run(
+                [sudo, "kill", f"-{sig_name}", str(pid)],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            if debug and result.stderr:
+                print(f"[debug] sudo stderr: {result.stderr.strip()}", file=sys.stderr)
         return result.returncode == 0
     except (subprocess.SubprocessError, OSError):
         return False
@@ -238,6 +261,10 @@ def _escalate_kill_windows(
 
 
 class BaseInspector:
+    def _clear_cache(self, ttl: float = 0.0) -> None:
+        """Clear cached state. Subclasses may implement process metadata caching."""
+        pass
+
     def list_listening(self, proto: str = "tcp") -> list[PortBinding]:
         """List all active listening ports."""
         raise NotImplementedError()
@@ -543,6 +570,7 @@ class BaseInspector:
                 errors.append(f"PID {pid}: {msg}")
 
         # Linux fuser fallback — only when forced and fuser is available
+        _fuser_proto = proto if proto in ("tcp", "udp") else "tcp"
         if (
             remaining_pids
             and platform.system() != "Windows"
@@ -551,12 +579,12 @@ class BaseInspector:
         ):
             if debug:
                 print(
-                    f"[debug] PIDs {remaining_pids} survived standard signals. Triggering fuser fallback...",
+                    f"[debug] PIDs {remaining_pids} survived standard signals. Triggering fuser fallback ({_fuser_proto})...",
                     file=sys.stderr,
                 )
             try:
                 subprocess.run(
-                    ["fuser", "-k", f"{port}/tcp"],
+                    ["fuser", "-k", f"{port}/{_fuser_proto}"],
                     capture_output=True,
                     text=True,
                     timeout=5,
@@ -565,7 +593,7 @@ class BaseInspector:
                 time.sleep(0.5)
                 remaining_pids = [p for p in remaining_pids if self.is_process_alive(p)]
                 if not remaining_pids:
-                    return True, f"Port {port} successfully freed via fuser fallback"
+                    return True, f"Port {port} successfully freed via fuser fallback ({_fuser_proto})"
             except (subprocess.SubprocessError, OSError) as e:
                 errors.append(f"fuser fallback failed: {e}")
 

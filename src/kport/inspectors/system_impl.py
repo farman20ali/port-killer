@@ -12,6 +12,7 @@ import shutil
 import socket
 import struct
 import subprocess
+import time
 from typing import Any
 
 from .base import BaseInspector, ConnectionInfo, PortBinding, ProcessInfo
@@ -872,19 +873,23 @@ class FallbackInspector(BaseInspector):
         self._ps_exe = None
         self._process_info_cache: dict[int, ProcessInfo | None] = {}
         self._tasklist_cache: dict[int, str] | None = None
+        self._last_cache_time: float = 0.0
         if self.system == "Windows":
             self._ps_exe = shutil.which("powershell") or shutil.which("pwsh")
 
-    def _clear_cache(self) -> None:
-        """C1: Clear all per-PID caches before each public query.
+    def _clear_cache(self, ttl: float = 0.0) -> None:
+        """Clear all per-PID caches before queries.
 
-        In long-running modes (Watch Mode, MCP server) the OS reuses PIDs.
-        Stale cache entries would return the old dead process name for a new
-        process that happened to acquire the same PID. Clearing on every
-        public entry point ensures each query sees a fresh snapshot.
+        If ttl > 0, skips cache clearing if the existing snapshot is newer
+        than ttl seconds. This prevents disk churn during high-frequency polling
+        (e.g., watch mode).
         """
+        now = time.time()
+        if ttl > 0 and (now - self._last_cache_time) < ttl and self._last_cache_time > 0:
+            return
         self._process_info_cache.clear()
         self._tasklist_cache = None  # Force tasklist re-query on Windows
+        self._last_cache_time = now
 
     def _powershell(self) -> str | None:
         return self._ps_exe
@@ -1035,7 +1040,7 @@ class FallbackInspector(BaseInspector):
                     for b in ns_bindings:
                         b.process_name = pname
                     return ns_bindings
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
         return bindings
@@ -1089,16 +1094,25 @@ class FallbackInspector(BaseInspector):
 
         ps_tcp = None
         ps_udp = None
-        if proto in ("tcp", "both"):
-            ps_tcp = self._run_powershell_json(
-                f"Get-NetTCPConnection -State Listen -LocalPort {port} | "
-                "Select-Object LocalAddress,LocalPort,OwningProcess,State | ConvertTo-Json -Depth 3"
+        if proto == "both":
+            ps_both = self._run_powershell_json(
+                f"@{{ tcp = @(Get-NetTCPConnection -State Listen -LocalPort {port} -ErrorAction SilentlyContinue | Select-Object LocalAddress,LocalPort,OwningProcess,State); "
+                f"udp = @(Get-NetUDPEndpoint -LocalPort {port} -ErrorAction SilentlyContinue | Select-Object LocalAddress,LocalPort,OwningProcess) }} | ConvertTo-Json -Depth 4"
             )
-        if proto in ("udp", "both"):
-            ps_udp = self._run_powershell_json(
-                f"Get-NetUDPEndpoint -LocalPort {port} | "
-                "Select-Object LocalAddress,LocalPort,OwningProcess | ConvertTo-Json -Depth 3"
-            )
+            if isinstance(ps_both, dict):
+                ps_tcp = ps_both.get("tcp")
+                ps_udp = ps_both.get("udp")
+        else:
+            if proto == "tcp":
+                ps_tcp = self._run_powershell_json(
+                    f"Get-NetTCPConnection -State Listen -LocalPort {port} | "
+                    "Select-Object LocalAddress,LocalPort,OwningProcess,State | ConvertTo-Json -Depth 3"
+                )
+            elif proto == "udp":
+                ps_udp = self._run_powershell_json(
+                    f"Get-NetUDPEndpoint -LocalPort {port} | "
+                    "Select-Object LocalAddress,LocalPort,OwningProcess | ConvertTo-Json -Depth 3"
+                )
 
         if ps_tcp is not None or ps_udp is not None:
             _from_ps(ps_tcp, "tcp")
@@ -1380,7 +1394,7 @@ class FallbackInspector(BaseInspector):
                 bindings = _list_listening_linux_native() or []
                 if bindings:
                     if proto == "tcp":
-                        return sorted(
+                        pids = sorted(
                             {
                                 b.pid
                                 for b in bindings
@@ -1388,14 +1402,20 @@ class FallbackInspector(BaseInspector):
                             }
                         )
                     elif proto == "udp":
-                        return sorted(
+                        pids = sorted(
                             {
                                 b.pid
                                 for b in bindings
                                 if b.port == port and b.pid and b.proto == "udp"
                             }
                         )
-                    return sorted({b.pid for b in bindings if b.port == port and b.pid})
+                    else:
+                        pids = sorted({b.pid for b in bindings if b.port == port and b.pid})
+                    # Only short-circuit when we actually resolved PIDs for this port.
+                    # If pids is empty, the port may exist but owning PID is invisible to
+                    # unprivileged /proc scanning — fall through to ss/lsof.
+                    if pids:
+                        return pids
             except (OSError, ValueError, IndexError):
                 pass
             return self._unix_pids_on_port(port, proto=proto)
